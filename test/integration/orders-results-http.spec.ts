@@ -16,6 +16,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { aTariffConcept, seedExams } from './orders-fixtures';
 import { useDatabase } from './setup/database';
+import { withReadRevision } from './setup/read-revision';
 import {
   createEncounter,
   createPatient,
@@ -155,17 +156,26 @@ describe('los resultados por HTTP', () => {
     return id;
   }
 
+  // ORD-181. A write on a draft carries the revision a screen just read.
   const post = (path: string, body: object) =>
-    request(app.getHttpServer())
-      .post(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body);
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .post(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    );
 
   const put = (path: string, body: object) =>
-    request(app.getHttpServer())
-      .put(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body);
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .put(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    );
 
   const get = (path: string) =>
     request(app.getHttpServer())
@@ -187,6 +197,63 @@ describe('los resultados por HTTP', () => {
     }).expect(201);
     return (report.body as { results: { id: string }[] }).results[0]!.id;
   }
+
+  it('ORD-181 corregir en una pestaña y emitir desde la otra: 412 RECORD_CHANGED, sin número; con la revisión vigente, emite', async () => {
+    const draft = await post(`/encounters/${encounterId}/orders`, {
+      category: 'LABORATORY',
+      items: [{ serviceId: glucoseExamId }],
+    }).expect(201);
+    // Its lines are written after the order, and each one moves the order's
+    // pending state: the revision is whatever the answer says, never assumed.
+    const { id, revision: read } = draft.body as {
+      id: string;
+      revision: number;
+    };
+    const stored = async () =>
+      prisma.serviceOrder.findUniqueOrThrow({ where: { id } });
+    expect((await stored()).revision).toBe(read);
+    const tab = (
+      method: 'put' | 'post',
+      path: string,
+      ifMatch: string | null,
+      body: object,
+    ) => {
+      // prettier-ignore
+      const call = request(app.getHttpServer())
+        [method](`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`);
+      if (ifMatch !== null) call.set('If-Match', ifMatch);
+      return call.send(body);
+    };
+
+    const corrected = await tab('put', `/orders/${id}`, `"${read}"`, {
+      category: 'LABORATORY',
+      priority: 'URGENT',
+      items: [{ serviceId: glucoseExamId }],
+    }).expect(200);
+    const now = (corrected.body as { revision: number }).revision;
+    expect(now).toBeGreaterThan(read);
+    expect(corrected.body).toMatchObject({ priority: 'URGENT' });
+    expect((await stored()).revision).toBe(now);
+
+    const stale = await tab('put', `/orders/${id}`, `"${read}"`, {
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      items: [{ serviceId: glucoseExamId }],
+    }).expect(412);
+    expect(stale.body).toMatchObject({
+      code: 'RECORD_CHANGED',
+      title:
+        'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado',
+    });
+    await tab('post', `/orders/${id}/issue`, `"${read}"`, {}).expect(412);
+    await tab('post', `/orders/${id}/issue`, null, {}).expect(428);
+    expect(await stored()).toMatchObject({ status: 'DRAFT', number: null, priority: 'URGENT', revision: now }); // prettier-ignore
+
+    // Control positivo.
+    const issued = await tab('post', `/orders/${id}/issue`, `"${now}"`, {}).expect(200); // prettier-ignore
+    expect(issued.body).toMatchObject({ status: 'ISSUED' });
+  });
 
   it('ORD-062 quién avisó es la sesión aunque el cuerpo diga otra cosa, y la bitácora queda en la base', async () => {
     const resultId = await criticalGlucose();

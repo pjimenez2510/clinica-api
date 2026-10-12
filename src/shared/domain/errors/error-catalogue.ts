@@ -58,6 +58,11 @@ export const DOMAIN_ERROR_CODES = [
   'BOARD_VIEW_ROLE_NOT_FOUND',
   // AG-063: la cita que salió de la lista de espera no cambia de paciente.
   'APPOINTMENT_FROM_WAITLIST',
+  // EN-281, EN-282, PR-121, ORD-181 (A1): el borrador se escribió, firmó o
+  // emitió sobre una revisión que ya no es la vigente (412), o sin decir sobre
+  // cuál (428). Declarados en `shared/`: nota, receta y orden los lanzan.
+  'RECORD_CHANGED',
+  'REVISION_REQUIRED',
   // AS-023: la propuesta del asistente ya se aceptó o se descartó, o no existe.
   'SUGGESTION_ALREADY_DECIDED',
   'SUGGESTION_INVALID',

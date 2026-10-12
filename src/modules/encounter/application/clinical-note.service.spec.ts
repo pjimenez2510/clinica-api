@@ -46,6 +46,7 @@ import { builtInTemplate, type NoteTemplate } from '../domain/note-template';
 import type { NoteTemplateRepository } from '../domain/note-template.repository';
 import { BackgroundSnapshotReader } from './background-snapshot.reader';
 import { ClinicalNoteService } from './clinical-note.service';
+import { RecordChangedError } from '../../../shared/domain/errors/record-changed.error';
 import type { LiveEvent } from '../../../shared/events/live-event';
 import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
 import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
@@ -109,6 +110,7 @@ const aNote = (
   encounterId: ENCOUNTER,
   chainId: 'note-1',
   version: 1,
+  revision: 1,
   formCode: '002',
   formVersion: '1',
   templateId: null,
@@ -376,7 +378,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     await expect(
       service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(NoteContentIncompleteError);
@@ -388,7 +390,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     const refusal = await service
       .sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       )
       .catch((error: unknown) => error);
@@ -404,7 +406,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     const refusal = await service
       .sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       )
       .catch((error: unknown) => error);
@@ -421,7 +423,7 @@ describe('los casos de uso de la nota clínica', () => {
     // Positive control: with the principal, the same note signs.
     notes.encounter = anEncounterRead();
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
     ).resolves.toBeDefined();
   });
 
@@ -429,13 +431,13 @@ describe('los casos de uso de la nota clínica', () => {
     notes.encounter = anEncounterRead({ screeningAnswered: false });
 
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
     ).rejects.toBeInstanceOf(ScreeningPendingError);
 
     // Positive control: answered — whatever the answer —, the same note signs.
     notes.encounter = anEncounterRead({ screeningAnswered: true });
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
     ).resolves.toMatchObject({ status: 'SIGNED' });
   });
 
@@ -443,19 +445,19 @@ describe('los casos de uso de la nota clínica', () => {
     notes.encounter = anEncounterRead({ outgoingReferrals: 0 });
 
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'REFERRED' }, requester), // prettier-ignore
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'REFERRED' }, requester), // prettier-ignore
     ).rejects.toBeInstanceOf(ReferralRequiredOnDischargeError);
 
     // Another outcome needs none.
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
     ).resolves.toMatchObject({ status: 'SIGNED' });
 
     // Positive control: with a referral standing, «Referido» signs.
     notes.stored = aNote();
     notes.encounter = anEncounterRead({ outgoingReferrals: 1 });
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'REFERRED' }, requester), // prettier-ignore
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'REFERRED' }, requester), // prettier-ignore
     ).resolves.toMatchObject({ status: 'SIGNED' });
   });
 
@@ -491,7 +493,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     const refusal = await service
       .sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       )
       .catch((error: unknown) => error);
@@ -505,7 +507,12 @@ describe('los casos de uso de la nota clínica', () => {
 
   it('EN-027 firma registrando quién, cuándo y el resumen del contenido', async () => {
     const signed = await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -537,7 +544,12 @@ describe('los casos de uso de la nota clínica', () => {
     ];
 
     const signed = await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -567,7 +579,12 @@ describe('los casos de uso de la nota clínica', () => {
     ];
 
     const signed = await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -652,6 +669,7 @@ describe('los casos de uso de la nota clínica', () => {
           {
             encounterId: ENCOUNTER,
             noteId: 'note-1',
+            revision: 1,
             dischargeCondition: 'ALIVE',
           },
           requester,
@@ -676,7 +694,12 @@ describe('los casos de uso de la nota clínica', () => {
 
   it('EN-130 da el alta clínica al firmar la nota de consulta externa', async () => {
     await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -686,7 +709,12 @@ describe('los casos de uso de la nota clínica', () => {
 
   it('AG-179, BI-238 firmar el alta avisa a la agenda, a la sala y a caja de la sede de la atención', async () => {
     await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -703,7 +731,10 @@ describe('los casos de uso de la nota clínica', () => {
 
     heard.length = 0;
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1' }, requester),
+      service.sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 },
+        requester,
+      ),
     ).rejects.toBeInstanceOf(DischargeConditionRequiredError);
     expect(heard).toEqual([]);
   });
@@ -715,7 +746,10 @@ describe('los casos de uso de la nota clínica', () => {
      * the four admitted values, before the note has been written.
      */
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1' }, requester),
+      service.sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 },
+        requester,
+      ),
     ).rejects.toBeInstanceOf(DischargeConditionRequiredError);
   });
 
@@ -727,7 +761,10 @@ describe('los casos de uso de la nota clínica', () => {
       content: { evolucion: 'Se retira el vendaje sin incidencias' },
     });
 
-    await service.sign({ encounterId: ENCOUNTER, noteId: 'note-1' }, requester);
+    await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 },
+      requester,
+    );
 
     expect(notes.signature?.dischargesTheEncounter).toBe(false);
     expect(notes.signature?.dischargeCondition).toBeNull();
@@ -738,10 +775,55 @@ describe('los casos de uso de la nota clínica', () => {
 
     await expect(
       service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(NoteAlreadySignedError);
+  });
+
+  it('EN-281 rechaza guardar el borrador sobre una revisión que ya no es la vigente, sin escribir', async () => {
+    notes.stored = aNote({ revision: 3 });
+
+    await expect(
+      service.updateDraft(
+        { encounterId: ENCOUNTER, noteId: 'note-1', content: { motivoConsulta: 'Otra' }, revision: 2 }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(RecordChangedError);
+    expect(notes.stored.content).toEqual(COMPLETE_002);
+
+    // Control positivo: con la revisión vigente, guarda.
+    await expect(
+      service.updateDraft(
+        { encounterId: ENCOUNTER, noteId: 'note-1', content: { motivoConsulta: 'Otra' }, revision: 3 }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toMatchObject({ content: { motivoConsulta: 'Otra' } });
+  });
+
+  it('EN-281 a una nota ya firmada le dice que está firmada, no que cambió', async () => {
+    notes.stored = aNote({ status: 'SIGNED', revision: 5 });
+
+    await expect(
+      service.updateDraft(
+        { encounterId: ENCOUNTER, noteId: 'note-1', content: {}, revision: 1 },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(NoteAlreadySignedError);
+  });
+
+  it('EN-282 rechaza firmar sobre una revisión que no es la vigente, sin firmar ni avisar', async () => {
+    notes.stored = aNote({ revision: 4 });
+    heard.length = 0;
+
+    await expect(
+      service.sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 3, dischargeCondition: 'ALIVE' }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(RecordChangedError);
+    expect(notes.signature).toBeUndefined();
+    expect(heard).toEqual([]);
   });
 
   it('EN-130 rechaza abrir contenido clínico nuevo sobre una atención ya cerrada', async () => {
@@ -753,7 +835,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     await expect(
       service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
@@ -775,7 +857,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     await expect(
       service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(PractitionerNotLicensedError);
@@ -798,7 +880,7 @@ describe('los casos de uso de la nota clínica', () => {
 
       await expect(
         service.sign(
-          { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+          { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
           requester,
         ),
       ).resolves.toMatchObject({ status: 'SIGNED' });
@@ -822,7 +904,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     await expect(
       service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       ),
     ).resolves.toMatchObject({ status: 'SIGNED' });
@@ -833,7 +915,7 @@ describe('los casos de uso de la nota clínica', () => {
 
     await expect(
       service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(PractitionerProfileRequiredError);

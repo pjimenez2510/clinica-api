@@ -105,6 +105,19 @@ export abstract class ConflictError extends DomainError {}
 /** Syntactically valid but violates a business rule. */
 export abstract class BusinessRuleViolation extends DomainError {}
 
+/**
+ * The write was made over a version that is no longer the current one
+ * (RFC 9110 §13.1.1, `If-Match` false). Not a 409: the state did not forbid
+ * the operation, the caller's precondition about it failed.
+ */
+export abstract class PreconditionFailedError extends DomainError {}
+
+/**
+ * The write needs a precondition and the caller sent none (RFC 6585 §3,
+ * 428): without it, two writers would overwrite each other unseen.
+ */
+export abstract class PreconditionRequiredError extends DomainError {}
+
 /** Caller is not authenticated. */
 export abstract class UnauthorizedError extends DomainError {}
 

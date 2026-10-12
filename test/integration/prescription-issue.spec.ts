@@ -22,6 +22,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
+import { revisionNow } from './setup/read-revision';
 import {
   createIssuedPrescription,
   createPatient,
@@ -543,19 +544,27 @@ describe('la receta contra PostgreSQL', () => {
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
-    const issued = await service.issue(composed.prescription.id, {
-      userId: requester.userId,
-      sites: [...requester.sites],
-    });
+    const issued = await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      {
+        userId: requester.userId,
+        sites: [...requester.sites],
+      },
+    );
     expect(issued.status).toBe('ACTIVE');
     expect(issued.issuedAt).not.toBeNull();
     expect(issued.verificationCode).toMatch(/^[0-9A-F]{16}$/);
 
     await expect(
-      service.issue(composed.prescription.id, {
-        userId: requester.userId,
-        sites: [...requester.sites],
-      }),
+      service.issue(
+        composed.prescription.id,
+        await revisionNow(prisma, 'prescription', composed.prescription.id),
+        {
+          userId: requester.userId,
+          sites: [...requester.sites],
+        },
+      ),
     ).rejects.toMatchObject({ code: 'PRESCRIPTION_NOT_EDITABLE' });
   });
 
@@ -581,10 +590,22 @@ describe('la receta contra PostgreSQL', () => {
     expect(first.prescription.sequenceNumber).toBeNull();
 
     expect(
-      (await service.issue(second.prescription.id, who)).sequenceNumber,
+      (
+        await service.issue(
+          second.prescription.id,
+          await revisionNow(prisma, 'prescription', second.prescription.id),
+          who,
+        )
+      ).sequenceNumber,
     ).toBe(1);
     expect(
-      (await service.issue(first.prescription.id, who)).sequenceNumber,
+      (
+        await service.issue(
+          first.prescription.id,
+          await revisionNow(prisma, 'prescription', first.prescription.id),
+          who,
+        )
+      ).sequenceNumber,
     ).toBe(2);
   });
 
@@ -604,7 +625,11 @@ describe('la receta contra PostgreSQL', () => {
       who,
     );
     await expect(
-      service.issue(bare.prescription.id, who),
+      service.issue(
+        bare.prescription.id,
+        await revisionNow(prisma, 'prescription', bare.prescription.id),
+        who,
+      ),
     ).rejects.toMatchObject({
       code: 'PRESCRIPTION_ITEM_INCOMPLETE',
     });
@@ -613,7 +638,11 @@ describe('la receta contra PostgreSQL', () => {
       { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       who,
     );
-    const issued = await service.issue(complete.prescription.id, who);
+    const issued = await service.issue(
+      complete.prescription.id,
+      await revisionNow(prisma, 'prescription', complete.prescription.id),
+      who,
+    );
     expect(issued.warningSigns).toBe(INDICATIONS.warningSigns);
     expect(issued.nonPharmacologicalAdvice).toBe(
       INDICATIONS.nonPharmacologicalAdvice,
@@ -640,7 +669,7 @@ describe('la receta contra PostgreSQL', () => {
       who,
     );
     await expect(
-      service.issue(draft.prescription.id, who),
+      service.issue(draft.prescription.id, draft.prescription.revision, who),
     ).rejects.toMatchObject({
       code: 'PRESCRIBER_CONTACT_REQUIRED',
     });
@@ -651,7 +680,7 @@ describe('la receta contra PostgreSQL', () => {
       data: { emergencyContactPhone: '0991234567' },
     });
     await expect(
-      service.issue(draft.prescription.id, who),
+      service.issue(draft.prescription.id, draft.prescription.revision, who),
     ).resolves.toMatchObject({
       status: 'ACTIVE',
     });
@@ -733,7 +762,11 @@ describe('la receta contra PostgreSQL', () => {
     });
 
     await expect(
-      service.issue(marked.prescription.id, who),
+      service.issue(
+        marked.prescription.id,
+        await revisionNow(prisma, 'prescription', marked.prescription.id),
+        who,
+      ),
     ).rejects.toMatchObject({ code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE' });
     const refused = await prisma.prescription.findUniqueOrThrow({
       where: { id: marked.prescription.id },
@@ -743,7 +776,13 @@ describe('la receta contra PostgreSQL', () => {
     // Control positivo: el otro borrador se emite, y con el número 1: la serie
     // no avanzó con la emisión rechazada.
     expect(
-      (await service.issue(plain.prescription.id, who)).sequenceNumber,
+      (
+        await service.issue(
+          plain.prescription.id,
+          await revisionNow(prisma, 'prescription', plain.prescription.id),
+          who,
+        )
+      ).sequenceNumber,
     ).toBe(1);
   });
 
@@ -799,7 +838,7 @@ describe('la receta contra PostgreSQL', () => {
     );
 
     const outcome = await attemptWhileAnnulled(prisma, encounter.id, () =>
-      service.issue(draft.prescription.id, who),
+      service.issue(draft.prescription.id, draft.prescription.revision, who),
     );
 
     expect(outcome).toMatchObject({
@@ -831,10 +870,14 @@ describe('la receta contra PostgreSQL', () => {
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
-    await service.issue(composed.prescription.id, {
-      userId: requester.userId,
-      sites: [...requester.sites],
-    });
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      {
+        userId: requester.userId,
+        sites: [...requester.sites],
+      },
+    );
     await service.cancel(composed.prescription.id, 'Pérdida', {
       userId: requester.userId,
       sites: [...requester.sites],
@@ -940,7 +983,11 @@ describe('la receta contra PostgreSQL', () => {
       },
       who,
     );
-    await service.issue(composed.prescription.id, who);
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      who,
+    );
 
     const corrected = await service.correct(
       composed.prescription.id,
@@ -974,9 +1021,13 @@ describe('la receta contra PostgreSQL', () => {
     expect(await prisma.prescriptionItem.count()).toBe(4);
 
     // Y el borrador es un borrador de verdad: se emite.
-    await expect(service.issue(corrected.draft.id, who)).resolves.toMatchObject(
-      { status: 'ACTIVE' },
-    );
+    await expect(
+      service.issue(
+        corrected.draft.id,
+        await revisionNow(prisma, 'prescription', corrected.draft.id),
+        who,
+      ),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
   });
 
   it('PR-109 si el borrador nuevo no se puede escribir, la receta NO se anula', async () => {
@@ -993,7 +1044,11 @@ describe('la receta contra PostgreSQL', () => {
       { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       who,
     );
-    await service.issue(composed.prescription.id, who);
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      who,
+    );
 
     /**
      * EL FALLO SE FUERZA EN LA BASE, DESPUÉS DE ANULAR: un disparador de prueba
@@ -1053,7 +1108,11 @@ describe('la receta contra PostgreSQL', () => {
       { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       who,
     );
-    await service.issue(composed.prescription.id, who);
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      who,
+    );
     await prisma.encounter.update({
       where: { id: encounter.id },
       data: { status: 'DISCHARGED', endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000), dischargeCondition: 'ALIVE' }, // prettier-ignore
@@ -1219,10 +1278,14 @@ describe('la receta contra PostgreSQL', () => {
       { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
-    await service.issue(composed.prescription.id, {
-      userId: requester.userId,
-      sites: [...requester.sites],
-    });
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      {
+        userId: requester.userId,
+        sites: [...requester.sites],
+      },
+    );
 
     const problem = await problemFrom(
       prisma.$executeRawUnsafe(
@@ -1284,7 +1347,11 @@ describe('la receta contra PostgreSQL', () => {
     );
 
     await expect(
-      service.issue(composed.prescription.id, requester),
+      service.issue(
+        composed.prescription.id,
+        await revisionNow(prisma, 'prescription', composed.prescription.id),
+        requester,
+      ),
     ).rejects.toMatchObject({ code: 'PRESCRIBER_NOT_LICENSED' });
   });
 
@@ -1333,7 +1400,11 @@ describe('la receta contra PostgreSQL', () => {
       );
 
       await expect(
-        service.issue(composed.prescription.id, requester),
+        service.issue(
+          composed.prescription.id,
+          await revisionNow(prisma, 'prescription', composed.prescription.id),
+          requester,
+        ),
       ).resolves.toMatchObject({ status: 'ACTIVE' });
     } finally {
       vi.useRealTimers();
@@ -1369,7 +1440,11 @@ describe('la receta contra PostgreSQL', () => {
     );
 
     await expect(
-      service.issue(composed.prescription.id, requester),
+      service.issue(
+        composed.prescription.id,
+        await revisionNow(prisma, 'prescription', composed.prescription.id),
+        requester,
+      ),
     ).rejects.toMatchObject({ code: 'PRESCRIPTION_ESTABLISHMENT_INCOMPLETE' });
   });
 
@@ -1439,10 +1514,14 @@ describe('la receta contra PostgreSQL', () => {
 
     // … y al emitir interrumpe.
     await expect(
-      service.issue(composed.prescription.id, {
-        userId: requester.userId,
-        sites: [...requester.sites],
-      }),
+      service.issue(
+        composed.prescription.id,
+        await revisionNow(prisma, 'prescription', composed.prescription.id),
+        {
+          userId: requester.userId,
+          sites: [...requester.sites],
+        },
+      ),
     ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
   });
 
@@ -1532,7 +1611,11 @@ describe('la receta contra PostgreSQL', () => {
       ).toEqual(['Amoxicilina']);
       // … y PR-060: al emitir interrumpe, y la receta sigue en borrador.
       await expect(
-        service.issue(composed.prescription.id, args),
+        service.issue(
+          composed.prescription.id,
+          await revisionNow(prisma, 'prescription', composed.prescription.id),
+          args,
+        ),
       ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
       const after = await prisma.prescription.findUniqueOrThrow({
         where: { id: composed.prescription.id },
@@ -1551,7 +1634,11 @@ describe('la receta contra PostgreSQL', () => {
         (await service.document(composed.prescription.id, args)).allergies,
       ).toEqual([]);
       await expect(
-        service.issue(composed.prescription.id, args),
+        service.issue(
+          composed.prescription.id,
+          composed.prescription.revision,
+          args,
+        ),
       ).resolves.toMatchObject({ status: 'ACTIVE' });
     });
 
@@ -1604,6 +1691,7 @@ describe('la receta contra PostgreSQL', () => {
       const rewritten = await service.rewrite(
         {
           prescriptionId: composed.prescription.id,
+          revision: composed.prescription.revision,
           ...INDICATIONS,
           items: [aLine(concept.id)],
         },
@@ -1614,7 +1702,11 @@ describe('la receta contra PostgreSQL', () => {
       ]);
       // … y PR-060: emitir se rechaza.
       await expect(
-        service.issue(composed.prescription.id, args),
+        service.issue(
+          composed.prescription.id,
+          await revisionNow(prisma, 'prescription', composed.prescription.id),
+          args,
+        ),
       ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
     });
 
@@ -1671,13 +1763,21 @@ describe('la receta contra PostgreSQL', () => {
         { line: 1, allergyId: expect.any(String), match: 'EXACT' },
       ]);
       await expect(
-        service.issue(composed.prescription.id, args),
+        service.issue(
+          composed.prescription.id,
+          await revisionNow(prisma, 'prescription', composed.prescription.id),
+          args,
+        ),
       ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
 
       // Deshecha la fusión de D, la hermana vuelve a ser otra persona.
       await merges.undo({ sourcePatientId: duplicate.id }, desk);
       await expect(
-        service.issue(composed.prescription.id, args),
+        service.issue(
+          composed.prescription.id,
+          await revisionNow(prisma, 'prescription', composed.prescription.id),
+          args,
+        ),
       ).resolves.toMatchObject({ status: 'ACTIVE' });
     });
   });
@@ -1711,10 +1811,14 @@ describe('la receta contra PostgreSQL', () => {
 
     expect(composed.allergyAlerts).toEqual([]);
     await expect(
-      service.issue(composed.prescription.id, {
-        userId: requester.userId,
-        sites: [...requester.sites],
-      }),
+      service.issue(
+        composed.prescription.id,
+        await revisionNow(prisma, 'prescription', composed.prescription.id),
+        {
+          userId: requester.userId,
+          sites: [...requester.sites],
+        },
+      ),
     ).resolves.toMatchObject({ status: 'ACTIVE' });
   });
 
@@ -1787,7 +1891,11 @@ describe('la receta contra PostgreSQL', () => {
       },
       requesterArgs,
     );
-    await service.issue(composed.prescription.id, requesterArgs);
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      requesterArgs,
+    );
 
     const document = await service.document(
       composed.prescription.id,
@@ -1842,7 +1950,11 @@ describe('la receta contra PostgreSQL', () => {
       },
       requesterArgs,
     );
-    await service.issue(composed.prescription.id, requesterArgs);
+    await service.issue(
+      composed.prescription.id,
+      await revisionNow(prisma, 'prescription', composed.prescription.id),
+      requesterArgs,
+    );
     const history = async () =>
       (await service.document(composed.prescription.id, requesterArgs))
         .allergyHistory;

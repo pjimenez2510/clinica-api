@@ -30,14 +30,15 @@ Este módulo **posee**:
 - la cadena de respaldo y la tabla de modelos por nivel (`model-routing.ts`);
 - la tabla de precios versionada (`llm-pricing.json`) y el techo de gasto;
 - las tablas `ai_run` (una fila por intento, sin texto) y `ai_exchange` (el
-  texto seudonimizado, sólo si se enciende), con la purga de la segunda.
+  texto seudonimizado, sólo si se enciende), con la purga de la segunda;
+- la tabla `ai_suggestion`: cada propuesta, de dónde sale y qué hizo con ella
+  quien decide, con el enlace a lo que se guardó (A1).
 
 **Fuera de alcance:**
 
 - **El seudonimizador**: es A5 (`clinica-ai`). Hasta que exista, ningún
   código de producción puede fabricar un `PseudonymizedText`, y por tanto
   ninguno llama a un proveedor (AS-001).
-- **`ai_suggestion`** y la procedencia de lo aceptado: es A1.
 - **El interruptor por sede y el permiso `assistant:use`**: es A3. Este módulo
   no expone ninguna ruta HTTP; quien la exponga declara su permiso (REQ-118).
 - La purga de transcripciones (E3) y cualquier pantalla.
@@ -47,26 +48,30 @@ depende de éste todavía.
 
 ## Por qué se guarda lo que se guarda (LOPDP)
 
-| Tabla         | Qué guarda                                                                                                       | Por qué                                                                                                                                     | Cuánto                                                                                |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `ai_run`      | proveedor, modelo, nivel, propósito, versión de prompt, resultado, tokens, costo, latencia, respaldo y su motivo | Contar el gasto (techo), medir proveedores (fase F) y responder qué proveedor recibió qué llamada. **Ningún texto**: ni prompt ni respuesta | Como la bitácora técnica; no identifica a nadie fuera de la atención que enlaza       |
-| `ai_exchange` | instrucciones, prompt **seudonimizado** y respuesta cruda de un intento                                          | Depurar y medir lo que el modelo hizo con lo que vio. Apagado de fábrica (`ASSISTANT_EXCHANGE_LOG`)                                         | **45 días tras firmar** la nota de su atención (D-239 §3); sin atención, ver D-241 §2 |
+| Tabla           | Qué guarda                                                                                                                                                                                 | Por qué                                                                                                                                     | Cuánto                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `ai_run`        | proveedor, modelo, nivel, propósito, versión de prompt, resultado, tokens, costo, latencia, respaldo y su motivo                                                                           | Contar el gasto (techo), medir proveedores (fase F) y responder qué proveedor recibió qué llamada. **Ningún texto**: ni prompt ni respuesta | Como la bitácora técnica; no identifica a nadie fuera de la atención que enlaza       |
+| `ai_suggestion` | lo propuesto, sus fuentes (minuto de la conversación o dato de la ficha), el intento que lo produjo, la decisión con quién y cuándo, la distancia a lo guardado y el enlace a ese registro | Que cada dato diga de dónde salió (P2) y que la decisión sea del médico (P1, LOPDP art. 20); medir cuánto se corrige                        | Sin purga mientras el autor no decida (D-243 §2)                                      |
+| `ai_exchange`   | instrucciones, prompt **seudonimizado** y respuesta cruda de un intento                                                                                                                    | Depurar y medir lo que el modelo hizo con lo que vio. Apagado de fábrica (`ASSISTANT_EXCHANGE_LOG`)                                         | **45 días tras firmar** la nota de su atención (D-239 §3); sin atención, ver D-241 §2 |
 
 Seudonimizar no es anonimizar (D-239 §1): por eso el texto sólo se guarda si
 alguien lo enciende, y caduca.
 
 ## Vocabulario
 
-| Término                     | Significado exacto en este módulo                                                                                                  |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **Petición**                | Lo que pide quien llama: nivel, propósito, versión de prompt, instrucciones, prompt seudonimizado y esquema de la respuesta        |
-| **Intento**                 | Una petición enviada a **un** proveedor. Una petición tiene uno o más intentos; cada uno es una fila de `ai_run`                   |
-| **Cadena**                  | El orden de proveedores de D-239 §5: Gemini, después Anthropic, después OpenAI, menos los que no están configurados                |
-| **Respaldo**                | Pasar la misma petición al siguiente proveedor de la cadena                                                                        |
-| **Resultado**               | Cómo terminó un intento: `ok`, `invalid-answer`, `cut-off`, `refused`, `timeout`, `rate-limited`, `provider-error`, `cancelled`    |
-| **Fallo de disponibilidad** | `timeout`, `rate-limited` o `provider-error`: el proveedor no pudo atender, no que la petición estuviera mal                       |
-| **Peor caso**               | Lo más que puede costar un intento antes de hacerlo: entrada contada a un token por cada dos caracteres y toda la salida permitida |
-| **Mes de gasto**            | El mes calendario en `America/Guayaquil` en que empezó el intento                                                                  |
+| Término                     | Significado exacto en este módulo                                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Petición**                | Lo que pide quien llama: nivel, propósito, versión de prompt, instrucciones, prompt seudonimizado y esquema de la respuesta                               |
+| **Intento**                 | Una petición enviada a **un** proveedor. Una petición tiene uno o más intentos; cada uno es una fila de `ai_run`                                          |
+| **Cadena**                  | El orden de proveedores de D-239 §5: Gemini, después Anthropic, después OpenAI, menos los que no están configurados                                       |
+| **Respaldo**                | Pasar la misma petición al siguiente proveedor de la cadena                                                                                               |
+| **Resultado**               | Cómo terminó un intento: `ok`, `invalid-answer`, `cut-off`, `refused`, `timeout`, `rate-limited`, `provider-error`, `cancelled`                           |
+| **Fallo de disponibilidad** | `timeout`, `rate-limited` o `provider-error`: el proveedor no pudo atender, no que la petición estuviera mal                                              |
+| **Peor caso**               | Lo más que puede costar un intento antes de hacerlo: entrada contada a un token por cada dos caracteres y toda la salida permitida                        |
+| **Propuesta**               | Lo que el asistente ofrece para un campo —una sección de la nota, un diagnóstico, una línea de receta u orden— con sus fuentes, antes de que nadie decida |
+| **Decisión**                | Lo que hace quien la recibe: aceptarla tal cual, aceptarla con cambios o descartarla. Una sola vez                                                        |
+| **Distancia**               | Cuánto cambió lo guardado respecto de lo propuesto: la distancia de edición entre los dos textos dividida por la longitud del más largo, de 0 a 1         |
+| **Mes de gasto**            | El mes calendario en `America/Guayaquil` en que empezó el intento                                                                                         |
 
 ---
 
@@ -86,6 +91,19 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
 503 y la del respaldo con su motivo— sin una palabra del prompt.
 **Cubre:** AS-001 a AS-019.
 **Solo servidor:** AS-001 a AS-019. Esta entrega no tiene pantalla.
+
+### E2 — La procedencia de cada propuesta _(A1, 11-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §4: hoy ninguna tabla clínica dice de dónde salió un
+dato. En vez de una columna en cada tabla, la propuesta guarda su estado y el
+id de lo que se guardó.
+**Prueba independiente:** contra PostgreSQL, proponer una sección de nota con
+su fuente; aceptarla con cambios enlaza a la nota de la misma atención con
+distancia mayor que cero y deja la propuesta original en `record_version`;
+decidir otra vez se rechaza.
+**Cubre:** AS-020 a AS-024.
+**Solo servidor:** AS-020 a AS-024. Sin pantalla ni ruta: el permiso
+`assistant:use` es de A3, y la pantalla de la fase B/C.
 
 ### E3 — CIE-10 propuesto por problema _(D1, 11-10-2026)_
 
@@ -616,6 +634,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-002 a AS-010                        | Unitario, con `fetch` y proveedores falsos                           |
 | AS-015 (al arrancar y cada día)        | Unitario del módulo con reloj falso                                  |
 | AS-011, AS-012, AS-014, AS-015, AS-017 | Integración contra PostgreSQL, con control positivo                  |
+| AS-020 a AS-024 (la base)              | Integración contra PostgreSQL, con control positivo                  |
+| AS-022 (el cálculo)                    | Unitario del dominio                                                 |
 | AS-013, AS-016, AS-018, AS-019         | Unitario (AS-018 sobre `pruneToAllowlist`)                           |
 | AS-025, AS-028, AS-035, AS-036, AS-039, AS-040, AS-041 | Unitario con seudonimizador y proveedor falsos |
 | AS-026, AS-027, AS-036, AS-037, AS-038 | Integración HTTP contra PostgreSQL, con control positivo |
@@ -629,3 +649,5 @@ Todas en **D-241**: el monto del techo, el plazo del texto sin atención, qué
 fallos activan el respaldo, los modelos de OpenAI, el tope para atenciones sin
 firma, cuánto se guarda `ai_run`, si los intentos rechazados cuentan en el
 techo, la reserva con varias instancias y la retención en cada proveedor.
+En **D-243**: si las propuestas salen en un derecho de acceso y cuánto se
+guarda la descartada.

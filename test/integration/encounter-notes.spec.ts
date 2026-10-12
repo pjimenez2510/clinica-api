@@ -13,6 +13,10 @@ import {
   NoteNotAmendableError,
 } from '../../src/modules/encounter/domain/encounter.errors';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import {
+  assertRevision,
+  RecordChangedError,
+} from '../../src/shared/domain/errors/record-changed.error';
 
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import '../../src/modules/encounter/infrastructure/encounter.constraints';
@@ -686,5 +690,141 @@ describe('la nota clínica firmada', () => {
     await reclassify('PRINCIPAL');
     const signed = await sign(prisma, ids, ids.encounter.id, ids.note.id);
     expect(signed.status).toBe('SIGNED');
+  });
+});
+
+describe('la nota que dos pestañas no pisan (EN-281, EN-282)', () => {
+  /**
+   * Runs `attempt` so that it READS the note, then waits on the attention's
+   * lock while ANOTHER transaction rewrites the draft and commits. The
+   * database says when `attempt` is waiting (`pg_stat_activity`); no sleep.
+   * Without the revision in the `UPDATE … WHERE`, `attempt` would match the
+   * row by `DRAFT` alone and overwrite what the other one wrote.
+   */
+  async function attemptWhileRewritten<T>(
+    prisma: PrismaClient,
+    ids: { encounterId: string; noteId: string },
+    attempt: () => Promise<T>,
+  ): Promise<PromiseSettledResult<T>> {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM encounter WHERE id = ${ids.encounterId}::uuid FOR UPDATE`;
+        await tx.$executeRaw`UPDATE clinical_note SET content = '{"motivoConsulta":"Lo de la otra pestaña"}' WHERE id = ${ids.noteId}::uuid`;
+        locked();
+        await gate;
+      },
+      { timeout: 30_000, maxWait: 30_000 },
+    );
+
+    await lockTaken;
+    const outcome = Promise.allSettled([attempt()]).then(([result]) => result);
+    for (let tries = 0; tries < 500; tries += 1) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting FROM pg_stat_activity
+         WHERE wait_event_type = 'Lock' AND datname = current_database()`;
+      if (Number(row!.waiting) > 0) break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    release();
+    await holder;
+    return outcome;
+  }
+
+  it('EN-281 la escritura que leyó la revisión 1 mientras otra pestaña guardaba no pisa lo de la otra', async () => {
+    const prisma = db();
+    const { site, encounter, note } = await aDraft(prisma);
+    expect(note.revision).toBe(1);
+    const query = {
+      encounterId: encounter.id,
+      noteId: note.id,
+      sites: [site.id],
+    };
+
+    const result = await attemptWhileRewritten(
+      prisma,
+      { encounterId: encounter.id, noteId: note.id },
+      () =>
+        notesOf(prisma).updateDraft(
+          query,
+          { motivoConsulta: 'Lo de esta pestaña' },
+          (current) => assertRevision(current.revision, 1),
+        ),
+    );
+
+    expect(result.status).toBe('rejected');
+    expect((result as PromiseRejectedResult).reason).toBeInstanceOf(
+      RecordChangedError,
+    );
+    const stored = await prisma.clinicalNote.findUniqueOrThrow({
+      where: { id: note.id },
+    });
+    expect(stored.content).toEqual({ motivoConsulta: 'Lo de la otra pestaña' });
+    expect(stored.revision).toBe(2);
+
+    // Control positivo: con la revisión que hay ahora, se guarda y sube.
+    const saved = await notesOf(prisma).updateDraft(
+      query,
+      { motivoConsulta: 'Lo de esta pestaña' },
+      (current) => assertRevision(current.revision, 2),
+    );
+    expect(saved).toMatchObject({
+      revision: 3,
+      content: { motivoConsulta: 'Lo de esta pestaña' },
+    });
+  });
+
+  it('EN-282 la firma que leyó la revisión 1 mientras otra pestaña guardaba no firma ni da el alta', async () => {
+    const prisma = db();
+    const { site, practitioner, encounter, note } = await aDraft(prisma);
+
+    const result = await attemptWhileRewritten(
+      prisma,
+      { encounterId: encounter.id, noteId: note.id },
+      () =>
+        notesOf(prisma).sign(
+          { encounterId: encounter.id, noteId: note.id, sites: [site.id] },
+          (current) => {
+            assertRevision(current.revision, 1);
+            return {
+              signedById: practitioner.id,
+              signedAt: SIGNED_AT,
+              content: current.content,
+              contentHash: contentHashOf({
+                content: current.content,
+                signedById: practitioner.id,
+                signedAt: SIGNED_AT,
+              }),
+              dischargesTheEncounter: true,
+              dischargeCondition: 'ALIVE',
+            };
+          },
+        ),
+    );
+
+    expect(result.status).toBe('rejected');
+    expect((result as PromiseRejectedResult).reason).toBeInstanceOf(
+      RecordChangedError,
+    );
+    const [stored, attention] = await Promise.all([
+      prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } }),
+      prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } }),
+    ]);
+    expect(stored.status).toBe('DRAFT');
+    expect(attention.status).toBe('OPEN');
+
+    // Control positivo: firmando sobre la revisión vigente, firma y da el alta.
+    await sign(prisma, { site, practitioner }, encounter.id, note.id);
+    expect(
+      (
+        await prisma.encounter.findUniqueOrThrow({
+          where: { id: encounter.id },
+        })
+      ).status,
+    ).toBe('DISCHARGED');
   });
 });

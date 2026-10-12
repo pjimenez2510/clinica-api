@@ -15,6 +15,7 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { withReadRevision } from './setup/read-revision';
 import {
   closeThroughCashier,
   createPatient,
@@ -272,11 +273,16 @@ describe('la receta por HTTP', () => {
     };
   }
 
+  // PR-121. A write on a draft carries the revision a screen just read.
   const post = (path: string, token: string, body?: object) =>
-    request(app.getHttpServer())
-      .post(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body ?? {});
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .post(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body ?? {}),
+    );
 
   const get = (path: string, token: string) =>
     request(app.getHttpServer())
@@ -1133,11 +1139,16 @@ describe('la receta por HTTP', () => {
     );
   });
 
+  // PR-121. A write on a draft carries the revision a screen just read.
   const put = (path: string, token: string, body: object) =>
-    request(app.getHttpServer())
-      .put(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body);
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .put(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    );
 
   it('PR-100 reescribe el borrador entero: conserva su id y sustituye sus líneas', async () => {
     const composed = await composeAsDoctor();
@@ -1170,6 +1181,59 @@ describe('la receta por HTTP', () => {
       ['Suspensión oral', '5 mililitros', 'después de cada comida'],
     ]);
     expect(stored[1]).toMatchObject({ dosageFormCode: 'ORAL_SUSPENSION', doseUnitCode: 'MILLILITRE', frequencyCode: null }); // prettier-ignore
+  });
+
+  it('PR-121 corregir en una pestaña y emitir desde la otra: 412 RECORD_CHANGED, sin número; con la revisión vigente, emite', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    const read = composed.prescription as PrescriptionBody & {
+      revision: number;
+    };
+    expect(read.revision).toBe(1);
+    const tab = (
+      method: 'put' | 'post',
+      path: string,
+      revision: string | null,
+      body: object,
+    ) => {
+      // prettier-ignore
+      const call = request(app.getHttpServer())
+        [method](`/api/v1${path}`)
+        .set('Authorization', `Bearer ${doctorToken}`);
+      if (revision !== null) call.set('If-Match', revision);
+      return call.send(body);
+    };
+
+    const corrected = await tab('put', `/prescriptions/${id}`, '"1"', {
+      warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+      nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
+      items: [aLine({ concentration: '250 mg' })],
+    }).expect(200);
+    expect((corrected.body as ComposedBody).prescription).toMatchObject({ revision: 2 }); // prettier-ignore
+
+    // The other tab still holds revision 1: neither correcting nor issuing.
+    const rewriteRefused = await tab('put', `/prescriptions/${id}`, '"1"', {
+      warningSigns: 'Otra',
+      items: [aLine({ concentration: '500 mg' })],
+    }).expect(412);
+    expect(rewriteRefused.body).toMatchObject({
+      code: 'RECORD_CHANGED',
+      title:
+        'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado',
+    });
+    const issueRefused = await tab('post', `/prescriptions/${id}/issue`, '"1"', {}).expect(412); // prettier-ignore
+    expect(issueRefused.body).toMatchObject({ code: 'RECORD_CHANGED' });
+    await tab('post', `/prescriptions/${id}/issue`, null, {}).expect(428);
+
+    const untouched = await prisma.prescription.findUniqueOrThrow({
+      where: { id },
+      include: { items: true },
+    });
+    expect(untouched).toMatchObject({ status: 'DRAFT', sequenceNumber: null, revision: 2 }); // prettier-ignore
+    expect(untouched.items.map((item) => item.concentration)).toEqual(['250 mg']); // prettier-ignore
+
+    // Control positivo.
+    await tab('post', `/prescriptions/${id}/issue`, '"2"', {}).expect(200);
   });
 
   it('PR-100 una receta emitida no se reescribe, y sus líneas siguen como estaban', async () => {
