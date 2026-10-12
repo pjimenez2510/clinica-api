@@ -124,15 +124,23 @@ const CONNECTORS = new Set([
 ]); // prettier-ignore
 /**
  * The date shift writes month names that were not in the note: a patient
- * called Julio would otherwise have every shifted date refused (second review).
+ * called Julio would otherwise have every shifted date refused (second
+ * review). Forgiven only inside a date: a «Julio» standing alone is the
+ * patient (third review).
  */
-const MONTHS = new Set([
-  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
-  'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
-]); // prettier-ignore
+const MONTH = String.raw`(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)`;
+const DATE_IN_WORDS = new RegExp(
+  String.raw`\b(?:\d{1,2}\s+de\s+${MONTH}(?:\s+del?\s+\d{4})?|${MONTH}\s+del?\s+\d{4})\b`,
+  'gu',
+);
 
+/**
+ * Format characters and marks out first, as clinica-ai does: a word split by
+ * one of them is still the word (third review).
+ */
 function fold(value: string): string {
   return value
+    .replace(/[\p{Cf}\u180E]|\u034F|[\uFE00-\uFE0F]/gu, '')
     .normalize('NFD')
     .replace(/\p{Mn}/gu, '')
     .toLowerCase();
@@ -141,15 +149,14 @@ function fold(value: string): string {
 /**
  * AS-030. Every word of three letters or more of the names in the request,
  * the same words `clinica-ai` takes out, looked up as whole words in the
- * answer, without case or accents.
+ * answer, without case or accents, once the dates are set aside.
  */
 function carriesAName(cleared: string, input: PseudonymizeInput): boolean {
-  const answer = ` ${fold(cleared).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+  const withoutDates = fold(cleared).replace(DATE_IN_WORDS, ' ');
+  const answer = ` ${withoutDates.replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
   return (input.names ?? [])
     .flatMap((name) => fold(name).split(/[^\p{L}\p{N}]+/u))
-    .filter(
-      (word) => word.length >= 3 && !CONNECTORS.has(word) && !MONTHS.has(word),
-    )
+    .filter((word) => word.length >= 3 && !CONNECTORS.has(word))
     .some((word) => answer.includes(` ${word} `));
 }
 

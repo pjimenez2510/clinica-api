@@ -270,7 +270,7 @@ describe('ClinicaAiPseudonymizer, second review', () => {
         '[NOMBRE_1] [NOMBRE_2] control el 17 de julio de 2025',
       ],
       [['Ana dos Santos'], '[NOMBRE_1] dos [NOMBRE_2] toma dos tabletas'],
-      [['Mayo Van Berg'], '[NOMBRE_1] van [NOMBRE_2] desde mayo'],
+      [['Mayo Van Berg'], '[NOMBRE_1] van [NOMBRE_2] desde mayo de 2026'],
     ];
 
     for (const [names, text] of cases) {
@@ -293,6 +293,37 @@ describe('ClinicaAiPseudonymizer, second review', () => {
     );
 
     expect((error as PseudonymizerFailedError).outcome).toBe('invalid-answer');
+  });
+});
+
+describe('ClinicaAiPseudonymizer, third review', () => {
+  it('AS-030 refuses a patient called Julio left as a person, and forgives only the month of a date', async () => {
+    for (const text of [
+      'Paciente Julio [NOMBRE_1] acude',
+      'Paciente Ju\u034Flio [NOMBRE_1] acude',
+      'Paciente Ju\u200Blio [NOMBRE_1] acude',
+    ]) {
+      const error = await failure(
+        adapter(answering(200, { ...ANSWER, text })).pseudonymize({
+          ...INPUT,
+          names: ['Julio Quishpe'],
+        }),
+      );
+
+      expect((error as PseudonymizerFailedError).outcome).toBe(
+        'invalid-answer',
+      );
+    }
+
+    const dated =
+      '[NOMBRE_1] [NOMBRE_2] control el 17 de julio de 2025 y en julio de 2026';
+    const result = await adapter(
+      answering(200, { ...ANSWER, text: dated }),
+    ).pseudonymize({
+      ...INPUT,
+      names: ['Julio Quishpe'],
+    });
+    expect(result.cleared).toBe(dated);
   });
 });
 
