@@ -210,6 +210,58 @@ describe('ClinicaAiPseudonymizer', () => {
   });
 });
 
+describe('ClinicaAiPseudonymizer, after the review', () => {
+  it('AS-033 never follows a redirect: the note would go on to wherever it points', async () => {
+    const fetcher = vi.fn<typeof fetch>((_url, init) => {
+      expect(init?.redirect).toBe('manual');
+      return Promise.resolve(
+        new Response(null, {
+          status: 307,
+          headers: {
+            location: 'http://elsewhere.example/v1/privacy/pseudonymize',
+          },
+        }),
+      );
+    });
+
+    const error = await failure(adapter(fetcher).pseudonymize(INPUT));
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((error as PseudonymizerFailedError).outcome).toBe('refused');
+  });
+
+  it('AS-030 refuses an answer that still carries a name the request asked to take out', async () => {
+    for (const text of [
+      'Mariela [NOMBRE_2], cédula [ID_1]',
+      '[NOMBRE_1] GUANOLUISA, cédula [ID_1]',
+      '[NOMBRE_1] Guanoluisá refiere',
+    ]) {
+      const error = await failure(
+        adapter(answering(200, { ...ANSWER, text })).pseudonymize(INPUT),
+      );
+
+      expect((error as PseudonymizerFailedError).outcome).toBe(
+        'invalid-answer',
+      );
+    }
+  });
+
+  it('AS-030 keeps the path of a service published under one', async () => {
+    const fetcher = answering(200, ANSWER);
+
+    await new ClinicaAiPseudonymizer(
+      'https://127.0.0.1:8443/ia/',
+      SECRET,
+      1000,
+      fetcher,
+    ).pseudonymize(INPUT);
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://127.0.0.1:8443/ia/v1/privacy/pseudonymize',
+    );
+  });
+});
+
 describe('pseudonymizerFor', () => {
   it('AS-031 without a secret it is the missing one, which refuses before any request', async () => {
     const fetcher = vi.fn();

@@ -301,10 +301,14 @@ export const envSchema = z.object({
     .transform((value) => value === 'true'),
   /**
    * AS-032. Where the local pseudonymizer, `clinica-ai`, answers. It receives
-   * clinical text before it is cleared, so in clear (`http`) only to this
-   * machine; anywhere else, only over TLS.
+   * clinical text before it is cleared: this machine only, unless
+   * `ASSISTANT_AI_SERVICE_ALLOW_REMOTE` says otherwise, and then over TLS.
    */
   ASSISTANT_AI_SERVICE_URL: z.url().default('http://127.0.0.1:8100'),
+  ASSISTANT_AI_SERVICE_ALLOW_REMOTE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   /**
    * AS-031. The secret `clinica-ai` holds as `CLINICA_AI_SHARED_SECRET`.
    * Without it there is no pseudonymizer and the assistant fails closed.
@@ -445,18 +449,20 @@ export function validateEnv(raw: Record<string, unknown>): Env {
           });
         }
       }
-      // AS-032. Clinical text not yet pseudonymized travels to clinica-ai: in
-      // clear only to this machine.
+      // AS-032. Clinical text not yet pseudonymized travels to clinica-ai: to
+      // this machine; to another only when declared, and only over TLS.
       const service = new URL(env.ASSISTANT_AI_SERVICE_URL);
+      const local = isLoopbackUrl(service);
       if (
         !['http:', 'https:'].includes(service.protocol) ||
-        (service.protocol === 'http:' && !isLoopbackUrl(service))
+        (!local && !env.ASSISTANT_AI_SERVICE_ALLOW_REMOTE) ||
+        (!local && service.protocol !== 'https:')
       ) {
         ctx.addIssue({
           code: 'custom',
           path: ['ASSISTANT_AI_SERVICE_URL'],
           message:
-            'el seudonimizador recibe la nota sin seudonimizar: por http sólo en esta máquina (localhost, 127.0.0.1, ::1); en otra, por https',
+            'el seudonimizador recibe la nota sin seudonimizar: sólo en esta máquina (localhost, 127.0.0.1, ::1); en otra, sólo con ASSISTANT_AI_SERVICE_ALLOW_REMOTE=true y por https',
         });
       }
       // IL-008. No process reaches a remote identity provider by accident,

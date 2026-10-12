@@ -54,9 +54,14 @@ export class ClinicaAiPseudonymizer implements Pseudonymizer {
     let body: string;
     try {
       response = await this.fetcher(
-        new URL('/v1/privacy/pseudonymize', this.baseUrl).toString(),
+        new URL(
+          'v1/privacy/pseudonymize',
+          withTrailingSlash(this.baseUrl),
+        ).toString(),
         {
           method: 'POST',
+          // A redirect would send the note on to wherever it points; a 3xx is a refusal.
+          redirect: 'manual',
           headers: {
             authorization: `Bearer ${this.#secret}`,
             'content-type': 'application/json',
@@ -91,12 +96,45 @@ export class ClinicaAiPseudonymizer implements Pseudonymizer {
       throw new PseudonymizerFailedError('invalid-answer', response.status);
     }
 
+    // Defence in depth: whatever answers on the port, a name the caller asked
+    // to take out must not be in what comes back.
+    if (carriesAName(answer.data.text, input)) {
+      throw new PseudonymizerFailedError('invalid-answer', response.status);
+    }
+
     return {
       cleared: answer.data.text as PseudonymizedText,
       replacements: answer.data.replacements,
       dateShiftDays: answer.data.date_shift_days,
     };
   }
+}
+
+function withTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+/** Words that join a name and name nobody: «María de los Ángeles». */
+const CONNECTORS = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e']);
+
+function fold(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Mn}/gu, '')
+    .toLowerCase();
+}
+
+/**
+ * AS-030. Every word of three letters or more of the names in the request,
+ * the same words `clinica-ai` takes out, looked up as whole words in the
+ * answer, without case or accents.
+ */
+function carriesAName(cleared: string, input: PseudonymizeInput): boolean {
+  const answer = ` ${fold(cleared).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+  return (input.names ?? [])
+    .flatMap((name) => fold(name).split(/\s+/))
+    .filter((word) => word.length >= 3 && !CONNECTORS.has(word))
+    .some((word) => answer.includes(` ${word} `));
 }
 
 function parseJson(body: string): unknown {
