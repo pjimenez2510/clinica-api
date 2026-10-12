@@ -166,10 +166,12 @@ function carriesAName(cleared: string, input: PseudonymizeInput): boolean {
 /**
  * AS-030. What no cleared text may still hold, whatever answered on the port:
  * an email, a cédula or a mobile (ten digits), a RUC (thirteen). The numbers of
- * a consultation are shorter.
+ * a consultation are shorter. The email is anchored at its start, or a long run
+ * of letters was tried from every position: twenty seconds of the event loop
+ * for 200 000 characters (fifth review).
  */
 const IDENTIFIER =
-  /[\w.+-]+@[\w-]+(?:\.[\w-]+)+|(?<!\d)(?:\d{13}|\d{10})(?!\d)/u;
+  /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+|(?<!\d)(?:\d{13}|\d{10})(?!\d)/u;
 
 function carriesAnIdentifier(cleared: string): boolean {
   return IDENTIFIER.test(cleared);

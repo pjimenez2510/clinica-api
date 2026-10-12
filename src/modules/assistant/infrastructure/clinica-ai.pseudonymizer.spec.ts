@@ -357,6 +357,20 @@ describe('ClinicaAiPseudonymizer, fourth review', () => {
   });
 });
 
+describe('ClinicaAiPseudonymizer, fifth review', () => {
+  it('AS-030 checks a long answer in linear time', async () => {
+    const text = 'a'.repeat(200_000);
+    const started = performance.now();
+
+    const result = await adapter(
+      answering(200, { ...ANSWER, text }),
+    ).pseudonymize(INPUT);
+
+    expect(result.cleared).toBe(text);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
 describe('pseudonymizerFor', () => {
   it('AS-031 without a secret it is the missing one, which refuses before any request', async () => {
     const fetcher = vi.fn();
