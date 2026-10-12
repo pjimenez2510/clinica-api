@@ -65,9 +65,14 @@ describe('draft task (AS-098)', () => {
       judge,
     );
 
+    // nota-01: 11 facts, one of them a diagnosis the draft never writes (D-249 §2).
+    expect(item.facts.filter((f) => f.section === 'diagnostico')).toHaveLength(
+      1,
+    );
     expect(scores).toEqual({
       invented: 1,
-      facts: (item.facts.length - 1) / item.facts.length,
+      facts: 9 / 10,
+      factsWithDiagnosis: 10 / 11,
       unsaid: 1 / 3,
       judged: 1,
     });
@@ -77,7 +82,8 @@ describe('draft task (AS-098)', () => {
       phrases: 3,
       unsaid: 1,
       corrected: 0,
-      facts: { present: item.facts.length - 1, expected: item.facts.length },
+      facts: { present: 9, expected: 10 },
+      diagnosis: { present: 1, expected: 1 },
     });
   });
 
@@ -119,6 +125,7 @@ describe('draft task (AS-098)', () => {
       invented: 0,
       unsaid: 0,
       facts: null,
+      factsWithDiagnosis: null,
       judged: 0,
     });
   });

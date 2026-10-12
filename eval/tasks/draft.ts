@@ -32,6 +32,13 @@ export const DRAFT_PROMPT_VERSIONS = { D: DRAFT_PROMPT_VERSION } as const;
  */
 const LINE_MS = 5_000;
 
+/**
+ * SC-091, D-249 §2. The sections of the expected facts that the draft never
+ * writes: the diagnosis goes to Diagnósticos and the physician decides it.
+ * Their facts are counted apart, so the share says what the draft can keep.
+ */
+const NOT_DRAFTED = new Set(['diagnostico']);
+
 /** The template the product drafts in when the clinic published none (EN-200). */
 export const DRAFT_TEMPLATE = FORM_002_BUILT_IN_SECTIONS.map(({ key, title, help }) => ({ key, title, help })); // prettier-ignore
 
@@ -68,8 +75,10 @@ export interface DraftReview {
  * - **invented**: the draft has a section none of whose phrases anybody said
  *   (SC-091: 0 of 10). A section outside the template cannot happen: the
  *   schema refuses the whole answer.
- * - **facts**: the share of the expected facts the judge finds (SC-091:
- *   ≥ 95 % of the 105). The judge is the one of the note task, unvalidated.
+ * - **facts**: the share of the expected facts the judge finds among those
+ *   of the sections the draft writes (SC-091: ≥ 95 %); the diagnoses, which
+ *   it never writes (D-249 §2), go in **factsWithDiagnosis**. The judge is
+ *   the one of the note task, unvalidated.
  * - the p90 of the latency is the runner's (SC-092: ≤ 15 s).
  */
 export function draftTask(
@@ -102,9 +111,14 @@ export function draftTask(
       },
       {
         key: 'facts',
-        label: 'Hechos esperados presentes (juez sin validar)',
+        label: 'Hechos esperados presentes, sin los diagnósticos que el borrador no escribe (D-249 §2; juez sin validar)', // prettier-ignore
         kind: 'mean',
         primary: true,
+      },
+      {
+        key: 'factsWithDiagnosis',
+        label: 'Hechos esperados presentes, con los diagnósticos (juez sin validar)', // prettier-ignore
+        kind: 'mean',
       },
       {
         key: 'unsaid',
@@ -128,7 +142,7 @@ export function draftTask(
       });
       const phrases = sections.flatMap((section) => section.phrases);
       const invented = sections.filter(inventedSection).length;
-      let present: number | null = null;
+      let judgedFacts: boolean[] | null = null;
       if (judge !== null) {
         const note = {
           sections: sections.map((section) => ({
@@ -141,7 +155,10 @@ export function draftTask(
           verdicts === null
             ? null
             : readVerdicts(verdicts, item.facts.length, phrases.length);
-        present = verdict === null ? null : item.facts.length - verdict.omitted;
+        judgedFacts =
+          verdict === null
+            ? null
+            : item.facts.map((_, i) => verdicts?.facts.find((v) => v.n === i + 1)?.present ?? false); // prettier-ignore
         options.review?.({
           caseId: item.id,
           phrases: sections.flatMap((section) =>
@@ -154,10 +171,24 @@ export function draftTask(
           ),
           facts: item.facts.map((fact, i) => ({
             ...fact,
-            present: verdict === null ? null : (verdicts?.facts.find((v) => v.n === i + 1)?.present ?? null), // prettier-ignore
+            present: judgedFacts?.[i] ?? null,
           })),
         });
       }
+      const count = (drafted: boolean) => {
+        const indexes = item.facts
+          .map((fact, i) => ({ fact, i }))
+          .filter(({ fact }) => NOT_DRAFTED.has(fact.section) !== drafted)
+          .map(({ i }) => i);
+        return {
+          present: judgedFacts === null ? null : indexes.filter((i) => judgedFacts[i]).length, // prettier-ignore
+          expected: indexes.length,
+        };
+      };
+      const facts = count(true);
+      const diagnosis = count(false);
+      const share = (present: number | null, expected: number) =>
+        present === null || expected === 0 ? null : present / expected;
       return {
         // Counts only: what the result keeps is never the case's text (EV-7).
         shown: {
@@ -166,17 +197,24 @@ export function draftTask(
           phrases: phrases.length,
           unsaid: phrases.filter((phrase) => phrase.unsaid).length,
           corrected,
-          facts: { present, expected: item.facts.length },
+          facts,
+          diagnosis,
         },
         scores: {
           invented: invented > 0 ? 1 : 0,
-          facts: present === null ? null : present / item.facts.length,
+          facts: share(facts.present, facts.expected),
+          factsWithDiagnosis: share(
+            facts.present === null
+              ? null
+              : facts.present + (diagnosis.present ?? 0),
+            item.facts.length,
+          ),
           unsaid:
             phrases.length === 0
               ? null
               : phrases.filter((phrase) => phrase.unsaid).length /
                 phrases.length,
-          judged: present === null ? 0 : 1,
+          judged: judgedFacts === null ? 0 : 1,
         },
       };
     },

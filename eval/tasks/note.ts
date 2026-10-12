@@ -6,7 +6,7 @@ import type { NoteCase } from '../cases.ts';
 import type { Ask, EvalTask } from '../task.ts';
 
 export const NOTE_PROMPT_VERSIONS = { D: 'nota-v1' } as const;
-export const JUDGE_PROMPT_VERSION = 'juez-nota-v1';
+export const JUDGE_PROMPT_VERSION = 'juez-nota-v2';
 
 /** The sections of the invented cases; a section outside them is invented. */
 export const NOTE_SECTIONS = [
@@ -45,10 +45,14 @@ const SYSTEM = instruction`Eres un médico que redacta la nota de una consulta e
  * It is NOT validated: until a physician reviews a subsample and its κ is
  * measured (PLAN-ASISTENTE-IA §5), its figures are printed as «juez sin
  * validar» and do not decide anything on their own.
+ *
+ * v2 (SC-091 manual review, 12-10-2026): v1 counted 9 of 11 diagnoses as
+ * present in drafts that never name one (D-249 §2), inferring them from the
+ * symptoms and the treatment.
  */
 export const JUDGE_SYSTEM = instruction`Eres un médico que revisa la nota de una consulta contra la conversación de la que salió. Recibes la conversación numerada por líneas, una lista numerada de hechos que la conversación contiene, y la nota en frases numeradas.
 
-Para cada hecho decide present: true si la nota lo recoge, aunque sea con otras palabras o abreviado; false si la nota lo omite o lo contradice.
+Para cada hecho decide present: true si la nota lo recoge, aunque sea con otras palabras o abreviado; false si la nota lo omite o lo contradice. Cuenta solo lo que la nota escribe: no lo deduzcas de los síntomas, del examen ni del tratamiento (un diagnóstico que la nota no nombra está ausente, aunque el tratamiento lo sugiera). Un hecho con varias partes está presente solo si la nota recoge todas.
 
 Para cada frase de la nota decide supported: true si lo que dice está en la conversación (paráfrasis y terminología clínica cuentan); false si añade algo que nadie dijo, cambia una cifra, una dosis o un lado, o contradice la conversación.
 

@@ -60,7 +60,7 @@ describe('a run of the harness', () => {
         { name: 'anthropic', model: 'fake-anthropic' },
         { name: 'openai', model: 'fake-openai' },
       ],
-      judge: { name: 'fake', promptVersion: 'juez-nota-v1' },
+      judge: { name: 'fake', promptVersion: 'juez-nota-v2' },
       tasks: [
         { name: 'cie10', promptVersions: { A: 'cie10-a-v1', D: 'cie10-d-v1' } },
         {
@@ -341,7 +341,7 @@ describe('the runner', () => {
       judge: {
         name: 'anthropic',
         model: 'fake-quality',
-        promptVersion: 'juez-nota-v1',
+        promptVersion: 'juez-nota-v2',
       },
       tasks: [],
       catalogues: [],
