@@ -3664,8 +3664,10 @@ model ClinicalNote {
   /// EN-283, PR-122, ORD-182. Raised by `draft_revision_counts_writes` on every
   /// UPDATE of a draft, whatever the writer sends; frozen afterwards. The
   /// writer's `If-Match` is compared with it (EN-281, PR-121, ORD-181).
-  revision      Int            @default(1)
-  aiSuggestions AiSuggestion[]
+  revision            Int                  @default(1)
+  aiSuggestions       AiSuggestion[]
+  /// AS-144. The sections of a draft reviewed against this signed note.
+  aiSuggestionReviews AiSuggestionReview[]
 
   @@index([encounterId, formCode])
   @@index([chainId, version])
@@ -6289,9 +6291,32 @@ model AiSuggestion {
   decider    User?     @relation("AiSuggestionDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
   decidedAt  DateTime? @map("decided_at") @db.Timestamptz(6)
 
+  /// AS-144. The review of a section at the signature, once.
+  review AiSuggestionReview?
+
   @@index([encounterId])
   @@index([aiRunId])
   @@map("ai_suggestion")
+}
+
+/// E1 (AS-144, AS-145). A section of the draft the physician had in front of
+/// them, reviewed when the note was signed: against which signed note, what
+/// had been done with it, and how far the signed section is from what was
+/// proposed. Written once; no text (AS-146).
+model AiSuggestionReview {
+  suggestionId    String       @id @map("suggestion_id") @db.Uuid
+  suggestion      AiSuggestion @relation(fields: [suggestionId], references: [id], onDelete: Restrict)
+  clinicalNoteId  String       @map("clinical_note_id") @db.Uuid
+  clinicalNote    ClinicalNote @relation(fields: [clinicalNoteId], references: [id], onDelete: Restrict)
+  /// The proposal's `status` when the note was signed.
+  statusAtSigning String       @map("status_at_signing") @db.VarChar(24)
+  /// AS-022's distance between the proposed text and the signed section.
+  distance        Decimal      @db.Decimal(5, 4)
+  /// The application's clock, never `now()`.
+  reviewedAt      DateTime     @map("reviewed_at") @db.Timestamptz(6)
+
+  @@index([clinicalNoteId])
+  @@map("ai_suggestion_review")
 }
 
 /// C1. The listening of a consultation: its clock and state, one per
