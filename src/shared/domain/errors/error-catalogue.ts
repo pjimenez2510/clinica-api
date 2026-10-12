@@ -94,6 +94,12 @@ export const DOMAIN_ERROR_CODES = [
   // AS-058: una orden de la escucha falló por algo que no es del médico (la
   // base, un fallo): 503, reintentable.
   'ASSISTANT_LISTENING_FAILED',
+  // AS-086, AS-093 (C2): sin transcripción de la que redactar (422), sin la
+  // nota abierta en borrador (409), y el borrador interrumpido por un
+  // reinicio (503, reintentable).
+  'ASSISTANT_TRANSCRIPT_EMPTY',
+  'ASSISTANT_NOTE_NOT_OPEN',
+  'ASSISTANT_DRAFT_INTERRUPTED',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los

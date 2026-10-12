@@ -336,3 +336,38 @@ export class ListeningFailedError extends ExternalServiceError {
     super('A listening command failed');
   }
 }
+
+/** AS-086. Nothing was transcribed yet: there is nothing to draft from. */
+export class AssistantTranscriptEmptyError extends ValidationError {
+  readonly code = 'ASSISTANT_TRANSCRIPT_EMPTY';
+  override readonly userTitle =
+    'Todavía no hay nada transcrito. Use «Escuchar» y pida el borrador después';
+
+  constructor() {
+    super('The attention has no transcript to draft from');
+  }
+}
+
+/** AS-086, AS-094. The draft is written into the note, which is not open. */
+export class AssistantNoteNotOpenError extends ConflictError {
+  readonly code = 'ASSISTANT_NOTE_NOT_OPEN';
+  override readonly userTitle =
+    'La nota no está abierta en borrador. Use «Abrir nota clínica» y vuelva a pedirlo';
+
+  constructor() {
+    super('The attention has no consultation note in draft');
+  }
+}
+
+/** AS-093. The API restarted while the draft was being written. */
+export class AssistantDraftInterruptedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_DRAFT_INTERRUPTED';
+  readonly service = 'assistant-draft';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'El borrador se interrumpió al reiniciarse el sistema. Vuelva a pedirlo';
+
+  constructor() {
+    super('The draft was interrupted by a restart');
+  }
+}

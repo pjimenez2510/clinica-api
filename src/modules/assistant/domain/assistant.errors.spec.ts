@@ -26,6 +26,9 @@ import {
   ListeningFailedError,
   ListeningNotOpenError,
   ListeningUnavailableError,
+  AssistantTranscriptEmptyError,
+  AssistantNoteNotOpenError,
+  AssistantDraftInterruptedError,
 } from './assistant.errors';
 
 /**
@@ -179,6 +182,27 @@ describe('assistant errors', () => {
       'ASSISTANT_LISTENING_NOT_OPEN',
       ConflictError,
       /Escuchar/,
+    ],
+    [
+      'AS-086',
+      () => new AssistantTranscriptEmptyError(),
+      'ASSISTANT_TRANSCRIPT_EMPTY',
+      ValidationError,
+      /Escuchar/,
+    ],
+    [
+      'AS-086',
+      () => new AssistantNoteNotOpenError(),
+      'ASSISTANT_NOTE_NOT_OPEN',
+      ConflictError,
+      /Abrir nota clínica/,
+    ],
+    [
+      'AS-093',
+      () => new AssistantDraftInterruptedError(),
+      'ASSISTANT_DRAFT_INTERRUPTED',
+      ExternalServiceError,
+      /Vuelva a pedir/,
     ],
     [
       'AS-040',
