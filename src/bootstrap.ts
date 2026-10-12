@@ -71,6 +71,10 @@ export function configureApp(app: NestExpressApplication): void {
       // EN-281, PR-121, ORD-181: the revision a draft was read at. Without it
       // here the browser's preflight refuses every save of a note.
       'If-Match',
+      // AU-057: the live-events channel reconnects with the id of the last
+      // message it heard (Nest numbers them all). Without it here the
+      // preflight refused every reconnection and the channel never came back.
+      'Last-Event-ID',
       'Accept-Language',
       'traceparent',
       'X-Request-Id',
