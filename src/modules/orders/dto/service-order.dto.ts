@@ -255,6 +255,8 @@ export type PendingOrderListResponse = z.infer<typeof pendingOrderListSchema>;
 /** ORD-115. A draft its signer left behind in an attention no longer open. */
 export const staleDraftSchema = z.object({
   orderId: z.uuid(),
+  /** ORD-181. What `If-Match` carries when it is issued from this list. */
+  revision: z.number().int().positive(),
   encounterId: z.uuid(),
   encounterStatus: z.enum(['OPEN', 'ON_HOLD', 'DISCHARGED', 'COMPLETED', 'DISCONTINUED', 'ENTERED_IN_ERROR']), // prettier-ignore
   encounterStartedAt: z.iso.datetime(),

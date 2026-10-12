@@ -343,6 +343,8 @@ export interface ServiceOrderRepository {
 /** ORD-115. A draft nobody issued, as the practitioner's list shows it. */
 export interface StaleDraftEntry {
   orderId: string;
+  /** ORD-181. Issuing it from the list sends the revision listed. */
+  revision: number;
   encounterId: string;
   encounterStatus: EncounterStatus;
   /** When the attention started; the screen prints its date in Ecuador. */

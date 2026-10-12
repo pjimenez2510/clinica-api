@@ -619,6 +619,7 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       take: STALE_DRAFTS_LIMIT,
       select: {
         id: true,
+        revision: true,
         encounterId: true,
         category: true,
         updatedAt: true,
@@ -658,6 +659,7 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         order.encounter.patient.mergedInto ?? order.encounter.patient;
       return {
         orderId: order.id,
+        revision: order.revision,
         encounterId: order.encounterId,
         encounterStatus: order.encounter.status,
         encounterStartedAt: order.encounter.startedAt,

@@ -424,6 +424,8 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     const [entry] = await stale();
     expect(entry).toMatchObject({
       orderId: draft.id,
+      // ORD-181. Issued from this list, it carries the revision listed.
+      revision: await revisionNow(prisma, 'service_order', draft.id),
       encounterId: scene.encounter.id,
       encounterStatus: 'DISCHARGED',
       canIssue: true,
