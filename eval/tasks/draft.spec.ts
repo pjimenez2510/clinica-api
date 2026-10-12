@@ -1,0 +1,95 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  DRAFT_INSTRUCTIONS,
+  DRAFT_PURPOSE,
+} from '../../src/modules/assistant/application/note-draft.prompts.ts';
+import { loadInventedCases } from '../cases.ts';
+import { loadCatalogues } from '../catalogue.ts';
+import type { Ask } from '../task.ts';
+
+import { draftTask, heardCase } from './draft.ts';
+
+const item = loadInventedCases().note.cases[0]!;
+const task = draftTask(loadCatalogues());
+
+const verdicts = (present: boolean[], phrases: number) => ({
+  facts: present.map((p, i) => ({ n: i + 1, present: p })),
+  segments: Array.from({ length: phrases }, (_, i) => ({ n: i + 1, supported: true })), // prettier-ignore
+});
+
+describe('draft task (AS-098)', () => {
+  it('hands the case over as the listening would: no speaker, a clock per line', () => {
+    const lines = heardCase(item);
+
+    expect(lines[0]).toEqual({ startMs: 0, endMs: 5_000, text: item.lines[0]!.replace(/^Médico: /, '') }); // prettier-ignore
+    expect(lines.every((line) => !/^(Médico|Paciente):/.test(line.text))).toBe(
+      true,
+    );
+  });
+
+  it('asks with the product’s own request: its purpose, its instructions, the template after the conversation', () => {
+    const request = task.request(item, 'D');
+
+    expect(request.purpose).toBe(DRAFT_PURPOSE);
+    expect(request.system).toBe(DRAFT_INSTRUCTIONS);
+    expect(request.prompt).toMatch(/^<conversacion>\n\[L1\] /);
+    expect(request.prompt).toContain('- planTratamiento · Plan de tratamiento');
+    expect(task.latencyBudgetMs).toBe(15_000);
+  });
+
+  it('SC-091 counts a case with a section nobody said, the unsaid phrases, and the facts the judge finds', async () => {
+    const judge = vi.fn(() =>
+      Promise.resolve(
+        verdicts(
+          item.facts.map((_, i) => i !== 0),
+          3,
+        ),
+      ),
+    ) as unknown as Ask;
+
+    const { shown, scores } = await task.evaluate(
+      item,
+      'D',
+      {
+        sections: [
+          { section: 'motivoConsulta', segments: [{ text: 'Dolor de garganta', source: 'L2' }] }, // prettier-ignore
+          { section: 'enfermedadActual', segments: [{ text: 'Fiebre nocturna', source: 'L2' }] }, // prettier-ignore
+          { section: 'revisionOrganosSistemas', segments: [{ text: 'Sin disnea', source: null }] }, // prettier-ignore
+        ],
+      },
+      judge,
+    );
+
+    expect(scores).toEqual({
+      invented: 1,
+      facts: (item.facts.length - 1) / item.facts.length,
+      unsaid: 1 / 3,
+      judged: 1,
+    });
+    expect(shown).toEqual({
+      sections: 3,
+      invented: 1,
+      phrases: 3,
+      unsaid: 1,
+      corrected: 0,
+      facts: { present: item.facts.length - 1, expected: item.facts.length },
+    });
+  });
+
+  it('SC-091 a draft every section of which somebody said has no invented one', async () => {
+    const { scores } = await task.evaluate(
+      item,
+      'D',
+      { sections: [{ section: 'motivoConsulta', segments: [{ text: 'Dolor de garganta', source: 'L2' }] }] }, // prettier-ignore
+      null,
+    );
+
+    expect(scores).toMatchObject({
+      invented: 0,
+      unsaid: 0,
+      facts: null,
+      judged: 0,
+    });
+  });
+});

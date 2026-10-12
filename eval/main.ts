@@ -43,6 +43,8 @@ import { cie10Task, codiEspCases, inventedCie10Cases } from './tasks/cie10.ts';
 import { cie10ByProblemTask } from './tasks/cie10-by-problem.ts';
 import { JUDGE_PROMPT_VERSION, noteTask } from './tasks/note.ts';
 import { prescriptionTask } from './tasks/prescription.ts';
+import { draftTask } from './tasks/draft.ts';
+import { ProviderCapStore } from './ledger.ts';
 
 export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5, D-239 §5)
 
@@ -50,7 +52,7 @@ export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5
   pnpm eval -- --codiesp <carpeta train_dev> corrida real con las claves del .env
 
 Opciones:
-  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042)
+  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042); borrador mide C2 (AS-098)
   --codiesp <carpeta>          CodiEsp train_dev (CC BY 4.0, Zenodo 3837305); sin ella, la CIE-10 usa sólo el set propio
   --muestra <n>                frases de CodiEsp (por defecto 200)
   --casos <n>                  como mucho n casos de cada set propio (por defecto, todos)
@@ -61,10 +63,11 @@ Opciones:
   --semilla <n>                semilla de la muestra y del bootstrap (por defecto 42)
   --salida <carpeta>           por defecto eval/resultados
   --estimar                    sólo dice cuántas llamadas y el peor caso de gasto, sin llamar
+  --tope-proveedor <usd>       lo más que cada proveedor puede llevar gastado en el registro, contando el intento (D-241)
 `;
 
 type Env = Record<string, string | undefined>;
-type TaskKey = 'cie10' | 'cie10-problema' | 'receta' | 'nota';
+type TaskKey = 'cie10' | 'cie10-problema' | 'receta' | 'nota' | 'borrador';
 
 export interface Dependencies {
   env: Env;
@@ -115,6 +118,15 @@ function positiveInteger(
   return parsed;
 }
 
+/** An amount of dollars from the command line, or a clear error. */
+function positiveAmount(name: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name}: se esperaba un monto en dólares > 0`);
+  }
+  return parsed;
+}
+
 /** EV-7. The prices the costs were computed with. */
 function pricingVersion(): { file: string; sha256: string } {
   const file = join(
@@ -150,6 +162,7 @@ export async function runFromArgs(
         default: join(process.cwd(), 'eval', 'resultados'),
       },
       estimar: { type: 'boolean', default: false },
+      'tope-proveedor': { type: 'string' },
       ayuda: { type: 'boolean', default: false },
     },
   });
@@ -166,7 +179,8 @@ export async function runFromArgs(
   }
   const wanted = values.tareas.split(',').map((t) => t.trim()) as TaskKey[];
   const unknown = wanted.filter(
-    (t) => !['cie10', 'cie10-problema', 'receta', 'nota'].includes(t),
+    (t) =>
+      !['cie10', 'cie10-problema', 'receta', 'nota', 'borrador'].includes(t),
   );
   if (unknown.length > 0)
     throw new Error(`Tarea desconocida: ${unknown.join(', ')}`);
@@ -262,15 +276,26 @@ export async function runFromArgs(
     });
   }
 
+  // AS-098 (C2). The product's writer on the same invented consultations.
+  if (wanted.includes('borrador')) {
+    const own = invented.note.cases.slice(0, limit);
+    add(draftTask(catalogues), own);
+    casesMeta.push({
+      task: 'draft',
+      source: 'nota.json',
+      sha256: invented.note.sha256,
+      n: own.length,
+    });
+  }
+
   // EV-3. Providers: the fake world, or the real chain behind its switch.
   const world = values.falso
     ? new FakeWorld(catalogues, seed, startedAt)
     : null;
   // The fake spends fake money: in a ledger of its own, never against the real ceiling.
   const ledgerDir = deps.ledgerDir ?? ledgerDirFrom(deps.env);
-  const store = new TaggingStore(
-    new FileAiRunStore(world ? join(ledgerDir, 'falso') : ledgerDir),
-  );
+  const ledger = new FileAiRunStore(world ? join(ledgerDir, 'falso') : ledgerDir); // prettier-ignore
+  const store = new TaggingStore(ledger);
   const clock = world?.clock ?? deps.now;
   const ceilingUsd = values.falso
     ? EVAL_CEILING_CAP_USD
@@ -289,16 +314,33 @@ export async function runFromArgs(
     (p) => !filter || filter.includes(p.name),
   );
   if (measured.length === 0) throw new Error('Ningún proveedor que medir');
-  const options = { store, ceilingUsd, timeoutMs, clock };
+  const providerCap =
+    values['tope-proveedor'] === undefined
+      ? undefined
+      : positiveAmount('--tope-proveedor', values['tope-proveedor']);
+  // AS-098, D-241. Each provider's client checks its own total in the
+  // shared ledger besides the month's ceiling.
+  const optionsFor = (name: string) => ({
+    store:
+      providerCap === undefined || ceilingUsd === undefined
+        ? store
+        : new ProviderCapStore(store, ledger, name, providerCap, ceilingUsd),
+    ceilingUsd,
+    timeoutMs,
+    clock,
+  });
   const providers: MeasuredProvider[] = measured.map((provider) => ({
     name: provider.name,
     model: provider.modelFor('quality'),
-    client: clientFor(provider, options),
+    client: clientFor(provider, optionsFor(provider.name)),
   }));
   const judgeProvider = world
     ? world.judge()
     : built.measured.find((p) => p.name === values.juez);
-  if (wanted.includes('nota') && !judgeProvider) {
+  if (
+    (wanted.includes('nota') || wanted.includes('borrador')) &&
+    !judgeProvider
+  ) {
     throw new Error(
       `El juez «${values.juez}» no tiene clave: elija otro con --juez`,
     );
@@ -307,7 +349,7 @@ export async function runFromArgs(
     ? {
         name: judgeProvider.name,
         model: judgeProvider.modelFor('quality'),
-        client: clientFor(judgeProvider, options),
+        client: clientFor(judgeProvider, optionsFor(judgeProvider.name)),
       }
     : null;
 
@@ -321,7 +363,9 @@ export async function runFromArgs(
         const request = task.request(item, arm);
         // The note is judged once per provider that wrote one.
         const judging =
-          task.name === 'note' && judge ? providers.map(() => judge) : [];
+          (task.name === 'note' || task.name === 'draft') && judge
+            ? providers.map(() => judge)
+            : [];
         for (const p of [...providers, ...judging]) {
           const price = priceAt(prices, p.model, clock());
           calls += 1;
@@ -369,7 +413,7 @@ export async function runFromArgs(
     providers: providers.map(({ name, model }) => ({ name, model })),
     withoutKey: built.withoutKey,
     judge:
-      judge && wanted.includes('nota')
+      judge && (wanted.includes('nota') || wanted.includes('borrador'))
         ? {
             name: judge.name,
             model: judge.model,

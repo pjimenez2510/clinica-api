@@ -9,7 +9,12 @@ import {
 } from '../domain/note-draft';
 import { carriesAnIdentifier } from '../domain/problem-coding';
 
-import { type LlmClient, withContext } from './llm-client.port';
+import {
+  type LlmClient,
+  type LlmRequest,
+  type PseudonymizedText,
+  withContext,
+} from './llm-client.port';
 import {
   DRAFT_INSTRUCTIONS,
   DRAFT_MAX_TOKENS,
@@ -70,13 +75,7 @@ export async function writeNoteDraft(
   deps: WriterDependencies,
   input: WriteInput,
 ): Promise<WrittenDraft> {
-  let corrected = 0;
-  const heard = input.lines.map((line) => {
-    if (!deps.lexicon) return line;
-    const { text, changes } = correctLine(line.text, deps.lexicon);
-    corrected += changes;
-    return { ...line, text };
-  });
+  const { heard, corrected } = heardLines(input.lines, deps.lexicon);
   const conversation = conversationOf(heard);
 
   const cleared = await deps.pseudonymizer.pseudonymize(
@@ -94,18 +93,12 @@ export async function writeNoteDraft(
     throw new PseudonymizerFailedError('invalid-answer');
   }
 
-  const answer = await deps.llm.generate({
-    tier: 'quality',
-    purpose: DRAFT_PURPOSE,
-    promptVersion: DRAFT_PROMPT_VERSION,
-    system: DRAFT_INSTRUCTIONS,
-    prompt: withContext(cleared.cleared, templateBlock(input.template)),
-    answer: draftAnswerFor(input.template.map((section) => section.key)),
-    maxTokens: DRAFT_MAX_TOKENS,
-    cacheable: true,
-    signal: input.signal,
-    encounterId: input.encounterId,
-  });
+  const answer = await deps.llm.generate(
+    draftRequest(cleared.cleared, input.template, {
+      signal: input.signal,
+      encounterId: input.encounterId,
+    }),
+  );
 
   const sections = readDraft({
     sections: answer.value.sections,
@@ -121,4 +114,42 @@ export async function writeNoteDraft(
     said: input.lines.map((line) => line.text).join('\n'),
   });
   return { sections, runId: answer.runId, corrected };
+}
+
+/** AS-092. The lines as the model will read them, corrected; and how many words changed. */
+export function heardLines(
+  lines: readonly TranscriptLine[],
+  lexicon: Lexicon | null,
+): { heard: TranscriptLine[]; corrected: number } {
+  let corrected = 0;
+  const heard = lines.map((line) => {
+    if (!lexicon) return { ...line };
+    const { text, changes } = correctLine(line.text, lexicon);
+    corrected += changes;
+    return { ...line, text };
+  });
+  return { heard, corrected };
+}
+
+/**
+ * AS-088, AS-095. The one request of a draft: the cleared conversation with
+ * the template after it. The evaluation harness (AS-098) sends this same
+ * request.
+ */
+export function draftRequest(
+  cleared: PseudonymizedText,
+  template: readonly DraftableSection[],
+  extras: { signal?: AbortSignal; encounterId?: string } = {},
+) {
+  return {
+    tier: 'quality',
+    purpose: DRAFT_PURPOSE,
+    promptVersion: DRAFT_PROMPT_VERSION,
+    system: DRAFT_INSTRUCTIONS,
+    prompt: withContext(cleared, templateBlock(template)),
+    answer: draftAnswerFor(template.map((section) => section.key)),
+    maxTokens: DRAFT_MAX_TOKENS,
+    cacheable: true,
+    ...extras,
+  } satisfies LlmRequest<ReturnType<typeof draftAnswerFor>>;
 }

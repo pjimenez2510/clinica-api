@@ -12,7 +12,7 @@ import { spendingMonthStart } from '../src/modules/assistant/domain/spending.ts'
 import { FakeLlmProvider } from '../src/modules/assistant/infrastructure/fake-llm.provider.ts';
 
 import { caseText } from './case-text.ts';
-import { FileAiRunStore } from './ledger.ts';
+import { FileAiRunStore, ProviderCapStore } from './ledger.ts';
 import {
   ceilingFrom,
   EVAL_CEILING_CAP_USD,
@@ -162,4 +162,73 @@ describe('spending of the harness', () => {
     expect(built.withoutKey).toEqual(['openai']);
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  it('AS-098 refuses an attempt that would take its provider past its total cap, counted in the shared ledger', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-ledger-'));
+    const now = new Date();
+    const ledger = new FileAiRunStore(dir);
+    // Earlier deliveries left this provider at 1.9995 USD; another provider's spending does not count.
+    for (const [provider, costUsd] of [
+      ['fake', 1.9995],
+      ['gemini', 5],
+    ] as const) {
+      await ledger.record(
+        {
+          requestId: `earlier-${provider}`,
+          attempt: 1,
+          provider,
+          model: 'fake-quality',
+          tier: 'quality',
+          purpose: 'eval-nota',
+          promptVersion: 'v1',
+          outcome: 'ok',
+          httpStatus: 200,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          reasoningTokens: null,
+          costUsd,
+          worstCaseUsd: costUsd,
+          priceValidFrom: FAKE_PRICES[0]!.validFrom,
+          latencyMs: 1,
+          startedAt: now,
+          fallbackFrom: null,
+          encounterId: null,
+        },
+        null,
+      );
+    }
+    const capped = (cap: number) =>
+      new ProviderCapStore(ledger, ledger, 'fake', cap, 100);
+    expect(capped(2).spentByProvider()).toBeCloseTo(1.9995, 6);
+
+    const refused = new FakeLlmProvider([{ kind: 'answer', text: '{"code":"R51.X"}' }]); // prettier-ignore
+    await expect(
+      routingOn(capped(2), refused, () => now).generate(request),
+    ).rejects.toBeInstanceOf(AssistantSpendingCeilingReachedError);
+    expect(refused.calls).toHaveLength(0);
+
+    // Positive control: the same attempt fits under a higher cap.
+    const allowed = new FakeLlmProvider([{ kind: 'answer', text: '{"code":"R51.X"}' }]); // prettier-ignore
+    await routingOn(capped(3), allowed, () => now).generate(request);
+    expect(allowed.calls).toHaveLength(1);
+  });
 });
+
+function routingOn(
+  store: ProviderCapStore,
+  provider: FakeLlmProvider,
+  clock: () => Date,
+) {
+  return new RoutingLlmClient({
+    providers: [provider],
+    store,
+    prices: FAKE_PRICES,
+    ceilingUsd: 100,
+    timeoutMs: 5_000,
+    exchangeLog: false,
+    clock,
+    newRequestId: () => crypto.randomUUID(),
+  });
+}
