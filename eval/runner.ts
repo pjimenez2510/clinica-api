@@ -106,8 +106,25 @@ export class TaggingStore implements AiRunStore {
 
   constructor(private readonly inner: AiRunStore) {}
 
+  /**
+   * An attempt that could not be written to the ledger. The routing goes on
+   * (AS-013: recording never costs the answer), but the ceiling would not see
+   * it in the next run: the runner stops at the next step.
+   */
+  unrecorded = false;
+
   async record(run: AiRunRecord, exchange: AiExchangeRecord | null) {
-    await this.inner.record(run, exchange);
+    try {
+      await this.inner.record(run, exchange);
+    } catch (error) {
+      this.unrecorded = true;
+      throw error;
+    } finally {
+      this.tag(run);
+    }
+  }
+
+  private tag(run: AiRunRecord) {
     if (this.current === null) return;
     this.attempts.push({
       ...this.current,
@@ -130,8 +147,13 @@ export class TaggingStore implements AiRunStore {
   }
 }
 
-/** The ceiling ends the run; anything else ends only the call. */
-class CeilingReached extends Error {}
+/**
+ * What ends the whole run, keeping what was measured: the ceiling, an
+ * attempt the ledger did not take, or an error that is not the provider's
+ * (no price, a corrupt ledger, a disk error). Those last would otherwise
+ * read as «0/N respondidos», a figure of quality that is not one.
+ */
+class Stop extends Error {}
 
 const realSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -151,6 +173,14 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
   const calls: CallResult[] = [];
   let stopped: string | null = null;
 
+  function stopIfUnrecorded() {
+    if (tagging.unrecorded) {
+      throw new Stop(
+        'Un intento no quedó en el registro de gasto: la corrida se detuvo para que el techo no pierda la cuenta',
+      );
+    }
+  }
+
   async function ask<Shape extends z.ZodType>(
     provider: MeasuredProvider,
     key: CallKey,
@@ -167,17 +197,20 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
       tagging.current = key;
       try {
         const answer = await provider.client.generate(request);
+        stopIfUnrecorded();
         return { value: answer.value, failure: null, requests: attempt };
       } catch (error) {
+        if (error instanceof Stop) throw error;
+        stopIfUnrecorded();
         if (error instanceof AssistantSpendingCeilingReachedError) {
-          throw new CeilingReached();
+          throw new Stop(
+            'El techo de gasto no admite el siguiente intento: la corrida se detuvo y el informe recoge lo medido hasta ahí',
+          );
         }
         if (!(error instanceof LlmCallFailed)) {
-          return {
-            value: null,
-            failure: error instanceof Error ? error.name : 'unknown',
-            requests: attempt,
-          };
+          throw new Stop(
+            `Error que no es del proveedor (${error instanceof Error ? error.name : 'desconocido'}): la corrida se detuvo y el informe recoge lo medido hasta ahí`,
+          );
         }
         failure = error.outcome;
         if (!error.isRetryable)
@@ -255,9 +288,8 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
       }
     }
   } catch (error) {
-    if (!(error instanceof CeilingReached)) throw error;
-    stopped =
-      'El techo de gasto no admite el siguiente intento: la corrida se detuvo y el informe recoge lo medido hasta ahí';
+    if (!(error instanceof Stop)) throw error;
+    stopped = error.message;
     log(stopped);
   }
 

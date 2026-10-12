@@ -20,9 +20,16 @@ no lo ejecutan `pnpm verify` ni `pnpm test`, sólo `pnpm typecheck` lo compila.
 - **Techo de gasto:** el menor entre `ASSISTANT_MONTHLY_SPEND_CEILING_USD` y
   **100 USD al mes** (D-241 §1). Se mira antes de cada intento con su peor
   caso, con la misma lógica de la aplicación (AS-017), contra el registro de
-  intentos de todas las corridas del mes en `eval/.gasto/` (sin texto; git lo
-  ignora). Si no cabe, la corrida se detiene y el informe recoge lo medido
-  (EV-4). La corrida falsa lleva su propio registro (`eval/.gasto/falso/`).
+  intentos de todas las corridas del mes. Hay **uno por máquina**, fuera de
+  los repositorios (`~/.clinica-eval/gasto/`, o `EVAL_LEDGER_DIR`), y no lleva
+  texto. Así lo comparten este worktree, el de D1 y `main`, y sobrevive a
+  `git worktree remove`. Si un intento no cabe, la corrida se detiene y el
+  informe recoge lo medido (EV-4). También se detiene si un intento no queda
+  en el registro o si falla algo que no es del proveedor. La corrida falsa
+  lleva su propio registro (`falso/`).
+- **CodiEsp se reconoce por su contenido**, no por el nombre de sus archivos.
+  La SHA-256 de los dos TSV está fijada en `cases.ts`, y una carpeta distinta
+  detiene la corrida.
 
 ## Cómo se corre
 
@@ -70,12 +77,23 @@ en la tasa de error.
 - **A** — sin catálogo: el modelo escribe de memoria y nada lo comprueba.
 - **D** — se buscan candidatos en la CIE-10 OMS o en el CNMB del repositorio
   (`prisma/catalogs/`, con su SHA-256), van al prompt, el modelo elige y una
-  barrera determinista quita lo que el catálogo no tiene.
+  barrera determinista **quita** lo que el catálogo no tiene tal como se
+  escribió. Nunca lo corrige: `I10` no se convierte en `I10.X`.
+- La invención de CIE-10 cuenta lo que el modelo escribió en los dos brazos;
+  en D la barrera no lo muestra.
+- El A del §5 ya buscaba en un catálogo plano. La diferencia D − A de aquí se
+  parece más a «C − A más la barrera»; el informe lo dice.
 - B, C y E del §5 necesitan historias estructuradas: son de la fase F.
+- Una frase de CodiEsp a la que el experto dio varios códigos es **un** caso,
+  y acierta con cualquiera de ellos.
 - **El juez de la nota no está validado.** Es un único modelo (`--juez`, por
   defecto Anthropic) con instrucciones fijas en `tasks/note.ts`; sus cifras
   orientan y no deciden hasta medir su κ (`stats.ts::cohenKappa`) contra una
   submuestra revisada por médicos.
+- **El juez por defecto es uno de los proveedores comparados.** Un modelo
+  tiende a preferir sus respuestas (Panickssery et al., 2024), y el informe
+  lo avisa. La disponibilidad del juez va en su propia fila, aparte de la del
+  proveedor que mide.
 
 **Estadística** (`stats.ts`, de SigmAI): Wilson 95 % para cada proporción;
 bootstrap de casos (10 000 remuestras, semilla fija) para las fracciones por
@@ -95,7 +113,8 @@ Cada corrida escribe `resultados/<fecha>-<etiqueta>/` (EV-7):
   semilla, commit, cada llamada (id del caso y lo que se mostró, nunca el texto
   del caso) y cada intento (resultado, estado HTTP, latencia, costo; nunca
   texto);
-- `informe.md` — las tablas con sus intervalos.
+- `informe.md` — las tablas con sus intervalos. La versión de precios
+  (`llm-pricing.json`) va junto a los catálogos.
 
 `resultados/ejemplo-falso/` es la corrida con el proveedor falso, de muestra.
 
@@ -106,7 +125,9 @@ Cada corrida escribe `resultados/<fecha>-<etiqueta>/` (EV-7):
   and solutions for non-English clinical cases at CodiEsp track of CLEF eHealth
   2020.* Corpus en Zenodo, registro 3837305, licencia **CC BY 4.0**. Se lee de
   su carpeta `train_dev` (`--codiesp`) y no se versiona aquí; los resultados
-  guardan su SHA-256 y los códigos, no sus frases. Sus códigos (CIE-10-ES) se
+  guardan su SHA-256 y los códigos, no sus frases. El arnés sólo acepta
+  los dos TSV de anotaciones de train+dev cuya SHA-256 está fijada en
+  `cases.ts`. Sus códigos (CIE-10-ES) se
   llevan a la CIE-10 OMS de 4 caracteres (`catalogue.ts::toWhoCode`); los que
   no tienen equivalente se cuentan y se dejan fuera.
 - **Infraestructura** copiada y adaptada de SigmAI

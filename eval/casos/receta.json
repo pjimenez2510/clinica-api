@@ -472,7 +472,7 @@
     {
       "id": "receta-27",
       "origin": "invented",
-      "dictation": "Salbutamol inhalador, dos inhalaciones cada seis horas por cinco días.",
+      "dictation": "Salbutamol inhalador de cien microgramos por dosis, dos inhalaciones cada seis horas por cinco días.",
       "expected": {
         "substance": "Salbutamol",
         "cnmbCode": "R03AC02",

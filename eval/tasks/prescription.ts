@@ -114,7 +114,14 @@ export function normal(field: Field, value: unknown): string | null {
     case 'days':
       return text;
     case 'concentration':
-      return fold(text).replace(/\s+/g, '').replace(/,/g, '.');
+      // 100 mcg is 0,1 mg: the cuadro writes one, a physician says the other.
+      return fold(text)
+        .replace(/\s+/g, '')
+        .replace(/,/g, '.')
+        .replace(
+          /(\d+(?:\.\d+)?)(?:mcg|µg|ug)/g,
+          (_, amount: string) => `${Number(amount) / 1000}mg`,
+        );
     default:
       return fold(text).replace(/\s+/g, ' ').trim();
   }

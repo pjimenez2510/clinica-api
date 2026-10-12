@@ -136,10 +136,15 @@ const CODIESP_FILES = ['train/train', 'dev/dev'].map(
  * phrase of a published case report and gave it its code. Only `DIAGNOSTICO`
  * rows; procedures are another catalogue.
  */
-export function readCodiEsp(dir: string): {
+export interface CodiEspRead {
   rows: CodiEspRow[];
+  /** One digest of both files, for the result. */
   sha256: string;
-} {
+  /** Each file's own digest, as `shasum -a 256` prints it. */
+  files: Record<string, string>;
+}
+
+export function readCodiEsp(dir: string): CodiEspRead {
   const paths = CODIESP_FILES.map((file) => join(dir, file));
   const missing = paths.filter((path) => !existsSync(path));
   if (missing.length > 0) {
@@ -160,5 +165,40 @@ export function readCodiEsp(dir: string): {
         code: code.trim(),
       })),
   );
-  return { rows, sha256: sha256(contents.join('\n')) };
+  return {
+    rows,
+    sha256: sha256(contents.join('\n')),
+    files: Object.fromEntries(
+      CODIESP_FILES.map((file, i) => [file, sha256(contents[i]!)]),
+    ),
+  };
+}
+
+/**
+ * EV-1. The two annotation files of CodiEsp train+dev (Zenodo 3837305) as the
+ * author keeps them (`TESIS/PROYECTO/analisis/crudos/codiesp/train_dev`,
+ * read 11-10-2026). Any other content under the same names is not CodiEsp,
+ * and its phrases are not sent anywhere.
+ */
+export const CODIESP_SHA256: Readonly<Record<string, string>> = {
+  'train/train_annotations_task3_processed.tsv':
+    '569d6e165749960bbad43aa6d2271071cc736622a944087d39655776ce9b19c8',
+  'dev/dev_annotations_task3_processed.tsv':
+    '24f5d4f3df9dd0db09fff7dd984c0158ee7e40a6630a4187d568c000d14715d8',
+};
+
+/** EV-1. CodiEsp by its content: a folder that only has its file names stops the run. */
+export function verifyCodiEsp(
+  read: CodiEspRead,
+  expected: Readonly<Record<string, string>> = CODIESP_SHA256,
+): CodiEspRead {
+  const differ = Object.entries(expected).filter(
+    ([file, digest]) => read.files[file] !== digest,
+  );
+  if (differ.length > 0) {
+    throw new Error(
+      `No es el CodiEsp conocido (Zenodo 3837305): el SHA-256 de ${differ.map(([file]) => file).join(' y ')} no coincide. Sólo se envían casos inventados o de CodiEsp`,
+    );
+  }
+  return read;
 }

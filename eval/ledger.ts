@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
@@ -8,8 +9,14 @@ import type {
   AiRunStore,
 } from '../src/modules/assistant/application/ai-run.store.ts';
 
-/** Where the ledger lives unless a run says otherwise; ignored by git. */
-export const DEFAULT_LEDGER_DIR = join(process.cwd(), 'eval', '.gasto');
+/**
+ * EV-4. Where the ledger lives: ONE per machine, outside every repository, so
+ * the ceiling spans every run of the month from any worktree (this branch,
+ * D1's, main) and survives `git worktree remove`. `EVAL_LEDGER_DIR` moves it.
+ */
+export function ledgerDirFrom(env: Record<string, string | undefined>): string {
+  return env.EVAL_LEDGER_DIR || join(homedir(), '.clinica-eval', 'gasto');
+}
 
 /**
  * EV-4. The `ai_run` of the harness: one JSON line per attempt in a file
@@ -27,7 +34,7 @@ export class FileAiRunStore implements AiRunStore {
   readonly recorded: AiRunRecord[] = [];
   private readonly file: string;
 
-  constructor(dir: string = DEFAULT_LEDGER_DIR) {
+  constructor(dir: string) {
     mkdirSync(dir, { recursive: true });
     this.file = join(dir, 'intentos.jsonl');
   }

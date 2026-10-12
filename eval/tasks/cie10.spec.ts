@@ -20,7 +20,7 @@ const item = {
   id: 'x',
   origin: 'invented' as const,
   phrase: 'IVU baja',
-  code: 'N39.0',
+  codes: ['N39.0'],
 };
 
 describe('CIE-10 task', () => {
@@ -60,13 +60,20 @@ describe('CIE-10 task', () => {
       { article: 'a', phrase: 'infección urinaria', code: 'n39.0' },
       { article: 'b', phrase: 'hipertensión', code: 'i10' },
       { article: 'c', phrase: 'uso de fármacos', code: 'z79.899' },
+      // One phrase, two codes from the expert: one case that accepts both.
+      { article: 'd', phrase: 'cefalea y fiebre', code: 'r51' },
+      { article: 'd', phrase: 'cefalea y fiebre', code: 'r50.9' },
     ];
     const once = codiEspCases(rows, catalogues.cie10, { sample: 10, seed: 3 });
     const twice = codiEspCases(rows, catalogues.cie10, { sample: 10, seed: 3 });
 
-    expect(once.total).toBe(4);
+    expect(once.total).toBe(6);
     expect(once.withoutEquivalent).toBe(1);
-    expect(once.cases.map((c) => c.code).sort()).toEqual(['I10.X', 'N39.0']);
+    expect(once.cases.map((c) => c.codes.join('+')).sort()).toEqual([
+      'I10.X',
+      'N39.0',
+      'R51.X+R50.9',
+    ]);
     expect(once.cases.every((c) => c.origin === 'codiesp')).toBe(true);
     expect(twice).toEqual(once);
   });
@@ -95,9 +102,10 @@ describe('CIE-10 task', () => {
       hit1: 1,
       recall5: 1,
       category1: 1,
-      invented: 0,
       empty: 0,
     });
+    // Invention is what the model wrote, in both arms: D hid it, it still wrote it.
+    expect(d.scores.invented).toBeCloseTo(1 / 3, 10);
 
     const a = await task.evaluate(item, 'A', value, null);
     expect(a.shown).toEqual(['A00.5', 'N39.0', 'N30.0']);
@@ -105,7 +113,33 @@ describe('CIE-10 task', () => {
     expect(a.scores.invented).toBeCloseTo(1 / 3, 10);
 
     const none = await task.evaluate(item, 'D', { codes: ['A00.5'] }, null);
-    expect(none.scores).toMatchObject({ hit1: 0, empty: 1, invented: null });
+    expect(none.scores).toMatchObject({ hit1: 0, empty: 1, invented: 1 });
+  });
+
+  it('EV-5 the barrier removes and never repairs: a code written without its X fails in both arms', async () => {
+    const task = cie10Task(catalogues);
+    const hypertension = { ...item, phrase: 'HTA', codes: ['I10.X'] };
+    for (const arm of ['A', 'D'] as const) {
+      const { scores } = await task.evaluate(
+        hypertension,
+        arm,
+        { codes: ['I10'] },
+        null,
+      );
+      expect(scores, arm).toMatchObject({ hit1: 0, recall5: 0, invented: 1 });
+    }
+  });
+
+  it('a phrase with several right codes is right with any of them first', async () => {
+    const task = cie10Task(catalogues);
+    const two = { ...item, codes: ['R51.X', 'R50.9'] };
+    const { scores } = await task.evaluate(
+      two,
+      'D',
+      { codes: ['R50.9'] },
+      null,
+    );
+    expect(scores).toMatchObject({ hit1: 1, recall5: 1, category1: 1 });
   });
 
   it('arm D puts the catalogue in the prompt and A does not; both declare their prompt version', () => {

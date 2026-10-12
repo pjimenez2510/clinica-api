@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -12,10 +14,15 @@ import { spendingMonthStart } from '../src/modules/assistant/domain/spending.ts'
 import { DEFAULT_MAX_TOKENS } from '../src/modules/assistant/application/llm-client.port.ts';
 import { LLM_PRICES } from '../src/modules/assistant/infrastructure/llm-pricing.ts';
 
-import { CASES_DIR, loadInventedCases, readCodiEsp } from './cases.ts';
+import {
+  CASES_DIR,
+  loadInventedCases,
+  readCodiEsp,
+  verifyCodiEsp,
+} from './cases.ts';
 import { loadCatalogues } from './catalogue.ts';
 import { FakeWorld } from './fake-world.ts';
-import { DEFAULT_LEDGER_DIR, FileAiRunStore } from './ledger.ts';
+import { FileAiRunStore, ledgerDirFrom } from './ledger.ts';
 import {
   ceilingFrom,
   clientFor,
@@ -32,7 +39,7 @@ import {
   type TaskRun,
 } from './runner.ts';
 import type { EvalCase } from './task.ts';
-import { cie10Task, codiEspCases } from './tasks/cie10.ts';
+import { cie10Task, codiEspCases, inventedCie10Cases } from './tasks/cie10.ts';
 import { JUDGE_PROMPT_VERSION, noteTask } from './tasks/note.ts';
 import { prescriptionTask } from './tasks/prescription.ts';
 
@@ -94,6 +101,31 @@ const clinicStamp = (at: Date) =>
     timeStyle: 'medium',
   }).format(at);
 
+/** A whole number from the command line, or a clear error (`abc` is not 0 cases). */
+function positiveInteger(
+  name: string,
+  value: string,
+  { zero = false } = {},
+): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < (zero ? 0 : 1)) {
+    throw new Error(`${name}: se esperaba un entero ${zero ? '≥ 0' : '> 0'}`);
+  }
+  return parsed;
+}
+
+/** EV-7. The prices the costs were computed with. */
+function pricingVersion(): { file: string; sha256: string } {
+  const file = join(
+    process.cwd(),
+    'src/modules/assistant/infrastructure/llm-pricing.json',
+  );
+  return {
+    file: 'llm-pricing.json',
+    sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
+  };
+}
+
 /** Runs the harness as `pnpm eval` does; answers the folder of the result, or null. */
 export async function runFromArgs(
   argv: readonly string[],
@@ -124,23 +156,35 @@ export async function runFromArgs(
     deps.print(USAGE);
     return null;
   }
-  const seed = Number(values.semilla);
+  const seed = positiveInteger('--semilla', values.semilla, { zero: true });
+  const tries = positiveInteger('--intentos', values.intentos);
+  const sample = positiveInteger('--muestra', values.muestra);
+  const label = values.etiqueta ?? (values.falso ? 'falso' : 'real');
+  if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(label)) {
+    throw new Error('--etiqueta: sólo minúsculas, cifras y guiones');
+  }
   const wanted = values.tareas.split(',').map((t) => t.trim()) as TaskKey[];
   const unknown = wanted.filter(
     (t) => !['cie10', 'receta', 'nota'].includes(t),
   );
   if (unknown.length > 0)
     throw new Error(`Tarea desconocida: ${unknown.join(', ')}`);
-  const limit = values.casos === undefined ? Infinity : Number(values.casos);
+  const limit =
+    values.casos === undefined
+      ? Infinity
+      : positiveInteger('--casos', values.casos);
   const startedAt = deps.now();
 
   // EV-1. Cases first: a case outside the rules stops the run before a call is built.
   const catalogues = loadCatalogues();
   const invented = loadInventedCases(CASES_DIR);
-  const codiesp = values.codiesp ? readCodiEsp(values.codiesp) : null;
+  // EV-1. CodiEsp by its content, not by its file names.
+  const codiesp = values.codiesp
+    ? verifyCodiEsp(readCodiEsp(values.codiesp))
+    : null;
   const sampled = codiesp
     ? codiEspCases(codiesp.rows, catalogues.cie10, {
-        sample: Number(values.muestra),
+        sample,
         seed,
       })
     : null;
@@ -153,7 +197,7 @@ export async function runFromArgs(
     for (const item of cases) casesById.set(item.id, item);
   };
   if (wanted.includes('cie10')) {
-    const own = invented.cie10.cases.slice(0, limit);
+    const own = inventedCie10Cases(invented.cie10.cases.slice(0, limit));
     add(cie10Task(catalogues), [...own, ...(sampled?.cases ?? [])]);
     casesMeta.push({
       task: 'cie10',
@@ -196,7 +240,7 @@ export async function runFromArgs(
     ? new FakeWorld(catalogues, seed, startedAt)
     : null;
   // The fake spends fake money: in a ledger of its own, never against the real ceiling.
-  const ledgerDir = deps.ledgerDir ?? DEFAULT_LEDGER_DIR;
+  const ledgerDir = deps.ledgerDir ?? ledgerDirFrom(deps.env);
   const store = new TaggingStore(
     new FileAiRunStore(world ? join(ledgerDir, 'falso') : ledgerDir),
   );
@@ -248,10 +292,10 @@ export async function runFromArgs(
     for (const item of cases) {
       for (const arm of task.arms) {
         const request = task.request(item, arm);
-        for (const p of [
-          ...providers,
-          ...(task.name === 'note' && judge ? [judge] : []),
-        ]) {
+        // The note is judged once per provider that wrote one.
+        const judging =
+          task.name === 'note' && judge ? providers.map(() => judge) : [];
+        for (const p of [...providers, ...judging]) {
           const price = priceAt(prices, p.model, clock());
           calls += 1;
           if (price) {
@@ -279,7 +323,7 @@ export async function runFromArgs(
     providers,
     judge,
     store,
-    tries: Number(values.intentos),
+    tries,
     backoffMs: 2_000,
     beforeCall: world?.beforeCall,
     sleep: world?.sleep,
@@ -287,7 +331,8 @@ export async function runFromArgs(
   });
 
   const meta: RunMetadata = {
-    label: values.etiqueta ?? (world ? 'falso' : 'real'),
+    label,
+    ledger: world ? 'propio de la corrida falsa' : ledgerDir,
     fake: world !== null,
     startedAt: clinicStamp(startedAt),
     finishedAt: clinicStamp(deps.now()),
@@ -308,7 +353,7 @@ export async function runFromArgs(
       name: task.name,
       promptVersions: { ...task.promptVersions },
     })),
-    catalogues: catalogues.versions,
+    catalogues: [...catalogues.versions, pricingVersion()],
     cases: casesMeta,
     codiesp:
       codiesp && sampled

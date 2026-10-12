@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,11 +9,13 @@ import { FakeLlmProvider } from '../src/modules/assistant/infrastructure/fake-ll
 
 import { loadInventedCases } from './cases.ts';
 import { loadCatalogues } from './catalogue.ts';
-import { FileAiRunStore } from './ledger.ts';
+import { FileAiRunStore, ledgerDirFrom } from './ledger.ts';
 import { runFromArgs } from './main.ts';
+import { renderReport, type RunMetadata } from './report.ts';
 import { clientFor } from './providers.ts';
 import { runEvaluation, TaggingStore } from './runner.ts';
-import { cie10Task } from './tasks/cie10.ts';
+import { cie10Task, inventedCie10Cases } from './tasks/cie10.ts';
+import { noteTask } from './tasks/note.ts';
 
 const scratch = (name: string) => mkdtempSync(join(tmpdir(), `eval-${name}-`));
 
@@ -42,7 +45,7 @@ describe('a run of the harness', () => {
       readFileSync(join(folder!, 'resultado.json'), 'utf8'),
     ) as {
       commit: string;
-      catalogues: { sha256: string }[];
+      catalogues: { file: string; sha256: string }[];
       cases: { sha256: string }[];
       calls: unknown[];
     };
@@ -68,9 +71,19 @@ describe('a run of the harness', () => {
       ],
     });
     expect(result.commit).toMatch(/^[0-9a-f]{7,}/);
-    expect(result.catalogues.map((c: { sha256: string }) => c.sha256)).toEqual([
-      expect.stringMatching(/^[0-9a-f]{64}$/),
-      expect.stringMatching(/^[0-9a-f]{64}$/),
+    expect(result.catalogues).toEqual([
+      {
+        file: 'cie10-oms-deis-2026-08.xlsx',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+      {
+        file: 'cnmb-2026.xlsx',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+      {
+        file: 'llm-pricing.json',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
     ]);
     const invented = loadInventedCases();
     expect(result.cases.map((c: { sha256: string }) => c.sha256)).toEqual([
@@ -150,7 +163,7 @@ describe('a run of the harness', () => {
 
 describe('the runner', () => {
   const catalogues = loadCatalogues();
-  const cases = loadInventedCases().cie10.cases.slice(0, 5);
+  const cases = inventedCie10Cases(loadInventedCases().cie10.cases.slice(0, 5));
   const answer = (code: string) => ({
     kind: 'answer' as const,
     text: JSON.stringify({ codes: [code] }),
@@ -224,5 +237,200 @@ describe('the runner', () => {
     expect(outcome.calls.length).toBeGreaterThan(0);
     expect(outcome.calls.length).toBeLessThan(cases.length * 2);
     expect(fake.calls).toHaveLength(outcome.calls.length);
+  });
+
+  const client = (fake: FakeLlmProvider, store: TaggingStore) =>
+    clientFor(fake, {
+      store,
+      ceilingUsd: 100,
+      timeoutMs: 5_000,
+      clock: () => new Date(),
+    });
+
+  it("an error that is not the provider's ends the run instead of reading as an unanswered case", async () => {
+    const store = new TaggingStore(new FileAiRunStore(scratch('ledger')));
+    // A model with no price in force: the routing refuses it (AS-016).
+    const unpriced = new FakeLlmProvider([answer('R51.X')], 'gemini', {
+      fast: 'sin-precio',
+      quality: 'sin-precio',
+    });
+    const outcome = await runEvaluation({
+      tasks: [{ task: cie10Task(catalogues), cases }],
+      providers: [
+        {
+          name: 'gemini',
+          model: 'sin-precio',
+          client: client(unpriced, store),
+        },
+      ],
+      judge: null,
+      store,
+      tries: 1,
+      backoffMs: 0,
+    });
+    expect(outcome.stopped).toMatch(/no es del proveedor/);
+    expect(outcome.calls).toHaveLength(0);
+  });
+
+  it('an attempt the ledger did not take ends the run, and is still in the report', async () => {
+    const ledger = new FileAiRunStore(scratch('ledger'));
+    vi.spyOn(ledger, 'record').mockRejectedValue(new Error('EACCES'));
+    const store = new TaggingStore(ledger);
+    const fake = new FakeLlmProvider([answer('R51.X')], 'gemini');
+    const outcome = await runEvaluation({
+      tasks: [{ task: cie10Task(catalogues), cases }],
+      providers: [
+        { name: 'gemini', model: 'fake-quality', client: client(fake, store) },
+      ],
+      judge: null,
+      store,
+      tries: 1,
+      backoffMs: 0,
+    });
+    expect(outcome.stopped).toMatch(/registro de gasto/);
+    expect(fake.calls).toHaveLength(1);
+    expect(outcome.attempts).toHaveLength(1);
+  });
+
+  it('a provider that also judges keeps the judge out of its availability', async () => {
+    const store = new TaggingStore(new FileAiRunStore(scratch('ledger')));
+    const note = loadInventedCases().note.cases[0]!;
+    const written = JSON.stringify({
+      sections: [
+        { section: 'motivo', segments: [{ text: 'Odinofagia', source: 2 }] },
+      ],
+    });
+    // The provider writes the note, then — as the judge — fails twice with 503 and answers.
+    const verdicts = JSON.stringify({
+      facts: note.facts.map((_, i) => ({ n: i + 1, present: true })),
+      segments: [{ n: 1, supported: true }],
+    });
+    const fake = new FakeLlmProvider(
+      [
+        { kind: 'answer', text: written },
+        { kind: 'status', status: 503 },
+        { kind: 'status', status: 503 },
+        { kind: 'answer', text: verdicts },
+      ],
+      'anthropic',
+    );
+    const measured = {
+      name: 'anthropic' as const,
+      model: 'fake-quality',
+      client: client(fake, store),
+    };
+    const outcome = await runEvaluation({
+      tasks: [{ task: noteTask(), cases: [note] }],
+      providers: [measured],
+      judge: measured,
+      store,
+      tries: 3,
+      backoffMs: 0,
+    });
+    const meta = {
+      label: 'x',
+      fake: true,
+      ledger: 'x',
+      startedAt: 'x',
+      finishedAt: 'x',
+      commit: 'x',
+      seed: 1,
+      ceilingUsd: 100,
+      providers: [{ name: 'anthropic', model: 'fake-quality' }],
+      withoutKey: [],
+      judge: {
+        name: 'anthropic',
+        model: 'fake-quality',
+        promptVersion: 'juez-nota-v1',
+      },
+      tasks: [],
+      catalogues: [],
+      cases: [],
+      codiesp: null,
+    } satisfies RunMetadata;
+    const report = renderReport(
+      meta,
+      outcome,
+      [noteTask()],
+      new Map([[note.id, note]]),
+    );
+
+    expect(report).toMatch(/^\| anthropic \| 1 \| 1 \| 0 \| 0 \| 0 \|/m);
+    expect(report).toMatch(/^\| juez \(anthropic\) \| 3 \| 1 \| 2 \|/m);
+    expect(report).toContain(
+      'El juez es uno de los proveedores comparados (anthropic)',
+    );
+    expect(outcome.calls[0]!.scores).toMatchObject({ judged: 1 });
+  });
+});
+
+describe('the command line', () => {
+  it('EV-8 `pnpm eval` loads under plain Node with register.mjs, not only under vitest', () => {
+    const output = execFileSync(
+      process.execPath,
+      [
+        '--experimental-transform-types',
+        '--no-warnings',
+        '--import',
+        './eval/register.mjs',
+        'eval/main.ts',
+        '--falso',
+        '--estimar',
+      ],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, EVAL_LEDGER_DIR: scratch('ledger') },
+      },
+    );
+    expect(output).toMatch(
+      /^\d+ llamadas \(sin reintentos\); peor caso \d+\.\d{2} USD/,
+    );
+  });
+
+  it('EV-4 the ledger is one per machine, the same from every worktree, unless EVAL_LEDGER_DIR moves it', () => {
+    const here = ledgerDirFrom({});
+    expect(here).not.toContain(process.cwd());
+    expect(here).toMatch(/\.clinica-eval[/\\]gasto$/);
+    expect(ledgerDirFrom({ EVAL_LEDGER_DIR: '/x/y' })).toBe('/x/y');
+  });
+
+  it('refuses numbers and labels that would quietly change the run', async () => {
+    const deps = {
+      env: {},
+      now: () => new Date(),
+      print: () => undefined,
+      ledgerDir: scratch('ledger'),
+    };
+    for (const args of [
+      ['--intentos', '0'],
+      ['--intentos', 'abc'],
+      ['--casos', 'abc'],
+      ['--muestra', '-1'],
+      ['--semilla', 'x'],
+      ['--etiqueta', '../fuera'],
+    ]) {
+      await expect(
+        runFromArgs(['--falso', '--estimar', ...args], deps),
+        args.join(' '),
+      ).rejects.toThrow(/--/);
+    }
+    // Positive control: the same flags, well formed.
+    await expect(
+      runFromArgs(
+        [
+          '--falso',
+          '--estimar',
+          '--intentos',
+          '2',
+          '--casos',
+          '3',
+          '--semilla',
+          '0',
+          '--etiqueta',
+          'prueba-1',
+        ],
+        deps,
+      ),
+    ).resolves.toBeNull();
   });
 });

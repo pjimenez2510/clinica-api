@@ -138,6 +138,24 @@ const same = (a: string, b: string) =>
   a === b ||
   (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5));
 
+/** The words of every name, once per catalogue: a run searches it hundreds of times. */
+const INDEX = new WeakMap<
+  ReadonlyMap<string, string>,
+  { code: string; name: string; words: string[] }[]
+>();
+function indexed(cie10: ReadonlyMap<string, string>) {
+  let index = INDEX.get(cie10);
+  if (!index) {
+    index = [...cie10].map(([code, name]) => ({
+      code,
+      name,
+      words: wordsOf(name),
+    }));
+    INDEX.set(cie10, index);
+  }
+  return index;
+}
+
 /**
  * The candidates of arm D for a problem: the codes whose name shares the most
  * words with it, then the shortest name (the general code before the
@@ -152,8 +170,7 @@ export function searchCie10(
   const wanted = [...new Set(wordsOf(phrase))];
   if (wanted.length === 0) return [];
   const scored: { code: string; name: string; score: number }[] = [];
-  for (const [code, name] of cie10) {
-    const words = wordsOf(name);
+  for (const { code, name, words } of indexed(cie10)) {
     const score = wanted.filter((w) => words.some((n) => same(w, n))).length;
     if (score > 0) scored.push({ code, name, score });
   }

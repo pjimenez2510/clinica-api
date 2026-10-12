@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ProviderName } from '../src/modules/assistant/domain/llm-outcome.ts';
@@ -19,6 +19,8 @@ import { fieldF1, PRESCRIPTION_FIELDS } from './tasks/prescription.ts';
 export interface RunMetadata {
   label: string;
   fake: boolean;
+  /** EV-4. The ledger the ceiling was checked against. */
+  ledger: string;
   startedAt: string;
   finishedAt: string;
   commit: string;
@@ -95,25 +97,53 @@ const verdictOf = (difference: Estimate, metric: Metric) => {
   return 'no concluyente (incluye 0)';
 };
 
+/**
+ * The availability of each provider over the requests that measured it —
+ * the judge's own requests are longer and go apart, or a provider that also
+ * judges would carry them in its rate (review of 11-10-2026). Each request
+ * counts, retries too: failures come in bursts, so the interval of that rate
+ * is narrower than it should be, and the share of calls that failed at their
+ * first request is beside it.
+ */
 function availability(
-  attempts: readonly Attempt[],
+  outcome: RunOutcome,
   providers: readonly ProviderName[],
+  judge: ProviderName | null,
 ) {
   const lines = [
-    '| Proveedor | Intentos | Correctos | 503 | 429 | Otros fallos de disponibilidad | Tasa de error [IC 95 %] |',
-    '|---|---|---|---|---|---|---|',
+    '| Proveedor | Peticiones | Correctas | Sobrecarga (503/529) | 429 | Otros fallos de disponibilidad | Tasa de error [IC 95 %] | Llamadas que fallaron a la primera |',
+    '|---|---|---|---|---|---|---|---|',
   ];
-  for (const provider of providers) {
-    const mine = attempts.filter((a) => a.provider === provider);
+  const row = (
+    label: string,
+    mine: readonly Attempt[],
+    firstFailed: string,
+  ) => {
     const unavailable = mine.filter((a) =>
       ['timeout', 'rate-limited', 'provider-error'].includes(a.outcome),
     );
-    const s503 = mine.filter((a) => a.httpStatus === 503).length;
+    const overloaded = mine.filter(
+      (a) => a.httpStatus === 503 || a.httpStatus === 529,
+    ).length;
     const s429 = mine.filter((a) => a.httpStatus === 429).length;
-    const errorRate = wilson(unavailable.length, mine.length);
     lines.push(
-      `| ${provider} | ${mine.length} | ${mine.filter((a) => a.outcome === 'ok').length} | ${s503} | ${s429} | ${unavailable.length - s503 - s429} | ${pct(mine.length === 0 ? Number.NaN : unavailable.length / mine.length)} ${interval(errorRate)} |`,
+      `| ${label} | ${mine.length} | ${mine.filter((a) => a.outcome === 'ok').length} | ${overloaded} | ${s429} | ${unavailable.length - overloaded - s429} | ${pct(mine.length === 0 ? Number.NaN : unavailable.length / mine.length)} ${interval(wilson(unavailable.length, mine.length))} | ${firstFailed} |`,
     );
+  };
+  for (const provider of providers) {
+    const calls = outcome.calls.filter((c) => c.provider === provider);
+    const first = calls.filter((c) => c.requests > 1 || !c.answered).length;
+    row(
+      provider,
+      outcome.attempts.filter(
+        (a) => a.provider === provider && a.role === 'answer',
+      ),
+      `${pct(calls.length === 0 ? Number.NaN : first / calls.length)} ${interval(wilson(first, calls.length))}`,
+    );
+  }
+  const judging = outcome.attempts.filter((a) => a.role === 'judge');
+  if (judge !== null && judging.length > 0) {
+    row(`juez (${judge})`, judging, '—');
   }
   return lines;
 }
@@ -124,7 +154,7 @@ function latencyAndCost(
   providers: readonly ProviderName[],
 ) {
   const lines = [
-    '| Tarea | Proveedor | Latencia p50 | p90 | Presupuesto p90 | Costo total | Costo por caso respondido |',
+    '| Tarea | Proveedor | Latencia p50 | p90 | Presupuesto p90 | Costo total | Costo por llamada respondida |',
     '|---|---|---|---|---|---|---|',
   ];
   for (const task of tasks) {
@@ -277,10 +307,23 @@ function taskSection(
     }
   }
 
+  if (task.arms.length > 1) {
+    lines.push(
+      '',
+      '> **Qué es A y qué es D aquí.** A no tiene catálogo (el modelo escribe de memoria); D recibe candidatos del catálogo y una barrera quita lo que no existe, sin corregir nada. El A del §5 ya buscaba en un catálogo plano: esta diferencia se parece más a «C − A más la barrera» que al D − A del §5. La invención cuenta lo que el modelo escribió, en los dos brazos; en D la barrera no lo muestra.',
+    );
+  }
   if (task.name === 'note') {
+    const judge = outcome.attempts.find((a) => a.role === 'judge')?.provider;
     lines.push(
       '',
       '> **Juez sin validar.** La omisión y la invención las decide un único modelo (el juez de la cabecera) que ningún médico ha contrastado todavía; hasta medir su κ contra una submuestra revisada (PLAN-ASISTENTE-IA §5), esas dos columnas orientan y no deciden. Las secciones fuera de plantilla y las frases sin línea se cuentan sin modelo.',
+      ...(judge !== undefined && providers.includes(judge)
+        ? [
+            '',
+            `> **El juez es uno de los proveedores comparados (${judge}).** Un modelo tiende a preferir sus propias respuestas (Panickssery et al., 2024): las cifras del juez a favor de ${judge} valen menos que las demás.`,
+          ]
+        : []),
     );
   }
   return lines;
@@ -318,16 +361,14 @@ export function renderReport(
     meta.codiesp
       ? `- CodiEsp (Miranda-Escalada et al., 2020, CC BY 4.0, Zenodo 3837305): ${meta.codiesp.rows} frases de diagnóstico, ${meta.codiesp.withoutEquivalent} sin equivalente en la CIE-10 OMS, muestra de ${meta.codiesp.sample} · \`${meta.codiesp.sha256.slice(0, 12)}\``
       : '- CodiEsp: no se usó en esta corrida',
-    `- Techo: ${meta.ceilingUsd === undefined ? 'ninguno' : `${meta.ceilingUsd} USD al mes`} · gastado en esta corrida: ${usd(spent)}`,
+    `- Techo: ${meta.ceilingUsd === undefined ? 'ninguno' : `${meta.ceilingUsd} USD al mes`}, contra el registro ${meta.ledger} · gastado en esta corrida: ${usd(spent)}`,
     ...(outcome.stopped ? ['', `> **Detenida:** ${outcome.stopped}.`] : []),
     '',
     '**Regla, escrita antes de medir (PLAN-ASISTENTE-IA §5):** una diferencia cuenta sólo si su intervalo de confianza del 95 % excluye el cero, sin empeorar la invención ni pasar el presupuesto de latencia. La calidad se mide sobre los casos respondidos; la disponibilidad, aparte.',
     '',
     '## Disponibilidad (todas las peticiones, también los reintentos y el juez)',
     '',
-    ...availability(outcome.attempts, [
-      ...new Set([...providers, ...(meta.judge ? [meta.judge.name] : [])]),
-    ]),
+    ...availability(outcome, providers, meta.judge?.name ?? null),
     '',
     '## Latencia y costo',
     '',
@@ -351,10 +392,13 @@ export function writeResult(
   tasks: readonly AnyTask[],
   casesById: ReadonlyMap<string, EvalCase>,
 ): string {
-  const folder = join(
+  const base = join(
     dir,
     `${meta.startedAt.slice(0, 16).replace(/[: T]/g, '-')}-${meta.label}`,
   );
+  // Two runs in the same minute with the same label never overwrite each other.
+  let folder = base;
+  for (let n = 2; existsSync(folder); n += 1) folder = `${base}-${n}`;
   mkdirSync(folder, { recursive: true });
   writeFileSync(
     join(folder, 'resultado.json'),
@@ -362,8 +406,9 @@ export function writeResult(
       {
         ...meta,
         stopped: outcome.stopped,
-        // A result keeps the case id and what was shown, never the case
-        // text: CodiEsp's phrases are public but not ours to republish.
+        // A call keeps its case id and what was shown, never the case: no
+        // CodiEsp phrase is republished. What was shown for a note is the
+        // note the model wrote from an invented conversation.
         calls: outcome.calls,
         attempts: outcome.attempts,
       },

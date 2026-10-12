@@ -152,11 +152,12 @@ export class FakeWorld {
   }
 
   private cie10(item: Cie10EvalCase, arm: 'A' | 'D', right: boolean) {
-    const category = item.code.slice(0, 3);
+    const [code = ''] = item.codes;
+    const category = code.slice(0, 3);
     const sibling = [...this.catalogues.cie10.keys()].find(
-      (code) => code.startsWith(category) && code !== item.code,
+      (other) => other.startsWith(category) && !item.codes.includes(other),
     );
-    if (right) return { codes: [item.code, ...(sibling ? [sibling] : [])] };
+    if (right) return { codes: [code, ...(sibling ? [sibling] : [])] };
     // Wrong: a code that does not exist first (A has nothing to stop it), then a sibling.
     return {
       codes: [

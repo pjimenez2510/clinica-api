@@ -43,6 +43,10 @@ describe('prescription task', () => {
       normal('concentration', '250mg/5ml'),
     );
     expect(normal('concentration', '0,1 mg/dosis')).toBe('0.1mg/dosis');
+    expect(normal('concentration', '100 mcg/dosis')).toBe('0.1mg/dosis');
+    expect(normal('concentration', '400 mcg')).toBe(
+      normal('concentration', '0,4 mg'),
+    );
     expect(normal('dose', { amount: 2, unit: 'Tabletas' })).toBe('2 tableta');
     expect(normal('dose', { amount: 1, unit: 'inhalación' })).toBe(
       normal('dose', { amount: 1, unit: 'puff' }),

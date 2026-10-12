@@ -10,7 +10,13 @@ import { join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { loadCaseFile, loadInventedCases, readCodiEsp } from './cases.ts';
+import {
+  CODIESP_SHA256,
+  loadCaseFile,
+  loadInventedCases,
+  readCodiEsp,
+  verifyCodiEsp,
+} from './cases.ts';
 
 const EVAL_ROOT = join(process.cwd(), 'eval');
 const DOOR = 'eval/case-text.ts';
@@ -98,6 +104,13 @@ describe('cases of the harness', () => {
     ]);
     expect(read.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(() => readCodiEsp(scratch())).toThrow(/CodiEsp/);
+    // Same names, other content: it is not CodiEsp and nothing of it is sent.
+    expect(() => verifyCodiEsp(read)).toThrow(/SHA-256/);
+    // Positive control: the digests it was read with pass.
+    expect(verifyCodiEsp(read, read.files)).toBe(read);
+    expect(Object.keys(CODIESP_SHA256).sort()).toEqual(
+      Object.keys(read.files).sort(),
+    );
   });
 
   it('EV-2 mints case text in one file of eval/ and nowhere else', () => {
