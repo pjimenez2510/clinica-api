@@ -78,6 +78,18 @@ export const SAME_QUESTION = 0.75;
  * content words in any order («tos, congestión nasal o mocos» and «tos, mocos
  * o congestión nasal»), or nearly all of them.
  */
+/**
+ * AS-276 (clinical review M4). What a discarded question keeps away: only the
+ * same content words, all of them — «¿fiebre, tos?» put away does not hide
+ * «¿fiebre, tos o disnea?», which asks one sign more.
+ */
+export function sameWords(left: string, right: string): boolean {
+  const a = questionWords(left);
+  const b = questionWords(right);
+  if (a.size === 0 || b.size === 0) return questionKey(left) === questionKey(right); // prettier-ignore
+  return a.size === b.size && [...a].every((word) => b.has(word));
+}
+
 export function sameQuestion(left: string, right: string): boolean {
   const a = questionWords(left);
   const b = questionWords(right);
@@ -117,7 +129,7 @@ export function backedQuestions(input: {
     }
     if (questionKey(text) === '') continue;
     // AS-276. Put away in any wording, put away; asked before, asked as before.
-    if (input.discarded.some((each) => sameQuestion(each, text))) continue;
+    if (input.discarded.some((each) => sameWords(each, text))) continue;
     const worded = input.earlier?.find((each) => sameQuestion(each, text)) ?? text; // prettier-ignore
     if (kept.some((each) => sameQuestion(each.text, worded))) continue;
     kept.push({
@@ -244,7 +256,7 @@ export function currentQuestions(
   return stored.flatMap((each) => {
     if (each.aiRunId !== runId || each.status === 'DISCARDED') return [];
     const { text, section, fromMs, toMs, demo } = each.proposal;
-    if (typeof text === 'string' && discarded.some((each) => sameQuestion(each, text))) return []; // prettier-ignore
+    if (typeof text === 'string' && discarded.some((each) => sameWords(each, text))) return []; // prettier-ignore
     if (typeof text !== 'string' || typeof fromMs !== 'number' || typeof toMs !== 'number') return []; // prettier-ignore
     const quote = spokenIn({ fromMs, toMs }, transcript);
     if (quote === '') return [];

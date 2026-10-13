@@ -277,4 +277,18 @@ describe('the same question in other words (AS-276)', () => {
 
     expect(currentQuestions('run-2', stored, LINES).map((each) => each.id)).toEqual(['q-3']); // prettier-ignore
   });
+
+  it('AS-276 (review M4) a discarded question keeps away only one with the same words, not one that asks a sign more', () => {
+    const { kept } = backedQuestions({
+      answered: [
+        asked('¿Tiene fiebre, tos o dolor de garganta o disnea?', 'L1'),
+      ],
+      markers,
+      textSections: SECTIONS,
+      discarded: ['¿Tiene fiebre, tos o dolor de garganta?'],
+      restore: same,
+    });
+
+    expect(kept.map((each) => each.text)).toEqual(['¿Tiene fiebre, tos o dolor de garganta o disnea?']); // prettier-ignore
+  });
 });
