@@ -462,6 +462,17 @@ describe('AS-282 the reason worded as the nurse writes it, with the patient’s 
     });
   });
 
+  it('AS-282 a wording that names someone, put back from the pseudonymizer, keeps the whole phrase (fifth review)', () => {
+    const lines: TranscriptLine[] = [{ startMs: 0, endMs: 5_000, text: 'Juan con fiebre y tengo tos.' }]; // prettier-ignore
+    const named = readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'Juan con fiebre', written: '[PERSONA_1] con fiebre y tos' } }, // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (phrase) => phrase.replace('[PERSONA_1]', 'Juan'),
+    }).complaint;
+    expect(named?.text).toBe(lines[0]!.text);
+  });
+
   it('AS-282 falls back to the whole phrase when the wording adds what was not said, or is missing', () => {
     expect(reason('Dolor de cabeza desde hace dos semanas')?.text).toBe(ROSA[0]!.text); // prettier-ignore
     expect(reason(undefined)?.text).toBe(ROSA[0]!.text);

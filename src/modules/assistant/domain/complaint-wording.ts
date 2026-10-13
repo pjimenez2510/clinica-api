@@ -24,7 +24,7 @@ const LINKING = new Set([
 const DROPPABLE = new Set([
   'ay', 'bueno', 'pues', 'mire', 'oiga', 'este', 'senorita', 'senora',
   'senor', 'doctor', 'doctora', 'doctorita', 'licenciada', 'enfermera',
-  'mijo', 'mija', 'me', 'mi', 'mis', 'tengo', 'siento', 'estoy',
+  'mijo', 'mija', 'me', 'tengo', 'siento', 'estoy',
   'es', 'vengo',
   'vine', 'acudo', 'ando', 'da', 'dan', 'hay', 'ya', 'como', 'solo',
   'porque', 'pero', 'eso', 'algo',
@@ -43,9 +43,10 @@ const SOMEONE_ELSE = /(^| )((mi|mis|su|sus) (mam\w*|pap\w*|madre|padre|hij\w*|es
  * word-by-word check cannot tell, and neither the names for someone else nor their verbs ever
  * end («ñaño», «guambra», «taita»; «vomita», «tose»). What does end is how the patient sets
  * themself apart —«yo», «a mí»— and a few verbs of someone else; then the phrase keeps its own
- * words (third and fourth clinical review). Compared folded: «tenia», «esta».
+ * words (third and fourth clinical review). A possessive too: in a reason the patient says «me
+ * duele la cabeza», and «mi ñaño» is someone else (fifth). Compared folded: «tenia», «esta».
  */
-const TWO_PEOPLE = /(^| )(yo|a mi|tiene|tienen|esta|estan|siente|sienten|anda|andan|tenia|tenian)( |$)/; // prettier-ignore
+const TWO_PEOPLE = /(^| )(yo|a mi|mi|mis|su|sus|tu|tus|tiene|tienen|esta|estan|siente|sienten|anda|andan|tenia|tenian)( |$)/; // prettier-ignore
 
 /** How much of a duration: «un día» is not «unos días» (second clinical review). */
 const QUANTITY = new Set(['unos', 'unas', 'varios', 'varias', 'algunos', 'algunas', 'pocos', 'pocas', 'muchos', 'muchas']); // prettier-ignore

@@ -246,7 +246,7 @@ describe('AS-281 AS-282 the reason worded as the nurse writes it', () => {
     expect(request.answer.safeParse({ ...ANSWER, complaint: { ...ANSWER.complaint, written: 'Dolor de espalda y pecho' } }).success).toBe(true); // prettier-ignore
   });
 
-  it('AS-282 proposes the wording with the names put back, and the whole sentence as its source', async () => {
+  it('AS-282 a wording that names someone the pseudonymizer took out is not believed: the whole sentence, with the names as said', async () => {
     const lines = [{ startMs: 0, endMs: 5_000, text: 'Me duele la espalda al cargar a Rosa Quishpe.' }]; // prettier-ignore
     const answer = { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'me duele la espalda', written: 'Dolor en la espalda al cargar a [PERSONA_1]' } }; // prettier-ignore
     const { service } = scene({
@@ -256,6 +256,6 @@ describe('AS-281 AS-282 the reason worded as the nurse writes it', () => {
 
     const reading = await service.read(ENCOUNTER_ID, REQUESTER);
 
-    expect(reading.complaint).toEqual({ text: 'Dolor en la espalda al cargar a Rosa Quishpe', quote: lines[0]!.text, startMs: 0 }); // prettier-ignore
+    expect(reading.complaint).toEqual({ text: lines[0]!.text, quote: lines[0]!.text, startMs: 0 }); // prettier-ignore
   });
 });

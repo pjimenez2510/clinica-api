@@ -2775,11 +2775,13 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   día» como 1; y (e) no niega nada. Y NO DEBERÁ creerse ninguna redacción si la fuente niega
   algo (sin contar el «no sé» que duda ni el «¿no?» final), nombra a otra
   persona («mi mamá», «mi hijito», «mi señora», «la guagua», «le duele»,
-  «a ella»…), se aparta de otro con «yo» o «a mí», o usa un verbo de otra
+  «a ella»…), lleva un posesivo («mi», «su»…), se aparta de otro con «yo»
+  o «a mí», o usa un verbo de otra
   persona («tiene», «está», «siente»: «el niño tiene fiebre y yo tengo
   tos»), dice derecha e izquierda, o trae más de
   una duración o más de un número: lo que una comparación palabra por
-  palabra no distingue. SI no las pasa, o el modelo no la da, ENTONCES el
+  palabra no distingue; ni una redacción que nombre a alguien que el
+  seudonimizador quitó. SI no las pasa, o el modelo no la da, ENTONCES el
   motivo DEBERÁ ser la frase entera, como AS-249. La respuesta DEBERÁ
   llevar, en `complaint`, el texto propuesto (`text`), su fuente (`quote`)
   y su inicio (`startMs`).

@@ -446,8 +446,11 @@ function complaintOf(
   // Revisión G3: the whole sentence, so a «no» before the phrase is never cut off.
   const text = line.text.trim();
   if (text.length > LONGEST_COMPLAINT || !holds(text, quote)) return null;
-  const written = restore(said.written ?? '').trim();
-  const worded = groundedWording(written, text) ? written : text;
+  // AS-282 (fifth clinical review): a wording that names someone —a name the
+  // pseudonymizer took out— is never believed: whose symptom is whose.
+  const wording = (said.written ?? '').trim();
+  const written = restore(wording).trim();
+  const worded = written === wording && groundedWording(written, text) ? written : text; // prettier-ignore
   return { text: worded, quote: text, startMs: line.startMs };
 }
 

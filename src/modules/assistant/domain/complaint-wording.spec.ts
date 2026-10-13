@@ -167,6 +167,24 @@ describe('AS-282 a reason worded only from what the patient said', () => {
     ).toEqual(Array(18).fill(false));
   });
 
+  it('AS-282 a possessive is someone else’s even without «yo» (fifth review)', () => {
+    expect(
+      changed([
+        ['Mi ñaño vomita y tengo fiebre', 'Ñaño con vómito y fiebre'],
+        [
+          'Mi ñaño vomita y me duele la cabeza',
+          'Ñaño vomita y dolor de cabeza',
+        ],
+        ['Mi ñaño con fiebre y tengo tos', 'Ñaño con fiebre y tos'],
+        [
+          'Mi taita con dolor de pecho y estoy con mareo',
+          'Taita con dolor de pecho y mareo',
+        ],
+      ]),
+    ).toEqual(Array(4).fill(false));
+    expect(groundedWording('Dolor de estómago y diarrea', 'Me duele el estómago y estoy con diarrea')).toBe(true); // prettier-ignore
+  });
+
   it('AS-282 a root, a cause, an amount or a tense the patient did not say is not believed', () => {
     expect(
       changed([
