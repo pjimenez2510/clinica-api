@@ -1,3 +1,4 @@
+import { groundedWording } from './complaint-wording';
 import {
   FIELD_OF,
   readDictatedVitals,
@@ -6,6 +7,7 @@ import {
 import { lineOf, type TranscriptLine } from './note-draft';
 import { foldText } from './problem-coding';
 import {
+  HEIGHT_LEAST_TENS,
   joinedNumbers,
   ownersOf,
   spokenNumberRuns,
@@ -64,7 +66,8 @@ export interface AnsweredPreparation {
     line: string;
     quote: string;
   } | null;
-  complaint: { line: string; quote: string } | null;
+  /** AS-281. `written`: the reason worded as the nurse writes it. */
+  complaint: { line: string; quote: string; written?: string | null } | null;
 }
 
 /** AS-246. One value proposed, with where it was said (null when no single line holds it). */
@@ -79,8 +82,12 @@ export interface PreparationProposal {
   heightPosition: Provenanced<HeightPosition> | null;
   /** Named, but not proposed: typed by hand (AS-247, AS-248). */
   unclear: DictatedVitalField[];
-  /** AS-249. The patient's own phrase. */
-  complaint: { text: string; startMs: number } | null;
+  /**
+   * AS-249, AS-282. The reason proposed (`text`): its wording if the barrier
+   * believes it, else the patient's whole sentence, which is always its source
+   * (`quote`).
+   */
+  complaint: { text: string; quote: string; startMs: number } | null;
   /** AS-250. By line, in the order of the transcript; null when the rules read it. */
   speakers: (Speaker | null)[];
 }
@@ -131,7 +138,9 @@ const POSITION_WORDS: Readonly<Record<HeightPosition, RegExp>> = {
  */
 export function saidIn(phrase: string, field?: DictatedVitalField): number[] {
   const said: number[] = [];
-  for (const run of spokenNumberRuns(phrase)) {
+  // AS-280. «150 y 8» is 158 only for a reading said whole, or a height.
+  const tensAndUnit = field === 'heightCm' ? HEIGHT_LEAST_TENS : field !== undefined && WHOLE.has(field) ? 20 : false; // prettier-ignore
+  for (const run of spokenNumberRuns(phrase, { tensAndUnit })) {
     run.forEach((number, at) => {
       said.push(number.value);
       const pair = /^(\d{2,3})[.,](\d{2,3})$/.exec(number.raw);
@@ -268,12 +277,19 @@ function plain(text: string): string {
     .trim();
 }
 
-/** AS-247. The number the model says was said is one the phrase says. */
+/**
+ * AS-247. The number the model says was said is one the phrase says — and,
+ * for a reading AS-280 does not join, not half of an «X y U»: «peso 80 y 3»
+ * could be 80.3 or 83, never a weight of 3 (revisión clínica).
+ */
 function says(quote: string, said: number, field: DictatedVitalField): boolean {
-  return (
-    Number.isFinite(said) &&
-    saidIn(quote, field).some((number) => Math.abs(number - said) < 1e-9)
-  );
+  const near = (number: number) => Math.abs(number - said) < 1e-9;
+  if (!Number.isFinite(said) || !saidIn(quote, field).some(near)) return false;
+  const apart = spokenNumberRuns(quote)
+    .flat()
+    .map((each) => each.value);
+  const joined = spokenNumberRuns(quote, { tensAndUnit: 20 }).flat().map((each) => each.value); // prettier-ignore
+  return !apart.some(near) || joined.some(near);
 }
 
 /**
@@ -411,7 +427,10 @@ function positionOf(
   return { value: said.position, startMs: line.startMs, quote };
 }
 
-/** AS-249. The patient's own phrase, as it is in a line the patient said. */
+/**
+ * AS-249, AS-282. The patient's own sentence, as it is in a line the patient
+ * said, and the reason worded from it when nothing of the wording is new.
+ */
 function complaintOf(
   answer: AnsweredPreparation,
   markers: ReadonlyMap<string, TranscriptLine>,
@@ -427,7 +446,12 @@ function complaintOf(
   // Revisión G3: the whole sentence, so a «no» before the phrase is never cut off.
   const text = line.text.trim();
   if (text.length > LONGEST_COMPLAINT || !holds(text, quote)) return null;
-  return { text, startMs: line.startMs };
+  // AS-282 (fifth clinical review): a wording that names someone —a name the
+  // pseudonymizer took out— is never believed: whose symptom is whose.
+  const wording = (said.written ?? '').trim();
+  const written = restore(wording).trim();
+  const worded = written === wording && groundedWording(written, text) ? written : text; // prettier-ignore
+  return { text: worded, quote: text, startMs: line.startMs };
 }
 
 /**

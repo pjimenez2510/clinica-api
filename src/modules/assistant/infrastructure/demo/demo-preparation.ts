@@ -1,4 +1,7 @@
-import { readDictatedVitals } from '../../domain/dictated-vitals';
+import {
+  readDictatedVitals,
+  type DictatedVitalField,
+} from '../../domain/dictated-vitals';
 import type {
   AnsweredPreparation,
   SaidUnit,
@@ -25,9 +28,9 @@ export function preparationOf(prompt: string): AnsweredPreparation {
     line: match[1]!,
     text: match[2]!,
   }));
-  const spoken = lines.map(({ line, text }) => ({
+  const spoken = lines.map(({ line, text }, at) => ({
     line,
-    speaker: speakerOf(text),
+    speaker: speakerOf(text, lines[at - 1]?.text),
   }));
   const read = readDictatedVitals(lines.map((line) => line.text).join(' '), {
     endAtUnknownWord: true,
@@ -35,7 +38,7 @@ export function preparationOf(prompt: string): AnsweredPreparation {
 
   const values = Object.entries(read.signs).flatMap(([field, value]) => {
     for (const { line, text } of lines) {
-      for (const said of saidIn(text)) {
+      for (const said of saidIn(text, field as DictatedVitalField)) {
         const unit = unitFor(field, value, said, text);
         if (unit) return [{ field, line, quote: text, said, unit }];
       }
@@ -64,17 +67,36 @@ export function preparationOf(prompt: string): AnsweredPreparation {
         }
       : null,
     complaint: complaint
-      ? { line: complaint.line, quote: complaint.text }
+      ? { line: complaint.line, quote: complaint.text, written: wordingOf(complaint.text) } // prettier-ignore
       : null,
   };
+}
+
+/** AS-283. What a patient puts before the reason: fillers and whom they speak to. */
+const FILLERS = /^(?:(?:ay|bueno|pues|mire|oiga|este|verá|señorit[ao]|señora?|doctor[a]?|licenciad[ao]|enfermer[ao])[\s,.;:!¡]+)+/iu; // prettier-ignore
+
+/**
+ * AS-283. The reason as the nurse writes it, by plain rules: the fillers and a
+ * «tengo» at the start dropped, «me duele» as «dolor en» and «me siento» as
+ * «se siente». The barrier (AS-282) still decides whether it is believed.
+ */
+function wordingOf(sentence: string): string {
+  const worded = sentence
+    .replace(FILLERS, '')
+    .replace(/^tengo\s+(?:una?\s+)?/iu, '')
+    .replace(/^me\s+duelen?\s+/iu, 'Dolor en ')
+    .replace(/\bme\s+siento\b/giu, 'se siente')
+    .trim();
+  return worded.charAt(0).toUpperCase() + worded.slice(1);
 }
 
 /** What whoever prepares says to receive the patient. */
 const GREETING = /\b(buenos d[ií]as|buenas tardes|buenas noches|si[eé]ntese|p[aá]sele|pase)\b/iu; // prettier-ignore
 
-function speakerOf(text: string): Speaker {
+/** AS-254. Who says a line: the question and the reading are the nurse's, the answer the patient's. */
+function speakerOf(text: string, before: string | undefined): Speaker {
   if (/[¿?]/.test(text) || READING.test(text) || GREETING.test(text)) return 'nursing'; // prettier-ignore
-  if (COMPLAINT.test(text)) return 'patient';
+  if (COMPLAINT.test(text) || /[¿?]\s*$/.test(before ?? '')) return 'patient';
   return 'other';
 }
 

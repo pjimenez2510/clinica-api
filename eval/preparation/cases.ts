@@ -32,6 +32,8 @@ export const preparationCaseSchema = z.object({
   heightPosition: z.enum(['STANDING', 'LYING']).nullable(),
   /** The lines of the patient that hold the reason; null: the patient does not say one. */
   complaint: z.array(z.number().int().nonnegative()).min(1).nullable(),
+  /** AS-284. The reason must stay the patient's own sentence: a wording of it is serious. */
+  complaintLiteral: z.boolean().optional(),
 });
 export type PreparationCase = z.infer<typeof preparationCaseSchema>;
 
@@ -52,6 +54,8 @@ export type HeardFile = z.infer<typeof heardFileSchema>;
 
 export const PREPARATION_CASES = join(CASES_DIR, 'preparaciones.json');
 export const PREPARATION_HEARD = join(CASES_DIR, 'preparaciones-oido.json');
+/** AS-284. The reason worded and «150 y 8»: written text only. */
+export const WORDING_CASES = join(CASES_DIR, 'preparaciones-motivo.json');
 
 const sha256 = (text: string) =>
   createHash('sha256').update(text).digest('hex');

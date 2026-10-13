@@ -217,7 +217,7 @@ describe('AS-249 AS-250 readPreparationAnswer: the reason, and who said each lin
     const proposal = read({
       complaint: { line: 'L2', quote: 'Me duele la espalda y el pecho' },
     });
-    expect(proposal.complaint).toEqual({ text: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }); // prettier-ignore
+    expect(proposal.complaint).toEqual({ text: 'Me duele la espalda y el pecho desde ayer.', quote: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }); // prettier-ignore
   });
 
   it('AS-249 proposes no reason from a line of the nurse, nor one that is not in its line', () => {
@@ -367,5 +367,114 @@ describe('AS-247 AS-249 the barrier against what the review found (13-10-2026)',
     ]);
     expect(proposal.values.heartRate).toBeUndefined();
     expect(proposal.unclear).toContain('heartRate');
+  });
+});
+
+describe('AS-280 the height whisper writes «150 y 8»', () => {
+  const ROSA: TranscriptLine[] = [
+    { startMs: 0, endMs: 6_000, text: 'Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada.' }, // prettier-ignore
+    { startMs: 6_000, endMs: 12_000, text: 'Bueno, pesa 72 kilos y la talla 150 y 8 centímetros un medida de pie.' }, // prettier-ignore
+  ];
+
+  it('AS-280 saidIn reads «150 y 8» as 158, and leaves a pressure, a half and a list as they are', () => {
+    expect(saidIn('la talla 150 y 8 centímetros', 'heightCm')).toEqual([158]);
+    expect(saidIn('saturación 90 y 4', 'oxygenSaturation')).toEqual([94]);
+    expect(saidIn('150 y ocho', 'heightCm')).toEqual([158]);
+    // Only for the readings said whole: a temperature keeps its tenth.
+    expect(saidIn('temperatura 40 y 2', 'temperatureC')).not.toContain(42);
+    expect(saidIn('peso 70 y 5', 'weightKg')).not.toContain(75);
+    expect(saidIn('150 y 8')).toEqual([150, 8]);
+    expect(saidIn('10 y 5', 'heartRate')).toEqual([10, 5]);
+    expect(saidIn('saturación 90 y 3 litros', 'oxygenSaturation')).toEqual([
+      90, 3,
+    ]);
+    expect(saidIn('presión 120 y 80')).toEqual([120, 80]);
+    expect(saidIn('36 y medio')).toEqual([36.5]);
+    expect(saidIn('18 y 97')).toEqual([18, 97]);
+    expect(saidIn('100 y 8')).toEqual([100, 8]);
+    expect(saidIn('70 y 2.5')).toEqual([70, 2.5]);
+  });
+
+  it('AS-280 proposes the height 158 with its phrase as said', () => {
+    const proposal = readPreparationAnswer({
+      answer: answer({
+        lines: [
+          { line: 'L1', speaker: 'patient' },
+          { line: 'L2', speaker: 'nursing' },
+        ],
+        values: [{ field: 'heightCm', line: 'L2', quote: 'la talla 150 y 8 centímetros', said: 158, unit: 'cm' }], // prettier-ignore
+      }),
+      lines: ROSA,
+      markers: conversationOf(ROSA).markers,
+      restore: (text) => text,
+    });
+    expect(proposal.values.heightCm).toEqual({ value: 158, startMs: 6_000, quote: 'la talla 150 y 8 centímetros' }); // prettier-ignore
+    expect(proposal.unclear).toEqual([]);
+  });
+
+  it('AS-280 where «X y U» is not joined, neither of its numbers is a reading: «peso 80 y 3» is no weight of 3', () => {
+    const lines = [{ startMs: 0, endMs: 5_000, text: 'Peso 80 y 3 kilos, temperatura 40 y 2.' }]; // prettier-ignore
+    const proposal = readPreparationAnswer({
+      answer: answer({
+        lines: [{ line: 'L1', speaker: 'nursing' }],
+        values: [
+          { field: 'weightKg', line: 'L1', quote: 'Peso 80 y 3 kilos', said: 3, unit: 'kg' },
+          { field: 'temperatureC', line: 'L1', quote: 'temperatura 40 y 2', said: 40, unit: 'none' },
+        ],
+      }), // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (text) => text,
+    });
+    expect(proposal.values).toEqual({});
+    expect(proposal.unclear).toEqual(['weightKg', 'temperatureC']);
+  });
+
+  it('AS-280 by the rules too, the height is 158 from its one sentence', () => {
+    const proposal = readPreparationByRules(sentencesOf(ROSA));
+    expect(proposal.values.heightCm?.value).toBe(158);
+    expect(proposal.values.weightKg?.value).toBe(72);
+  });
+});
+
+describe('AS-282 the reason worded as the nurse writes it, with the patient’s phrase as its source', () => {
+  const ROSA: TranscriptLine[] = [
+    { startMs: 7_000, endMs: 13_000, text: 'Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada.' }, // prettier-ignore
+  ];
+  const reason = (written: string | undefined) =>
+    readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'tengo un dolor de cabeza', written } }, // prettier-ignore
+      lines: ROSA,
+      markers: conversationOf(ROSA).markers,
+      restore: (phrase) => phrase,
+    }).complaint;
+
+  it('AS-282 proposes the wording, and keeps the whole phrase as its source', () => {
+    expect(
+      reason(
+        'Dolor de cabeza muy fuerte desde hace dos días, con sensación de mareo',
+      ),
+    ).toEqual({
+      // prettier-ignore
+      text: 'Dolor de cabeza muy fuerte desde hace dos días, con sensación de mareo',
+      quote: ROSA[0]!.text,
+      startMs: 7_000,
+    });
+  });
+
+  it('AS-282 a wording that names someone, put back from the pseudonymizer, keeps the whole phrase (fifth review)', () => {
+    const lines: TranscriptLine[] = [{ startMs: 0, endMs: 5_000, text: 'Juan con fiebre y tengo tos.' }]; // prettier-ignore
+    const named = readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'Juan con fiebre', written: '[PERSONA_1] con fiebre y tos' } }, // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (phrase) => phrase.replace('[PERSONA_1]', 'Juan'),
+    }).complaint;
+    expect(named?.text).toBe(lines[0]!.text);
+  });
+
+  it('AS-282 falls back to the whole phrase when the wording adds what was not said, or is missing', () => {
+    expect(reason('Dolor de cabeza desde hace dos semanas')?.text).toBe(ROSA[0]!.text); // prettier-ignore
+    expect(reason(undefined)?.text).toBe(ROSA[0]!.text);
   });
 });

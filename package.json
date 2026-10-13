@@ -35,7 +35,7 @@
     "eval": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env --import ./eval/register.mjs eval/main.ts",
     "eval:test": "vitest run --config eval/vitest.config.mts",
     "eval:dictado": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env --import ./eval/register.mjs eval/dictation/main.ts",
-    "eval:preparacion": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env --import ./eval/register.mjs eval/preparation/main.ts",
+    "eval:preparacion": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env --env-file-if-exists=.env.local --import ./eval/register.mjs eval/preparation/main.ts",
     "lint:check": "eslint \"{src,test}/**/*.ts\"",
     "migrations:check": "node --experimental-strip-types scripts/check-migrations.mts",
     "db:seed:auth": "node --env-file-if-exists=.env --experimental-strip-types prisma/seed-authorisation.mts",

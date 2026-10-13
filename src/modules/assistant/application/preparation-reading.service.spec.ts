@@ -231,3 +231,31 @@ describe('PreparationReadingService, revisión', () => {
     expect(generate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AS-281 AS-282 the reason worded as the nurse writes it', () => {
+  it('AS-281 asks the model for the wording and for «150 y 8» as 158, and an answer without the wording still stands', async () => {
+    const { service, generate } = scene();
+    await service.read(ENCOUNTER_ID, REQUESTER);
+
+    const request = generate.mock.calls[0]![0] as { system: string; answer: { safeParse: (value: unknown) => { success: boolean } } }; // prettier-ignore
+    expect(request.system).toContain('"written"');
+    expect(request.system).toContain('"150 y 8"');
+    // Without it, the reading still stands: the reason is the phrase (AS-282).
+    expect(request.answer.safeParse(ANSWER).success).toBe(true);
+    expect(request.answer.safeParse({ ...ANSWER, complaint: { ...ANSWER.complaint, written: 7 } }).success).toBe(false); // prettier-ignore
+    expect(request.answer.safeParse({ ...ANSWER, complaint: { ...ANSWER.complaint, written: 'Dolor de espalda y pecho' } }).success).toBe(true); // prettier-ignore
+  });
+
+  it('AS-282 a wording that names someone the pseudonymizer took out is not believed: the whole sentence, with the names as said', async () => {
+    const lines = [{ startMs: 0, endMs: 5_000, text: 'Me duele la espalda al cargar a Rosa Quishpe.' }]; // prettier-ignore
+    const answer = { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'me duele la espalda', written: 'Dolor en la espalda al cargar a [PERSONA_1]' } }; // prettier-ignore
+    const { service } = scene({
+      lines,
+      llm: () => Promise.resolve({ value: answer, provider: 'fake', model: 'm', requestId: 'r', runId: 'run-1' }), // prettier-ignore
+    });
+
+    const reading = await service.read(ENCOUNTER_ID, REQUESTER);
+
+    expect(reading.complaint).toEqual({ text: lines[0]!.text, quote: lines[0]!.text, startMs: 0 }); // prettier-ignore
+  });
+});

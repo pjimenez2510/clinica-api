@@ -1,0 +1,4354 @@
+{
+  "label": "as284-falso",
+  "startedAt": "2026-10-13 11:33:16",
+  "commit": "e1e1aca4+cambios",
+  "provider": "demostración",
+  "casesSha256": "ba6db0bcc29dd193432d80d2057c4de336f235b798304516460bebfdc8923bc5",
+  "stopped": null,
+  "failures": {},
+  "cases": 132,
+  "planned": 132,
+  "summaries": {
+    "escrito": {
+      "cases": 42,
+      "answered": 42,
+      "expected": 126,
+      "correct": 117,
+      "correctRate": {
+        "low": 0.8698147736376256,
+        "high": 0.9619688564179797,
+        "rate": 0.9285714285714286
+      },
+      "wrong": 0,
+      "invented": 0,
+      "serious": 0,
+      "notLiteral": 0,
+      "complaintSaid": 34,
+      "complaintRight": 20,
+      "complaintRate": {
+        "low": 0.42221593754442194,
+        "high": 0.7363403173510689,
+        "rate": 0.5882352941176471
+      },
+      "complaintInvented": 1,
+      "complaintProposed": 21,
+      "complaintWorded": 9,
+      "complaintUnfaithful": 0,
+      "wordedRate": {
+        "low": 0.24469968809716416,
+        "high": 0.6345344577581422,
+        "rate": 0.42857142857142855
+      },
+      "lines": 136,
+      "speakersRight": 108,
+      "speakerRate": {
+        "low": 0.7185363823988985,
+        "high": 0.8535400292746077,
+        "rate": 0.7941176470588235
+      },
+      "p50Ms": 0,
+      "p90Ms": 1
+    },
+    "oido": {
+      "cases": 42,
+      "answered": 42,
+      "expected": 126,
+      "correct": 98,
+      "correctRate": {
+        "low": 0.6975794504830436,
+        "high": 0.8415395689974413,
+        "rate": 0.7777777777777778
+      },
+      "wrong": 0,
+      "invented": 0,
+      "serious": 0,
+      "notLiteral": 0,
+      "complaintSaid": 34,
+      "complaintRight": 19,
+      "complaintRate": {
+        "low": 0.3945389913538066,
+        "high": 0.7111651785765206,
+        "rate": 0.5588235294117647
+      },
+      "complaintInvented": 1,
+      "complaintProposed": 21,
+      "complaintWorded": 8,
+      "complaintUnfaithful": 0,
+      "wordedRate": {
+        "low": 0.2075101126400911,
+        "high": 0.5912134637854193,
+        "rate": 0.38095238095238093
+      },
+      "lines": 136,
+      "speakersRight": 102,
+      "speakerRate": {
+        "low": 0.6710366589992314,
+        "high": 0.815228290923249,
+        "rate": 0.75
+      },
+      "p50Ms": 0,
+      "p90Ms": 1
+    },
+    "motivo": {
+      "cases": 18,
+      "answered": 18,
+      "expected": 32,
+      "correct": 26,
+      "correctRate": {
+        "low": 0.6469084465243861,
+        "high": 0.9111045536226889,
+        "rate": 0.8125
+      },
+      "wrong": 0,
+      "invented": 0,
+      "serious": 0,
+      "notLiteral": 0,
+      "complaintSaid": 13,
+      "complaintRight": 10,
+      "complaintRate": {
+        "low": 0.4974362383948036,
+        "high": 0.918204713457304,
+        "rate": 0.7692307692307693
+      },
+      "complaintInvented": 0,
+      "complaintProposed": 7,
+      "complaintWorded": 2,
+      "complaintUnfaithful": 0,
+      "wordedRate": {
+        "low": 0.0822189232492833,
+        "high": 0.6410655504689459,
+        "rate": 0.2857142857142857
+      },
+      "lines": 45,
+      "speakersRight": 41,
+      "speakerRate": {
+        "low": 0.7926642454730684,
+        "high": 0.9648888835177052,
+        "rate": 0.9111111111111111
+      },
+      "p50Ms": 0,
+      "p90Ms": 1
+    },
+    "reservado-b2": {
+      "cases": 30,
+      "answered": 30,
+      "expected": 92,
+      "correct": 90,
+      "correctRate": {
+        "low": 0.9241650595386358,
+        "high": 0.9940179588249722,
+        "rate": 0.9782608695652174
+      },
+      "wrong": 0,
+      "invented": 1,
+      "serious": 1,
+      "notLiteral": 0,
+      "complaintSaid": 0,
+      "complaintRight": 0,
+      "complaintRate": {
+        "low": null,
+        "high": null,
+        "rate": 0
+      },
+      "complaintInvented": 0,
+      "complaintProposed": 0,
+      "complaintWorded": 0,
+      "complaintUnfaithful": 0,
+      "wordedRate": {
+        "low": null,
+        "high": null,
+        "rate": 0
+      },
+      "lines": 30,
+      "speakersRight": 25,
+      "speakerRate": {
+        "low": 0.6643564934133499,
+        "high": 0.9266345767456822,
+        "rate": 0.8333333333333334
+      },
+      "p50Ms": 0.5,
+      "p90Ms": 1
+    }
+  },
+  "verdicts": {
+    "escrito": {
+      "sc099": true,
+      "sc100": false,
+      "sc101": false
+    },
+    "oido": {
+      "sc099": true,
+      "sc100": false,
+      "sc101": false
+    },
+    "motivo": {
+      "sc099": true,
+      "sc100": false,
+      "sc101": false
+    },
+    "reservado-b2": {
+      "sc099": true,
+      "sc100": false,
+      "sc101": false
+    }
+  },
+  "serious": [
+    {
+      "id": "B2-V26",
+      "arm": "escrito",
+      "voice": "—",
+      "field": "weightKg",
+      "outcome": "invented"
+    }
+  ],
+  "scored": [
+    {
+      "id": "P01",
+      "style": "autor-dictado",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 8,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "headCircumferenceCm",
+          "expected": 48,
+          "got": 48,
+          "outcome": "correct"
+        },
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 65,
+          "got": 65,
+          "outcome": "correct"
+        },
+        {
+          "field": "hemoglobinGDl",
+          "expected": 22.5,
+          "got": 22.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "invented",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P02",
+      "style": "autor-conversacion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 3,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 65,
+          "got": 65,
+          "outcome": "correct"
+        },
+        {
+          "field": "hemoglobinGDl",
+          "expected": 22.5,
+          "got": 22.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 5,
+        "lines": 5
+      }
+    },
+    {
+      "id": "P03",
+      "style": "presion-con",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 80,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heartRate",
+          "expected": 76,
+          "got": 76,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P04",
+      "style": "peso-y-talla-en-palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P05",
+      "style": "motivo-en-medio",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 38.5,
+          "got": 38.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 96,
+          "got": 96,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 104,
+          "got": 104,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P06",
+      "style": "preguntas-y-respuestas",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 5,
+        "lines": 6
+      }
+    },
+    {
+      "id": "P07",
+      "style": "decimales",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 37.4,
+          "got": 37.4,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 98,
+          "got": 98,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 65.5,
+          "got": 65.5,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P08",
+      "style": "libras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 68,
+          "got": 68,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 158,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P09",
+      "style": "nino-con-madre",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 74,
+          "got": 74,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 9.5,
+          "got": 9.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "headCircumferenceCm",
+          "expected": 45,
+          "got": 45,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 37.8,
+          "got": 37.8,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "LYING",
+          "got": "LYING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 5
+      }
+    },
+    {
+      "id": "P10",
+      "style": "correccion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 130,
+          "got": 130,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P11",
+      "style": "numeros-de-charla",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 2,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 110,
+          "got": 110,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 18,
+          "got": 18,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P12",
+      "style": "sin-motivo",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 99,
+          "got": 99,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 68,
+          "got": 68,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.5,
+          "got": 36.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 175,
+          "got": 175,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P13",
+      "style": "imposible",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 95,
+          "got": 95,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P14",
+      "style": "hemoglobina-corregida",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "hemoglobinGDl",
+          "expected": 14.2,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "hemoglobinCorrectedGDl",
+          "expected": 13.1,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 58,
+          "got": 58,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 155,
+          "got": 155,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P15",
+      "style": "tension-arterial",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 140,
+          "got": 140,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 90,
+          "got": 90,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 82,
+          "got": 82,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P16",
+      "style": "acompanante",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 150,
+          "got": 150,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 95,
+          "got": 95,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 90,
+          "got": 90,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 93,
+          "got": 93,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P17",
+      "style": "paciente-dice-numero",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 63,
+          "got": 63,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 5
+      }
+    },
+    {
+      "id": "P18",
+      "style": "todo-de-corrido",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 118,
+          "got": 118,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 76,
+          "got": 76,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 64,
+          "got": 64,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 16,
+          "got": 16,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.5,
+          "got": 36.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 97,
+          "got": 97,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 168,
+          "got": 168,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P19",
+      "style": "abdominal-cintura",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 98,
+          "got": 98,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 92,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightCm",
+          "expected": 170,
+          "got": 170,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P20",
+      "style": "duda",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P21",
+      "style": "palabras-completas",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 125,
+          "got": 125,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 78,
+          "got": 78,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 97,
+          "got": 97,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P22",
+      "style": "nino-de-pie",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 112,
+          "got": 112,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 19,
+          "got": 19,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P23",
+      "style": "diastolica-sola",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 135,
+          "got": 135,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P24",
+      "style": "otra-forma-motivo",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P25",
+      "style": "embarazada",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 110,
+          "got": 110,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 68,
+          "got": 68,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P26",
+      "style": "saturacion-oxigeno",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 91,
+          "got": 91,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 24,
+          "got": 24,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 38,
+          "got": 38,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P27",
+      "style": "rapido-sin-unidades",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 54,
+          "got": 54,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 150,
+          "got": 150,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 78,
+          "got": 78,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P28",
+      "style": "orden-al-reves",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 78,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.8,
+          "got": 36.8,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P29",
+      "style": "perimetro-cefalico-bebe",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "headCircumferenceCm",
+          "expected": 39,
+          "got": 39,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 58,
+          "got": 58,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 5,
+          "got": 5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "LYING",
+          "got": "LYING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P30",
+      "style": "mezclado-con-indicaciones",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 162,
+          "got": 162,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 61.3,
+          "got": 61.3,
+          "outcome": "correct"
+        },
+        {
+          "field": "systolicBp",
+          "expected": 100,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 60,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P31",
+      "style": "motivo-largo",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 77,
+          "got": 77,
+          "outcome": "correct"
+        },
+        {
+          "field": "systolicBp",
+          "expected": 128,
+          "got": 128,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 82,
+          "got": 82,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P32",
+      "style": "hemoglobina-palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "hemoglobinGDl",
+          "expected": 12.5,
+          "got": 12.5,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P33",
+      "style": "pulso-con-paciente",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 86,
+          "got": 86,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P34",
+      "style": "dos-veces-igual",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 66,
+          "got": 66,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P35",
+      "style": "corregida-mayor",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "hemoglobinGDl",
+          "expected": 11,
+          "got": 11,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P36",
+      "style": "edad-y-fecha",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P37",
+      "style": "frase-del-autor-separada",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "headCircumferenceCm",
+          "expected": 48,
+          "got": 48,
+          "outcome": "correct"
+        },
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 65,
+          "got": 65,
+          "outcome": "correct"
+        },
+        {
+          "field": "hemoglobinGDl",
+          "expected": 22.5,
+          "got": 22.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 7,
+        "lines": 7
+      }
+    },
+    {
+      "id": "P38",
+      "style": "nada-medido",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P39",
+      "style": "temperatura-axilar",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 37.9,
+          "got": 37.9,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 98,
+          "got": 98,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P40",
+      "style": "metros-con-coma",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 180,
+          "got": 180,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 85.5,
+          "got": 85.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P41",
+      "style": "saturacion-baja-decimales",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 39.2,
+          "got": 39.2,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P42",
+      "style": "frecuencia-sin-respiratoria",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 20,
+          "got": 20,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P01",
+      "style": "autor-dictado",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "headCircumferenceCm",
+          "expected": 48,
+          "got": 48,
+          "outcome": "correct"
+        },
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 65,
+          "got": 65,
+          "outcome": "correct"
+        },
+        {
+          "field": "hemoglobinGDl",
+          "expected": 22.5,
+          "got": 22.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "invented",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P02",
+      "style": "autor-conversacion",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 65,
+          "got": 65,
+          "outcome": "correct"
+        },
+        {
+          "field": "hemoglobinGDl",
+          "expected": 22.5,
+          "got": 22.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 5,
+        "lines": 5
+      }
+    },
+    {
+      "id": "P03",
+      "style": "presion-con",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 80,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heartRate",
+          "expected": 76,
+          "got": 76,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P04",
+      "style": "peso-y-talla-en-palabras",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "wrong",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P05",
+      "style": "motivo-en-medio",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 38.5,
+          "got": 38.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 96,
+          "got": 96,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 104,
+          "got": 104,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P06",
+      "style": "preguntas-y-respuestas",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 5,
+        "lines": 6
+      }
+    },
+    {
+      "id": "P07",
+      "style": "decimales",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 37.4,
+          "got": 37.4,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 98,
+          "got": 98,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 65.5,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P08",
+      "style": "libras",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 68,
+          "got": 68,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 158,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P09",
+      "style": "nino-con-madre",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 74,
+          "got": 74,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 9.5,
+          "got": 9.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "headCircumferenceCm",
+          "expected": 45,
+          "got": 45,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 37.8,
+          "got": 37.8,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "LYING",
+          "got": "LYING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 5
+      }
+    },
+    {
+      "id": "P10",
+      "style": "correccion",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 130,
+          "got": 130,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P11",
+      "style": "numeros-de-charla",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 110,
+          "got": 110,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 18,
+          "got": 18,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P12",
+      "style": "sin-motivo",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 99,
+          "got": 99,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 68,
+          "got": 68,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.5,
+          "got": 36.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 80,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightCm",
+          "expected": 175,
+          "got": 175,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P13",
+      "style": "imposible",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 95,
+          "got": 95,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P14",
+      "style": "hemoglobina-corregida",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "hemoglobinGDl",
+          "expected": 14.2,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "hemoglobinCorrectedGDl",
+          "expected": 13.1,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 58,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightCm",
+          "expected": 155,
+          "got": 155,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P15",
+      "style": "tension-arterial",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 140,
+          "got": 140,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 90,
+          "got": 90,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 82,
+          "got": 82,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P16",
+      "style": "acompanante",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 150,
+          "got": 150,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 95,
+          "got": 95,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 90,
+          "got": 90,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 93,
+          "got": 93,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P17",
+      "style": "paciente-dice-numero",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 63,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 5
+      }
+    },
+    {
+      "id": "P18",
+      "style": "todo-de-corrido",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 118,
+          "got": 118,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 76,
+          "got": 76,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 64,
+          "got": 64,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 16,
+          "got": 16,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.5,
+          "got": 36.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 97,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 70,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightCm",
+          "expected": 168,
+          "got": 168,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P19",
+      "style": "abdominal-cintura",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 98,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 92,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightCm",
+          "expected": 170,
+          "got": 170,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P20",
+      "style": "duda",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P21",
+      "style": "palabras-completas",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 125,
+          "got": 125,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 78,
+          "got": 78,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 97,
+          "got": 97,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P22",
+      "style": "nino-de-pie",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 112,
+          "got": 112,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 19,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P23",
+      "style": "diastolica-sola",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 135,
+          "got": 135,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P24",
+      "style": "otra-forma-motivo",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P25",
+      "style": "embarazada",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 110,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 70,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 68,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P26",
+      "style": "saturacion-oxigeno",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 91,
+          "got": 91,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 24,
+          "got": 24,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 38,
+          "got": 38,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P27",
+      "style": "rapido-sin-unidades",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 54,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightCm",
+          "expected": 150,
+          "got": 150,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 78,
+          "got": 78,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P28",
+      "style": "orden-al-reves",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 78,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.8,
+          "got": 36.8,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P29",
+      "style": "perimetro-cefalico-bebe",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "headCircumferenceCm",
+          "expected": 39,
+          "got": 39,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 58,
+          "got": 58,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 5,
+          "got": 5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "LYING",
+          "got": "LYING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P30",
+      "style": "mezclado-con-indicaciones",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 162,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 61.3,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "systolicBp",
+          "expected": 100,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 60,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P31",
+      "style": "motivo-largo",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 77,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "systolicBp",
+          "expected": 128,
+          "got": 128,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 82,
+          "got": 82,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P32",
+      "style": "hemoglobina-palabras",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "hemoglobinGDl",
+          "expected": 12.5,
+          "got": 12.5,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P33",
+      "style": "pulso-con-paciente",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 86,
+          "got": 86,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P34",
+      "style": "dos-veces-igual",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 66,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 3
+      }
+    },
+    {
+      "id": "P35",
+      "style": "corregida-mayor",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "hemoglobinGDl",
+          "expected": 11,
+          "got": 11,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P36",
+      "style": "edad-y-fecha",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 4,
+        "lines": 4
+      }
+    },
+    {
+      "id": "P37",
+      "style": "frase-del-autor-separada",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 160,
+          "got": 160,
+          "outcome": "correct"
+        },
+        {
+          "field": "headCircumferenceCm",
+          "expected": 48,
+          "got": 48,
+          "outcome": "correct"
+        },
+        {
+          "field": "abdominalCircumferenceCm",
+          "expected": 65,
+          "got": 65,
+          "outcome": "correct"
+        },
+        {
+          "field": "hemoglobinGDl",
+          "expected": 22.5,
+          "got": 22.5,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 7,
+        "lines": 7
+      }
+    },
+    {
+      "id": "P38",
+      "style": "nada-medido",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P39",
+      "style": "temperatura-axilar",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 37.9,
+          "got": 37.9,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 98,
+          "got": 98,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P40",
+      "style": "metros-con-coma",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 180,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "weightKg",
+          "expected": 85.5,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P41",
+      "style": "saturacion-baja-decimales",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 39.2,
+          "got": 39.2,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "P42",
+      "style": "frecuencia-sin-respiratoria",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        },
+        {
+          "field": "respiratoryRate",
+          "expected": 20,
+          "got": 20,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "M01",
+      "style": "autor-whisper",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "weightKg",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightCm",
+          "expected": 158,
+          "got": 158,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "STANDING",
+          "got": "STANDING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M02",
+      "style": "decena-y-unidad",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 162,
+          "got": 162,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "M03",
+      "style": "decena-y-unidad",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 135,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 85,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "heartRate",
+          "expected": 76,
+          "got": 76,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M04",
+      "style": "decimas",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "headCircumferenceCm",
+          "expected": 40.5,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 40.2,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "M05",
+      "style": "falsos-positivos",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 120,
+          "got": 120,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        },
+        {
+          "field": "temperatureC",
+          "expected": 36.5,
+          "got": 36.5,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "M06",
+      "style": "falsos-positivos",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "respiratoryRate",
+          "expected": 18,
+          "got": 18,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 97,
+          "got": 97,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "M07",
+      "style": "palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 158,
+          "got": 158,
+          "outcome": "correct"
+        },
+        {
+          "field": "weightKg",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        },
+        {
+          "field": "heightPosition",
+          "expected": "LYING",
+          "got": "LYING",
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 2
+      }
+    },
+    {
+      "id": "M08",
+      "style": "muletillas",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 38,
+          "got": 38,
+          "outcome": "correct"
+        },
+        {
+          "field": "oxygenSaturation",
+          "expected": 94,
+          "got": 94,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": true,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M09",
+      "style": "negacion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 88,
+          "got": 88,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M10",
+      "style": "muletillas",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 38.5,
+          "got": 38.5,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M11",
+      "style": "muletillas",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 100,
+          "got": 100,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 60,
+          "got": 60,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M12",
+      "style": "duracion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 171,
+          "got": 171,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M13",
+      "style": "literal-negacion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heartRate",
+          "expected": 72,
+          "got": 72,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": true,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M14",
+      "style": "literal-otra-persona",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 140,
+          "got": null,
+          "outcome": "empty"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 90,
+          "got": null,
+          "outcome": "empty"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "missed",
+      "complaintWorded": null,
+      "complaintLiteral": true,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M15",
+      "style": "literal-lateralidad",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "heightCm",
+          "expected": 165,
+          "got": 165,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": true,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 2,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M16",
+      "style": "literal-dos-duraciones",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "temperatureC",
+          "expected": 38.5,
+          "got": 38.5,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": true,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M17",
+      "style": "alarma",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 90,
+          "got": 90,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 60,
+          "got": 60,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "M18",
+      "style": "no-se",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "values": [
+        {
+          "field": "oxygenSaturation",
+          "expected": 96,
+          "got": 96,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "complaintWorded": false,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "B2-V01",
+      "style": "b2-completa-palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V02",
+      "style": "b2-completa-palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V03",
+      "style": "b2-completa-palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V04",
+      "style": "b2-completa-cifras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V05",
+      "style": "b2-completa-cifras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V06",
+      "style": "b2-completa-cifras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V07",
+      "style": "b2-orden-parcial",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V08",
+      "style": "b2-orden-parcial",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V09",
+      "style": "b2-orden-parcial",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V10",
+      "style": "b2-presion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V11",
+      "style": "b2-presion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V12",
+      "style": "b2-presion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V13",
+      "style": "b2-talla",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V14",
+      "style": "b2-talla",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V15",
+      "style": "b2-saturacion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V16",
+      "style": "b2-saturacion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V17",
+      "style": "b2-fr-fc",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V18",
+      "style": "b2-fr-fc",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V19",
+      "style": "b2-temperatura",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V20",
+      "style": "b2-temperatura",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V21",
+      "style": "b2-peso",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V22",
+      "style": "b2-peso",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V23",
+      "style": "b2-correccion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V24",
+      "style": "b2-correccion",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V25",
+      "style": "b2-dudoso",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V26",
+      "style": "b2-dudoso",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V27",
+      "style": "b2-imposible",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V28",
+      "style": "b2-largo",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V29",
+      "style": "b2-largo",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 0,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 0,
+        "lines": 1
+      }
+    },
+    {
+      "id": "B2-V30",
+      "style": "b2-completa-palabras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 1,
+      "notLiteral": 0,
+      "complaint": "none",
+      "complaintWorded": null,
+      "complaintLiteral": false,
+      "complaintUnfaithful": false,
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    }
+  ]
+}

@@ -499,6 +499,31 @@ ve como AS-263 y AS-265.
 Antecedentes, Diagnósticos y Receta, las marcas de lo deducido y el teléfono; su mitad del
 servidor es AS-263, AS-265, AS-037, AS-267, AS-269, AS-270, AS-272, AS-073 y AS-275, que ya se prueban con esos números.
 
+### E16 — La talla dicha con «y» y el motivo redactado _(13-10-2026)_
+
+Lo que vio el autor al probar «Escuchar» con el modelo real (13-10-2026): el
+reconocedor escribió «ciento cincuenta y ocho» como «150 y 8» y la barrera
+dejó la talla en ámbar, porque «158» no está en la frase; y el motivo salió
+literal, con su «Ay, señorita». La forma «decena y unidad» se lee como un
+número antes de la barrera, con una regla del código, y el motivo se
+propone redactado como lo escribe la enfermera, con la frase del paciente
+como fuente y las mismas barreras de los signos (D-263).
+
+**Por qué va así:** la regla es determinista, así que el número sigue sin
+salir del modelo; la redacción sí sale del modelo, y por eso sólo se cree si
+cada palabra, número y negación que lleva está en la frase; si no, se
+propone la frase entera, como antes.
+**Prueba independiente:** con el modo de demostración, el guion de Rosa
+(«…la talla 150 y 8 centímetros…», «Ay, señorita, tengo un dolor de
+cabeza…») propone la talla 158 con su frase y el motivo sin «Ay, señorita»,
+con «Paciente · 00:07 «…»» debajo; «presión 120 y 80», «36 y medio» y «18 y
+97» siguen siendo lo que eran; y el arnés da 0 números fuera de su frase.
+**Cubre:** AS-280 a AS-286.
+**Solo servidor:** AS-284 (el arnés, fuera del verify).
+**Solo interfaz:** AS-285 y AS-286. Son la casilla «Motivo de consulta» y la
+fuente del motivo en la pestaña Signos; su mitad del servidor es AS-282, que
+ya se prueba con ese número.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -2472,6 +2497,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   queda fuera; SI no la hay, ENTONCES NO DEBERÁ proponerse ningún motivo.
   > En palabras del paciente, como pide el formulario 020: no se resume ni se
   > reescribe, así no puede inventarse (D-260 §5).
+  > Desde AS-282 (D-263), esta frase es la **fuente** del motivo, y lo que
+  > se propone en la casilla es su redacción, si pasa sus barreras.
 - **AS-250** — La lectura DEBERÁ hacerse **por frase**: cada línea de la
   transcripción partida tras un punto, una interrogación o una exclamación
   (no el punto entre cifras), cada frase con un inicio estimado dentro de su
@@ -2558,8 +2585,6 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   seguir disponible; a 375 px «Escuchar» y «Detener» DEBERÁN medir al menos
   44 px y la pestaña no DEBERÁ desbordar; y el médico DEBERÁ verlo igual en
   la pestaña Signos de la consulta.
-
----
 
 ### 55. Las alergias y los antecedentes dichos, como registros (D-261, P1, P2)
 
@@ -2705,6 +2730,93 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-279** _(solo interfaz)_ — A 375 px de ancho, cada ✓ y cada ✕ de las
   propuestas de Antecedentes, Diagnósticos y Receta DEBERÁN medir al menos
   44 px de alto y la página no DEBERÁ desbordar a lo ancho.
+
+### 61. La talla dicha con «y» y el motivo redactado (B3, D-263, P2, P5)
+
+- **AS-280** — El lector de números (el de «Dictar», las reglas y la
+  barrera de AS-247) DEBERÁ leer como **un solo número**, en la talla y en
+  las medidas que se dicen enteras (presión, pulso, frecuencia
+  respiratoria, saturación), una decena o una centena escrita en cifras
+  (20, 30… 90, 110… 190, 210…; en la talla, sólo desde 110; nunca 100, 200
+  ni un número que no termine en cero) seguida de «y» y de una sola unidad
+  del 1 al 9, en cifras o en palabras, que no cuente otra cosa («litros»,
+  «l», «lpm», «veces», «días»…): «talla
+  150 y 8» es 158, «saturación 90 y 4» es 94, «talla 150 y ocho» es 158; y
+  «ciento cincuenta y ocho», como hasta hoy, 158. La frase citada DEBERÁ
+  seguir siendo la dicha. NO DEBERÁ unir lo que no es esa forma —«presión
+  120 y 80», «36 y medio», «18 y 97», «70 y 2.5», «saturación 90 y 3
+  litros»— ni nada en la temperatura, los perímetros, la hemoglobina y el
+  peso, ni en una talla bajo 110, que siguen como antes («temperatura 40 y
+  2» es 40,2; «peso 70 y 5» y «talla 50 y 5» no se proponen; D-263 §3). En esos campos, la barrera de AS-247 NO DEBERÁ
+  proponer ninguno de los dos números de un «X y U»: «peso 80 y 3» no es
+  un peso de 3.
+  > Whisper escribe así lo que se dice «ciento cincuenta y ocho»; es la
+  > forma que el reconocedor deja, no la que alguien dicta. En los campos
+  > con décimas «40 y 2» ya era 40,2 (revisión clínica G1).
+- **AS-281** — La lectura del asistente DEBERÁ pedir al modelo, para el
+  motivo, además de la línea y la frase copiada del paciente, su
+  **redacción** (`written`): como la escribe la enfermera, en tercera
+  persona o sin persona, sin muletillas ni vocativos («ay», «señorita»,
+  «doctora», «mire») y concisa; y el modelo DEBERÁ dar el número de «150 y
+  8» como 158.
+- **AS-282** — El motivo propuesto DEBERÁ ser la redacción SÓLO SI, frente
+  a la frase entera de AS-249 (su **fuente**): (a) no es más larga que
+  ella ni que 500 caracteres; (b) cada palabra suya la dijo el paciente
+  **en el mismo orden** —comparadas sin mayúsculas, tildes ni signos: la
+  misma palabra o con otro género o número, nunca por una raíz común, y
+  «dolor» por «duele» (nunca por «dolió» ni «dolía»), «mareo» por
+  «mareada», «siente» por «siento»—, salvo
+  las de enlace y de redacción («de», «con», «desde», «hace», «sensación»,
+  «refiere»…; nunca «al», «por» ni «para», que añaden una causa, ni
+  «unos», «varios», que cambian una cantidad); (c) cada palabra con
+  contenido que dijo el paciente está en ella, salvo muletillas,
+  vocativos, la primera persona y verbos de apoyo en presente («tengo»,
+  «me siento», «vengo»); (d) dice los mismos números que la fuente, «un
+  día» como 1; y (e) no niega nada. Y NO DEBERÁ creerse ninguna redacción si la fuente niega
+  algo (sin contar el «no sé» que duda ni el «¿no?» final), nombra a otra
+  persona («mi mamá», «mi hijito», «mi señora», «la guagua», «le duele»,
+  «a ella»…), lleva un posesivo («mi», «su»…), se aparta de otro con «yo»
+  o «a mí», o usa un verbo de otra
+  persona («tiene», «está», «siente»: «el niño tiene fiebre y yo tengo
+  tos»), dice derecha e izquierda, o trae más de
+  una duración o más de un número: lo que una comparación palabra por
+  palabra no distingue; ni una redacción que nombre a alguien que el
+  seudonimizador quitó. SI no las pasa, o el modelo no la da, ENTONCES el
+  motivo DEBERÁ ser la frase entera, como AS-249. La respuesta DEBERÁ
+  llevar, en `complaint`, el texto propuesto (`text`), su fuente (`quote`)
+  y su inicio (`startMs`).
+  > Lo que el modelo escribe sólo se cree si dice todo lo que dijo el
+  > paciente y nada más (P2). La revisión clínica mostró que comparar
+  > palabras sueltas deja pasar una negación invertida, duraciones
+  > cruzadas, un síntoma quitado o el de otra persona; en esos casos queda
+  > lo literal, que nunca se inventa.
+- **AS-283** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el lector de
+  demostración DEBERÁ redactar el motivo sin red: quitar del comienzo de la
+  frase las muletillas y los vocativos y un «tengo», empezar «me duele…»
+  como «Dolor en…» y pasar «me siento» a «se siente»; y su redacción DEBERÁ
+  pasar las mismas barreras (AS-282).
+- **AS-284** — El arnés (`pnpm eval:preparacion`) DEBERÁ medir además un set
+  propio (`eval/casos/preparaciones-motivo.json`, inventado, escrito antes
+  de medir) con la frase del autor tal como la escribió el reconocedor,
+  variantes «X y Y» en talla, peso, presión y perímetro, los falsos
+  positivos de AS-280, motivos con muletillas y motivos que DEBEN quedar
+  literales (una negación, otra persona, dos duraciones, derecha e
+  izquierda, un síntoma de alarma junto a otro); aceptar como dicho
+  literalmente un número escrito «150 y 8» en los campos de AS-280
+  (SC-099); contar como **grave** cada motivo que debía quedar literal y
+  salió redactado, que DEBERÁ ser **0**; e informar qué parte de los demás
+  motivos propuestos sale **redactada** —sin primera persona («me», «mi»,
+  «tengo», «estoy»), sin muletillas ni vocativos y distinta de la frase—
+  con su intervalo de Wilson, que con el proveedor principal DEBERÁ ser
+  **≥ 90 %**.
+- **AS-285** _(solo interfaz)_ — La casilla del motivo DEBERÁ llamarse
+  **«Motivo de consulta»** en la toma, con la ayuda «Lo que refiere el
+  paciente», y en su lectura guardada, sin ayuda (D-263 §2).
+- **AS-286** _(solo interfaz)_ — Bajo el motivo propuesto, la procedencia
+  DEBERÁ citar la **fuente** («Paciente · 00:07 «Ay, señorita, tengo…»»), no
+  la redacción, y abrir la transcripción en esa frase como las demás.
+
+---
 
 ## Códigos de error nuevos
 
@@ -2863,6 +2975,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-246 a AS-251, AS-253, AS-254 | Unitario del dominio y del servicio con seudonimizador y proveedor falsos |
 | AS-255 | Arnés (`eval/`), fuera del verify |
 | AS-256 a AS-259 | Componente y composable; recorrido F-03 con el audio de prueba, `clinica-ai` y el modo de demostración |
+| AS-280 | Unitario del lector de números, con los falsos positivos |
+| AS-281 a AS-283 | Unitario del dominio y del servicio con seudonimizador y proveedor falsos, y del proveedor de demostración |
+| AS-284 | Arnés (`eval/`), fuera del verify |
+| AS-285, AS-286 | Componente; recorrido F-03 con el modo de demostración |
 
 ## Preguntas abiertas
 

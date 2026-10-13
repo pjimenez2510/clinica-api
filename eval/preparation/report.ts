@@ -16,7 +16,7 @@ export function renderPreparationReport(input: {
   const byId = new Map(cases.map((item) => [item.id, item]));
   const rows = Object.entries(summaries).map(([name, s]) => {
     const v = verdicts[name]!;
-    return `| ${name} | ${s.answered}/${s.cases} | ${s.correct}/${s.expected} (${pct(s.correctRate.rate)}; ${interval(s.correctRate)}) | **${s.serious}** | **${s.notLiteral}** | ${s.complaintRight}/${s.complaintSaid} (${pct(s.complaintRate.rate)}), inventados ${s.complaintInvented} | ${s.speakersRight}/${s.lines} (${pct(s.speakerRate.rate)}) | ${s.p50Ms ?? '—'} / ${s.p90Ms ?? '—'} ms | ${v.sc099 ? '✓' : '✗'} ${v.sc100 ? '✓' : '✗'} ${v.sc101 ? '✓' : '✗'} |`; // prettier-ignore
+    return `| ${name} | ${s.answered}/${s.cases} | ${s.correct}/${s.expected} (${pct(s.correctRate.rate)}; ${interval(s.correctRate)}) | **${s.serious}** | **${s.notLiteral}** | ${s.complaintRight}/${s.complaintSaid} (${pct(s.complaintRate.rate)}), inventados ${s.complaintInvented}; redactados ${s.complaintWorded}/${s.complaintProposed} (${pct(s.wordedRate.rate)}; ${interval(s.wordedRate)}), **redactados sin poder ${s.complaintUnfaithful}** | ${s.speakersRight}/${s.lines} (${pct(s.speakerRate.rate)}) | ${s.p50Ms ?? '—'} / ${s.p90Ms ?? '—'} ms | ${v.sc099 ? '✓' : '✗'} ${v.sc100 ? '✓' : '✗'} ${v.sc101 ? '✓' : '✗'} |`; // prettier-ignore
   });
   const serious = scored.flatMap((each) =>
     each.values
@@ -42,9 +42,9 @@ export function renderPreparationReport(input: {
 
 - Corrida: ${meta.startedAt} (America/Guayaquil), commit \`${meta.commit}\`, proveedor **${meta.provider}**.
 - Lecturas: ${meta.cases} de ${meta.planned}${meta.stopped ? ` — **detenida por ${meta.stopped}**` : ''}.
-- Casos inventados (\`eval/casos/preparaciones.json\`, el reservado de B2 sólo en cifras); sin seudonimizador (EV-2).
+- Casos inventados (\`eval/casos/preparaciones.json\`, \`eval/casos/preparaciones-motivo.json\` sólo escrito, el reservado de B2 sólo en cifras); sin seudonimizador (EV-2).
 
-| Conjunto | Leídas | Valores correctos (IC 95 %) | Graves | Fuera de su frase (SC-099) | Motivo (SC-101) | Hablante (SC-101) | p50 / p90 | SC-099 SC-100 SC-101 |
+| Conjunto | Leídas | Valores correctos (IC 95 %) | Graves | Fuera de su frase (SC-099) | Motivo (SC-101; redactados, AS-284) | Hablante (SC-101) | p50 / p90 | SC-099 SC-100 SC-101 |
 |---|---|---|---|---|---|---|---|---|
 ${rows.join('\n')}
 
