@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -25,6 +27,7 @@ import {
   createSite,
   hourSlot,
 } from './setup/fixtures';
+import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -1462,6 +1465,42 @@ describe('la atención por HTTP', () => {
         status: 'SIGNED',
         content: expect.objectContaining({ planTratamiento: 'Lo último' }),
       });
+    });
+  });
+
+  describe('ninguna respuesta de la consulta en caché (AU-061)', () => {
+    it('AU-061 la nota, al escribirla y al leerla, y su error, llevan no-store', async () => {
+      const encounterId = await openEncounter();
+
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      const listed = await get(`/encounters/${encounterId}/notes`, doctorToken).expect(200); // prettier-ignore
+      const missing = await get(`/encounters/${randomUUID()}`, doctorToken).expect(404); // prettier-ignore
+
+      // The note itself travels in the response.
+      expect((listed.body as { items: NoteBody[] }).items).toHaveLength(1);
+      expect(draft.headers['cache-control']).toBe('no-store');
+      expect(listed.headers['cache-control']).toBe('no-store');
+      // An error rendered by the filter answers on the same response.
+      expect(missing.headers['cache-control']).toBe('no-store');
+      await expectPublicTariffCacheable(app.getHttpServer());
+    });
+
+    it('AU-061 la historia del paciente y el resumen de la atención llevan no-store', async () => {
+      const encounterId = await openEncounter();
+
+      const history = await get(`/patients/${patientId}/history`, doctorToken).expect(200); // prettier-ignore
+      const summary = await get(`/encounters/${encounterId}/chart-summary`, doctorToken).expect(200); // prettier-ignore
+
+      expect(history.headers['cache-control']).toBe('no-store');
+      expect(summary.headers['cache-control']).toBe('no-store');
+      await expectPublicTariffCacheable(app.getHttpServer());
     });
   });
 

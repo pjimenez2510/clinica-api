@@ -118,6 +118,10 @@ export const DOMAIN_ERROR_CODES = [
   // AS-143, AS-147 (E1): el borrador se canceló al firmar o porque el médico
   // dejó de esperarlo (409).
   'ASSISTANT_DRAFT_CANCELLED',
+  // AS-186 (B2): un dictado de signos sin nada que leer —sin grabación, sin
+  // voz, ilegible— (422) y clinica-ai que no puede transcribirlo (503).
+  'ASSISTANT_DICTATION_NOT_HEARD',
+  'ASSISTANT_DICTATION_UNAVAILABLE',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los

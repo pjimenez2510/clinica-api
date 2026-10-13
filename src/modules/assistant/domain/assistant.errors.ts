@@ -527,3 +527,75 @@ export class AssistantDraftCancelledError extends ConflictError {
     super('The draft was cancelled before it finished');
   }
 }
+
+/** AS-186. Why a dictation gave no text, as the screen needs to say it. */
+export type DictationNotHeard =
+  | { kind: 'empty' }
+  | { kind: 'unreadable' }
+  | { kind: 'silent'; seconds: number };
+
+/** Below this, the button was released before anything was said (SigmAI). */
+const TOO_SHORT_S = 1.5;
+
+const SECONDS = new Intl.NumberFormat('es-EC', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+function notHeardTitle(heard: DictationNotHeard): string {
+  switch (heard.kind) {
+    case 'empty':
+      return 'No llegó ninguna grabación. Pulse «Dictar», diga los signos y pulse «Terminar»';
+    case 'unreadable':
+      return 'No se pudo leer la grabación. Vuelva a dictar o escriba los signos';
+    case 'silent': {
+      const seconds = SECONDS.format(heard.seconds);
+      return heard.seconds < TOO_SHORT_S
+        ? `Solo llegaron ${seconds} s de grabación. Pulse «Terminar» cuando haya dicho los signos`
+        : `Llegaron ${seconds} s de grabación pero no se oyó ninguna voz. Revise que el micrófono sea el correcto y no esté silenciado, o escriba los signos`;
+    }
+  }
+}
+
+/**
+ * AS-186. A dictation with nothing to read: no recording, one `clinica-ai`
+ * could not decode, or one where it heard no voice. Nothing is filled.
+ */
+export class DictationNotHeardError extends ValidationError {
+  readonly code = 'ASSISTANT_DICTATION_NOT_HEARD';
+  override readonly userTitle: string;
+
+  constructor(readonly heard: DictationNotHeard) {
+    super(`The dictation was not heard: ${heard.kind}`);
+    this.userTitle = notHeardTitle(heard);
+  }
+}
+
+export type DictationUnavailableReason =
+  'no-recognizer' | 'unreachable' | 'busy';
+
+const DICTATION_UNAVAILABLE_TITLES: Record<DictationUnavailableReason, string> =
+  {
+    'no-recognizer':
+      'El reconocimiento de voz no está instalado en este equipo: escriba los signos',
+    unreachable:
+      'El reconocimiento de voz no responde. Vuelva a intentarlo en unos minutos o escriba los signos',
+    busy: 'El reconocimiento de voz está ocupado con otros dictados. Vuelva a intentarlo en unos segundos o escriba los signos',
+  };
+
+/**
+ * AS-186. `clinica-ai` cannot transcribe: no recogniser, no secret, down, or
+ * too slow; or this API already has as many dictations in flight as it lets
+ * through (the recogniser is shared with the consultation's listening). Retryable either way: the taking goes on by hand meanwhile.
+ */
+export class DictationUnavailableError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_DICTATION_UNAVAILABLE';
+  readonly service = 'clinica-ai';
+  readonly isRetryable = true;
+  override readonly userTitle: string;
+
+  constructor(readonly reason: DictationUnavailableReason) {
+    super(`clinica-ai cannot transcribe the dictation: ${reason}`, { reason });
+    this.userTitle = DICTATION_UNAVAILABLE_TITLES[reason];
+  }
+}

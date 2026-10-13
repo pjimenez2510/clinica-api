@@ -40,6 +40,7 @@ import {
   createSite,
   enableAssistant,
 } from './setup/fixtures';
+import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -470,6 +471,22 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
       ).toBe(1);
 
       await request(app.getHttpServer()).get(url(encounterId)).set('Authorization', `Bearer ${secondDoctor.token}`).expect(403); // prettier-ignore
+    });
+
+    it('AU-061 AS-045 AS-056 neither the ticket nor what was heard stays in a cache', async () => {
+      const issued = await ticketFor(encounterId, doctor.token).expect(200);
+      const ch = await listening();
+      ch.speak(0, SENTENCES[1]!);
+      ch.send({ type: 'stop' });
+      await ch.next('stopped');
+      const heard = await request(app.getHttpServer()).get(url(encounterId)).set('Authorization', `Bearer ${doctor.token}`).expect(200); // prettier-ignore
+
+      // A single-use credential, and the consultation itself.
+      expect((issued.body as { ticket: string }).ticket).toMatch(/^[\w-]{43}$/);
+      expect((heard.body as { segments: unknown[] }).segments).toHaveLength(1);
+      expect(issued.headers['cache-control']).toBe('no-store');
+      expect(heard.headers['cache-control']).toBe('no-store');
+      await expectPublicTariffCacheable(app.getHttpServer());
     });
 
     it('AS-057 deletes 45 days after the first signature and 90 from each segment, and keeps what is younger', async () => {
