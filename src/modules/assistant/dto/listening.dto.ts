@@ -37,7 +37,17 @@ const listeningSchema = z.object({
       text: z.string(),
     }),
   ),
+  /** AS-167. The patient has the authorization to record standing. */
+  recordingAuthorized: z.boolean(),
+});
+
+/** AS-168. What registering the authorization from the attention answers. */
+const recordingAuthorizationSchema = z.object({
+  recordingAuthorized: z.boolean(),
 });
 
 export class ListeningTicketDto extends createZodDto(ticketSchema) {}
 export class ListeningDto extends createZodDto(listeningSchema) {}
+export class RecordingAuthorizationDto extends createZodDto(
+  recordingAuthorizationSchema,
+) {}

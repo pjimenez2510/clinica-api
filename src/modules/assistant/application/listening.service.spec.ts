@@ -586,6 +586,20 @@ describe('ListeningService', () => {
     ).rejects.toBeInstanceOf(ListeningNotOpenError);
   });
 
+  it('AS-166: closed because the authorization was revoked, what the recogniser holds is dropped, not kept', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 300);
+
+    await service.close(ENCOUNTER, { discardHeld: true });
+
+    expect(store.session).toMatchObject({ state: 'STOPPED' });
+    // Control: the same speech closed without discarding keeps one (AS-045).
+    expect(store.segments).toEqual([]);
+    expect(recognizer.current.closed).toBe(true);
+  });
+
   it('AS-151: a stop from a channel that does not hold the capture stops it, and the one that held it is told', async () => {
     const { service, store, observer } = setup();
     const lost = channel();

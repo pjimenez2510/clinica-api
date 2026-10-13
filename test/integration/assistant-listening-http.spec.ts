@@ -33,7 +33,13 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createEncounter, createPatient, createSite } from './setup/fixtures';
+import {
+  createEncounter,
+  createPatient,
+  authorizeRecording,
+  createSite,
+  enableAssistant,
+} from './setup/fixtures';
 import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -137,6 +143,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
     await syncAuthorisation(prisma);
     registry.invalidate();
     siteId = (await createSite(prisma)).id;
+    await enableAssistant(prisma, siteId);
     patientId = (await createPatient(prisma)).id;
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
     secondDoctor = await signIn('MEDICO', 'medico2@clinica.ec', '0602910945');
@@ -144,6 +151,8 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
     encounterId =
       (await createEncounter(prisma, { siteId, practitionerId: doctor.practitionerId, patientId })) // prettier-ignore
       .id;
+    // AS-165. Listening needs it; A3's own spec covers its absence.
+    await authorizeRecording(prisma, patientId, doctor.userId);
   });
 
   afterAll(async () => {
@@ -275,6 +284,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
 
     it('AS-045 answers 404 for an attention of another site, and 409 for one that no longer takes content', async () => {
       const elsewhere = await createSite(prisma, 'Sede Norte');
+      await enableAssistant(prisma, elsewhere.id);
       const other = await createEncounter(prisma, { siteId: elsewhere.id, practitionerId: doctor.practitionerId, patientId }); // prettier-ignore
       const missing = await ticketFor(other.id, doctor.token).expect(404);
       expect((missing.body as { code: string }).code).toBe(

@@ -780,6 +780,10 @@ describe('la configuración por HTTP', () => {
         // D-207 §1 hasta que un clínico la confirme.
         bpReferenceSystolic: 140,
         bpReferenceDiastolic: 90,
+        // AS-160 (A3, D-254 §2): una sede nueva nace con el asistente apagado,
+        // y la respuesta dice si la instalación lo tiene (según su `.env`).
+        assistantEnabled: false,
+        assistantAvailable: expect.any(Boolean) as boolean,
       });
     });
 
@@ -1371,6 +1375,7 @@ describe('la configuración por HTTP', () => {
         unmatchedResultDeadlineHours: 24,
         bpReferenceSystolic: 140,
         bpReferenceDiastolic: 90,
+        assistantEnabled: false,
       };
 
       expect(row?.before).toEqual(defaults);
@@ -1484,6 +1489,9 @@ describe('la configuración por HTTP', () => {
         // interruptor que este requisito prohíbe.
         'triageEnabled',
         'requireCertifiedSignature',
+        // AS-160 (A3, D-254). Apaga lo que el asistente PROPONE, ninguna
+        // garantía: la nota, la receta y la orden se escriben igual a mano.
+        'assistantEnabled',
         'recordRetentionYears',
         'lateArrivalGraceMinutes',
         'lateArrivalOverridePermission',
@@ -1541,6 +1549,9 @@ describe('la configuración por HTTP', () => {
 
       expect(columns.map((column) => column.column_name)).toEqual([
         'allow_past_booking',
+        // AS-160 (A3, D-254). Enciende una capacidad que propone y nunca
+        // escribe sola (P1): apagada, nada deja de garantizarse. Nace apagada.
+        'assistant_enabled',
         // EN-272 (D-207 §1). La línea de referencia de la TA en las gráficas
         // de evolución: dibuja, no decide ni apaga nada.
         'bp_reference_diastolic',

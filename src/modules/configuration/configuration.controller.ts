@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -23,12 +24,19 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { ALL_SITES } from '../../shared/authorisation/principal';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
+import { ASSISTANT_ENABLED } from '../../shared/config/assistant-enabled';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import type { Requester } from './application/configuration-audit.trail';
 import { HolidaysService } from './application/holidays.service';
 import { SiteParametersService } from './application/site-parameters.service';
 import {
+  AssistantSitesDto,
   CreateHolidayDto,
   HolidayDto,
   HolidayListDto,
@@ -41,6 +49,7 @@ import {
   SiteParametersDto,
   UpdateHolidayDto,
   UpdateSiteParametersDto,
+  type AssistantSitesResponse,
   type HolidayListResponse,
   type HolidayResponse,
   type RecordRetentionResponse,
@@ -90,6 +99,9 @@ export class ConfigurationController {
     private readonly holidays: HolidaysService,
     private readonly parameters: SiteParametersService,
     private readonly currentUser: CurrentUserService,
+    @Inject(ASSISTANT_ENABLED) private readonly assistantInstalled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly assistantSwitch: AssistantSiteSwitch,
   ) {}
 
   // --- Holidays --------------------------------------------------------------
@@ -235,7 +247,31 @@ export class ConfigurationController {
   async getParameters(
     @Param('siteId', ParseUUIDPipe) siteId: string,
   ): Promise<SiteParametersResponse> {
-    return this.parameters.get(siteId);
+    return {
+      ...(await this.parameters.get(siteId)),
+      assistantAvailable: this.assistantInstalled,
+    };
+  }
+
+  /**
+   * AS-162 (A3). The sites of the caller's reach with the assistant on: what
+   * reception reads to know whether to ask for the authorization to record,
+   * without `settings:read`. None while the installation has it off (AS-026).
+   */
+  @Get('assistant-sites')
+  @RequirePermission('site:read', 'query')
+  @ApiOperation({ summary: 'Sedes con el asistente encendido' })
+  @ApiOkResponse({ type: AssistantSitesDto })
+  async assistantSites(): Promise<AssistantSitesResponse> {
+    if (!this.assistantInstalled) return { siteIds: [] };
+    const scope = this.currentUser.requirePrincipal().sitesFor('site:read');
+    const enabled = await this.assistantSwitch.enabledSites();
+    return {
+      siteIds:
+        scope === ALL_SITES
+          ? enabled
+          : enabled.filter((site) => scope.includes(site)),
+    };
   }
 
   /**
@@ -256,7 +292,7 @@ export class ConfigurationController {
     @Body() dto: UpdateSiteParametersDto,
     @Req() req: Request,
   ): Promise<SiteParametersResponse> {
-    return this.parameters.update(
+    const saved = await this.parameters.update(
       siteId,
       {
         minLeadMinutes: dto.minLeadMinutes,
@@ -286,6 +322,8 @@ export class ConfigurationController {
         criticalEscalationUserId: dto.criticalEscalationUserId,
         // ORD-177 (D-207 §2): el read-back, un ajuste de la sede.
         criticalReadBackRequired: dto.criticalReadBackRequired,
+        // AS-160 (A3): el asistente en la sede.
+        assistantEnabled: dto.assistantEnabled,
         unmatchedResultOwnerRoleId: dto.unmatchedResultOwnerRoleId,
         unmatchedResultDeadlineHours: dto.unmatchedResultDeadlineHours,
         // EN-272 (D-207 §1): la línea de la TA de las gráficas de evolución.
@@ -294,6 +332,7 @@ export class ConfigurationController {
       },
       this.requester(req),
     );
+    return { ...saved, assistantAvailable: this.assistantInstalled };
   }
 
   /** Who is asking, for the trail (CF-066). */

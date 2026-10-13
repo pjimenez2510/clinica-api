@@ -21,6 +21,10 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -50,6 +54,8 @@ export class AssistantNoteDraftController {
     private readonly drafts: NoteDraftService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-096. The latest draft and its sections. */
@@ -62,7 +68,7 @@ export class AssistantNoteDraftController {
     @Req() req: Request,
   ): Promise<NoteDraftOverviewDto> {
     this.requireEnabled();
-    return toResponse(await this.drafts.overview(encounterId, this.requester(req))); // prettier-ignore
+    return toResponse(await this.drafts.overview(encounterId, await this.requester(req))); // prettier-ignore
   }
 
   /** AS-086. «Pedir borrador» and «Volver a pedir»: 202, it is written apart. */
@@ -79,7 +85,7 @@ export class AssistantNoteDraftController {
     @Req() req: Request,
   ): Promise<NoteDraftOverviewDto> {
     this.requireEnabled();
-    return toResponse(await this.drafts.request(encounterId, this.requester(req))); // prettier-ignore
+    return toResponse(await this.drafts.request(encounterId, await this.requester(req))); // prettier-ignore
   }
 
   /** AS-147. «Dejar de esperar»: cancels the draft queued or being written. */
@@ -95,7 +101,7 @@ export class AssistantNoteDraftController {
     @Req() req: Request,
   ): Promise<NoteDraftOverviewDto> {
     this.requireEnabled();
-    return toResponse(await this.drafts.stopWaiting(encounterId, this.requester(req))); // prettier-ignore
+    return toResponse(await this.drafts.stopWaiting(encounterId, await this.requester(req))); // prettier-ignore
   }
 
   /** AS-094. Links a section to the note it was saved into. Never signs. */
@@ -114,7 +120,7 @@ export class AssistantNoteDraftController {
     return toResponse(
       await this.drafts.accept(
         { encounterId, suggestionId, noteId: dto.noteId },
-        this.requester(req),
+        await this.requester(req),
       ),
     );
   }
@@ -132,7 +138,7 @@ export class AssistantNoteDraftController {
   ): Promise<NoteDraftOverviewDto> {
     this.requireEnabled();
     return toResponse(
-      await this.drafts.discard({ encounterId, suggestionId }, this.requester(req)), // prettier-ignore
+      await this.drafts.discard({ encounterId, suggestionId }, await this.requester(req)), // prettier-ignore
     );
   }
 
@@ -141,11 +147,12 @@ export class AssistantNoteDraftController {
     if (!this.enabled) throw new NotFoundException();
   }
 
-  private requester(req: Request): DraftRequester {
+  private async requester(req: Request): Promise<DraftRequester> {
     const principal = this.currentUser.requirePrincipal();
+    const enabled = await this.siteSwitch.enabledSites();
     return {
       userId: this.currentUser.requireUserId(),
-      writeSites: withAssistant(principal, 'record:write'),
+      writeSites: withAssistant(principal, 'record:write', enabled),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };

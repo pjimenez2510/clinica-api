@@ -34,6 +34,7 @@ import {
   createExamService,
   createPatient,
   createSite,
+  enableAssistant,
 } from './setup/fixtures';
 import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
@@ -158,6 +159,7 @@ describe('los exámenes propuestos por HTTP (AS-103 a AS-112)', () => {
       }, // fecha-fija: vigente desde siempre
     });
     const site = await createSite(prisma);
+    await enableAssistant(prisma, site.id);
     return prisma.site.update({ where: { id: site.id }, data: { parishConceptId: parish.id } }); // prettier-ignore
   }
 
@@ -400,6 +402,7 @@ describe('los exámenes propuestos por HTTP (AS-103 a AS-112)', () => {
 
   it('AS-111 an attention of another site is one that does not exist, and a closed one admits nothing new', async () => {
     const elsewhere = (await createSite(prisma, 'Sede Sur')).id;
+    await enableAssistant(prisma, elsewhere);
     const other = await createEncounter(prisma, { siteId: elsewhere, practitionerId: doctor.practitionerId, patientId }); // prettier-ignore
     const absent = await post(other.id, '/read', doctor.token).expect(404);
     expect((absent.body as Problem).code).toBe('ASSISTANT_ENCOUNTER_NOT_FOUND');

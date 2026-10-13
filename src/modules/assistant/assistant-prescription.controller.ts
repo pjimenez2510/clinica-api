@@ -16,6 +16,10 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -54,6 +58,8 @@ export class AssistantPrescriptionController {
     private readonly proposals: PrescriptionProposalService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-069, AS-072. The lines of the latest reading, checked now. */
@@ -67,7 +73,7 @@ export class AssistantPrescriptionController {
   ): Promise<PrescriptionProposalOverviewDto> {
     this.requireEnabled();
     return toResponse(
-      await this.proposals.overview(encounterId, assistantRequester(this.currentUser, req, PRESCRIBING)), // prettier-ignore
+      await this.proposals.overview(encounterId, await assistantRequester(this.currentUser, this.siteSwitch, req, PRESCRIBING)), // prettier-ignore
     );
   }
 
@@ -84,7 +90,7 @@ export class AssistantPrescriptionController {
     @Req() req: Request,
   ): Promise<PrescriptionProposalReadingDto> {
     this.requireEnabled();
-    const reading = await this.proposals.read(encounterId, assistantRequester(this.currentUser, req, PRESCRIBING)); // prettier-ignore
+    const reading = await this.proposals.read(encounterId, await assistantRequester(this.currentUser, this.siteSwitch, req, PRESCRIBING)); // prettier-ignore
     return {
       ...toResponse(reading),
       found: reading.found,
@@ -106,7 +112,12 @@ export class AssistantPrescriptionController {
     this.requireEnabled();
     const items = await this.proposals.confirm(
       { encounterId, suggestionIds: dto.suggestionIds },
-      assistantRequester(this.currentUser, req, PRESCRIBING),
+      await assistantRequester(
+        this.currentUser,
+        this.siteSwitch,
+        req,
+        PRESCRIBING,
+      ),
     );
     return { items };
   }
@@ -126,7 +137,12 @@ export class AssistantPrescriptionController {
     return toResponse(
       await this.proposals.link(
         { encounterId, prescriptionId: dto.prescriptionId, lines: dto.lines },
-        assistantRequester(this.currentUser, req, PRESCRIBING),
+        await assistantRequester(
+          this.currentUser,
+          this.siteSwitch,
+          req,
+          PRESCRIBING,
+        ),
       ),
     );
   }
@@ -146,7 +162,12 @@ export class AssistantPrescriptionController {
     return toResponse(
       await this.proposals.discard(
         { encounterId, suggestionId },
-        assistantRequester(this.currentUser, req, PRESCRIBING),
+        await assistantRequester(
+          this.currentUser,
+          this.siteSwitch,
+          req,
+          PRESCRIBING,
+        ),
       ),
     );
   }

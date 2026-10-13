@@ -14,6 +14,14 @@ import {
   NOTE_DRAFT_CONTEXT_READER,
   type NoteDraftContextReader,
 } from '../../../shared/clinical/note-draft-context.port';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../../shared/clinical/assistant-site-switch.port';
+import {
+  RECORDING_AUTHORIZATION,
+  type RecordingAuthorization,
+} from '../../../shared/clinical/recording-authorization.port';
 import { DomainError } from '../../../shared/domain/errors/domain-error';
 import { LiveEventBus } from '../../../shared/events/live-event-bus';
 import {
@@ -28,6 +36,7 @@ import {
   AssistantProposalNotKeptError,
   AssistantTranscriptEmptyError,
   SuggestionNotFoundError,
+  AssistantRecordingNotAuthorizedError,
 } from '../domain/assistant.errors';
 import {
   asStoredSection,
@@ -156,6 +165,10 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     private readonly events: LiveEventBus,
     @Inject(NOTE_DRAFT_CLOCK) private readonly clock: () => Date,
     @Inject(ASSISTANT_DEMO) private readonly demo: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
+    @Inject(RECORDING_AUTHORIZATION)
+    private readonly recording: RecordingAuthorization,
   ) {
     this.lexicon = new LexiconCache(notes, clock, this.logger, codeOf);
   }
@@ -181,6 +194,11 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     requester: DraftRequester,
   ): Promise<DraftOverview> {
     const encounter = await this.ownLiveEncounter(encounterId, requester);
+    // AS-169 (revisión clínica G1). The draft is written from the patient's
+    // voice: without the authorization it does not leave for a provider.
+    if (!(await this.recording.isAuthorized(encounter.patientId))) {
+      throw new AssistantRecordingNotAuthorizedError();
+    }
     await this.ask(encounter, requester.userId);
     return this.overview(encounter.id, requester);
   }
@@ -360,10 +378,26 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     throw new AssistantDraftFailedError();
   }
 
+  /** AS-161, AS-169. The site has the assistant on and the patient allows it. */
+  private async transcriptUsable(encounter: CodingEncounter): Promise<boolean> {
+    const enabled = await this.siteSwitch.enabledSites();
+    return (
+      enabled.includes(encounter.siteId) &&
+      (await this.recording.isAuthorized(encounter.patientId))
+    );
+  }
+
   /** AS-087. In the name of the attention's professional, only while it is live with its note open. */
   private async askForOwner(encounterId: string): Promise<void> {
     const encounter = await this.context.encounter(encounterId, 'all');
     if (!encounter || !acceptsNewContent(encounter.status)) return;
+    // AS-161, AS-169. The site switched off or the authorization revoked: the
+    // tail the recogniser handed over asks for nothing, and what is queued
+    // or being written stops (revisión clínica G1, M1).
+    if (!(await this.transcriptUsable(encounter))) {
+      await this.cancel(encounterId);
+      return;
+    }
     if (!(await this.notes.consultationDraft(encounterId))) return;
     // Only for the professional who listens: a listening started by someone
     // else, or an attention handed over since, asks for nothing (review).
@@ -427,6 +461,15 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
       siteId = encounter.siteId;
       if (!acceptsNewContent(encounter.status)) {
         throw new AssistantEncounterClosedError();
+      }
+      // AS-161, AS-169. Asked again when its turn comes: a draft queued
+      // before the site was switched off, or the authorization revoked,
+      // reaches no provider.
+      if (!(await this.siteSwitch.enabledSites()).includes(encounter.siteId)) {
+        throw new AssistantEncounterNotFoundError();
+      }
+      if (!(await this.recording.isAuthorized(encounter.patientId))) {
+        throw new AssistantRecordingNotAuthorizedError();
       }
       const note = await this.notes.consultationDraft(encounter.id);
       if (!note) throw new AssistantNoteNotOpenError();
