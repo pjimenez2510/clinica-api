@@ -50,7 +50,15 @@ export function literal(
   );
 }
 
-/** SC-099 to SC-101 for one reading. `reading` null: the assistant did not answer. */
+/** Where the harness puts each line of a case: ten seconds apart (`main.ts`). */
+export const LINE_STRIDE_MS = 10_000;
+const caseLineOf = (startMs: number) => Math.floor(startMs / LINE_STRIDE_MS);
+
+/**
+ * SC-099 to SC-101 for one reading. `reading` null: the assistant did not
+ * answer. `lines` are the sentences it read (AS-250): each knows the line of
+ * the case it comes from by its start.
+ */
 export function scoreCase(input: {
   item: PreparationCase;
   arm: ScoredCase['arm'];
@@ -77,7 +85,7 @@ export function scoreCase(input: {
   ).length;
 
   const said = reading?.complaint ?? null;
-  const at = said ? lines.findIndex((line) => line.startMs === said.startMs) : -1; // prettier-ignore
+  const at = said ? caseLineOf(said.startMs) : -1;
   const complaint: ComplaintOutcome =
     item.complaint === null
       ? said ? 'invented' : 'none'
@@ -95,7 +103,11 @@ export function scoreCase(input: {
     notLiteral,
     complaint,
     speakers: {
-      right: item.lines.filter((line, index) => speakers[index] === line.speaker).length, // prettier-ignore
+      // A line of the case is right when every sentence read from it is.
+      right: item.lines.filter((line, index) => {
+        const read = lines.flatMap((sentence, at) => (caseLineOf(sentence.startMs) === index ? [speakers[at]] : [])); // prettier-ignore
+        return read.length > 0 && read.every((speaker) => speaker === line.speaker); // prettier-ignore
+      }).length,
       lines: item.lines.length,
     },
   };

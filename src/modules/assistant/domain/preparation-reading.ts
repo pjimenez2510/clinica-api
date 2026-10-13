@@ -114,8 +114,9 @@ const POSITION_WORDS: Readonly<Record<HeightPosition, RegExp>> = {
 };
 
 /**
- * AS-247. The numbers a phrase says, and the two readings a height said in
- * metres has («uno sesenta» is 1.60) and a pressure written as one number
+ * AS-247. The numbers a phrase says, and the readings two numbers said
+ * together have: a height in metres («uno sesenta» is 1.60), a tenth after its
+ * whole («treinta y seis ocho» is 36.8) and a pressure written as one number
  * («110,70»).
  */
 export function saidIn(phrase: string): number[] {
@@ -130,6 +131,16 @@ export function saidIn(phrase: string): number[] {
       second < 100
     ) {
       said.push(first + second / 100);
+    }
+    // «treinta y seis ocho»: a tenth said after its whole.
+    if (
+      Number.isInteger(first) &&
+      first >= 10 &&
+      second !== undefined &&
+      Number.isInteger(second) &&
+      second <= 9
+    ) {
+      said.push(first + second / 10);
     }
   });
   for (const pair of phrase.matchAll(/\b(\d{2,3})[.,](\d{2,3})\b/g)) {
@@ -196,6 +207,7 @@ export function readPreparationAnswer(input: {
 export function readPreparationByRules(
   lines: readonly TranscriptLine[],
 ): PreparationProposal {
+  // Each sentence, so a value's phrase is the sentence that says it (AS-251).
   const read = readDictatedVitals(lines.map((line) => line.text).join(' '), {
     endAtUnknownWord: true,
   });
@@ -341,4 +353,40 @@ function complaintOf(
   const text = restore(said.quote).trim();
   if (text.length > LONGEST_COMPLAINT || !holds(line.text, text)) return null;
   return { text, startMs: line.startMs };
+}
+
+/**
+ * AS-250. The recogniser cuts by silences, not by turns: one line of the
+ * listening can hold the nurse's question and the patient's answer. What is
+ * read is each sentence — after a full stop, a question or an exclamation,
+ * and before an opening «¿» or «¡» — with a start estimated by where it falls
+ * in its line, so every sentence has its own minute and its own speaker. A
+ * point between figures («22.5») is not the end of a sentence.
+ */
+export function sentencesOf(
+  lines: readonly TranscriptLine[],
+): TranscriptLine[] {
+  return lines.flatMap((line) => {
+    const pieces = line.text
+      .split(/(?<=[.?!…])\s+|\s+(?=[¿¡])/u)
+      .map((piece) => piece.trim())
+      .filter((piece) => piece !== '');
+    if (pieces.length <= 1) return [line];
+    const span = line.endMs - line.startMs;
+    let from = 0;
+    const starts = pieces.map((piece) => {
+      const at = line.text.indexOf(piece, from);
+      from = at + piece.length;
+      return line.startMs + Math.floor((span * at) / line.text.length);
+    });
+    // Strictly increasing, and inside the line, however the letters fall.
+    for (let at = 1; at < starts.length; at++) {
+      starts[at] = Math.min(Math.max(starts[at]!, starts[at - 1]! + 1), line.endMs - (starts.length - at)); // prettier-ignore
+    }
+    return pieces.map((text, at) => ({
+      startMs: starts[at]!,
+      endMs: starts[at + 1] ?? line.endMs,
+      text,
+    }));
+  });
 }

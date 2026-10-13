@@ -3,6 +3,7 @@ import { unshiftDates } from '../domain/date-restore';
 import { conversationOf, type TranscriptLine } from '../domain/note-draft';
 import {
   readPreparationAnswer,
+  sentencesOf,
   type PreparationProposal,
 } from '../domain/preparation-reading';
 import { carriesAnIdentifier } from '../domain/problem-coding';
@@ -39,9 +40,9 @@ export interface PreparationReadingInput {
 }
 
 /**
- * AS-245 to AS-250. One reading of a preparation: the lines marked and
+ * AS-245 to AS-250. One reading of a preparation: its sentences marked and
  * cleared, sent as data, and the answer believed only where the transcript as
- * kept backs it (AS-247).
+ * kept backs it (AS-247). What is answered, by sentence, is in `lines`.
  *
  * The service and the evaluation harness (AS-255) call this same function, so
  * what is measured is what runs.
@@ -49,8 +50,13 @@ export interface PreparationReadingInput {
 export async function readPreparation(
   deps: PreparationReadingDependencies,
   input: PreparationReadingInput,
-): Promise<{ proposal: PreparationProposal; runId: string | null }> {
-  const { text, markers } = conversationOf(input.lines);
+): Promise<{
+  proposal: PreparationProposal;
+  lines: TranscriptLine[];
+  runId: string | null;
+}> {
+  const lines = sentencesOf(input.lines);
+  const { text, markers } = conversationOf(lines);
   const cleared = await deps.pseudonymizer.pseudonymize(
     { text, subject: input.subject, names: input.names, staff: input.staff },
     input.signal,
@@ -71,7 +77,7 @@ export async function readPreparation(
   return {
     proposal: readPreparationAnswer({
       answer: answer.value,
-      lines: input.lines,
+      lines,
       markers,
       restore: (phrase) =>
         unshiftDates(
@@ -79,6 +85,7 @@ export async function readPreparation(
           cleared.dateShiftDays,
         ),
     }),
+    lines,
     runId: answer.runId,
   };
 }

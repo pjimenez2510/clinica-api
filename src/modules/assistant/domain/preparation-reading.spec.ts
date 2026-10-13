@@ -5,6 +5,7 @@ import {
   readPreparationAnswer,
   readPreparationByRules,
   saidIn,
+  sentencesOf,
   type AnsweredPreparation,
 } from './preparation-reading';
 
@@ -54,6 +55,7 @@ describe('AS-247 saidIn: the numbers a phrase says', () => {
     expect(saidIn('frecuencia respiratoria 92,5')).toContain(92.5);
     expect(saidIn('Mide uno sesenta')).toContain(1.6);
     expect(saidIn('Presión 120/80')).toEqual(expect.arrayContaining([120, 80]));
+    expect(saidIn('temperatura treinta y seis ocho')).toContain(36.8);
   });
 
   it('AS-247 says no number where there is none', () => {
@@ -243,5 +245,35 @@ describe('AS-251 readPreparationByRules: without the assistant', () => {
     expect(proposal.heightPosition).toEqual({ value: 'STANDING', startMs: null, quote: null }); // prettier-ignore
     expect(proposal.complaint).toBeNull();
     expect(proposal.speakers).toEqual([null, null, null, null]);
+  });
+});
+
+describe('AS-250 sentencesOf: who speaks changes within a window of the recogniser', () => {
+  it('AS-250 splits a line into its sentences, each with a start inside the line, in order', () => {
+    const window: TranscriptLine = {
+      startMs: 0,
+      endMs: 20_000,
+      text: 'Buenos días, siéntese por favor. ¿Qué le trae por aquí? Me duele la espalda y el pecho desde ayer. Hemoglobina 22.5, talla 1,60.',
+    };
+    const sentences = sentencesOf([window, { startMs: 20_000, endMs: 24_000, text: 'Frecuencia respiratoria 18.' }]); // prettier-ignore
+
+    expect(sentences.map((each) => each.text)).toEqual([
+      'Buenos días, siéntese por favor.',
+      '¿Qué le trae por aquí?',
+      'Me duele la espalda y el pecho desde ayer.',
+      'Hemoglobina 22.5, talla 1,60.',
+      'Frecuencia respiratoria 18.',
+    ]);
+    const starts = sentences.map((each) => each.startMs);
+    expect(starts[0]).toBe(0);
+    expect(starts[4]).toBe(20_000);
+    expect([...starts].sort((a, b) => a - b)).toEqual(starts);
+    expect(new Set(starts).size).toBe(starts.length);
+    expect(sentences.every((each) => each.endMs > each.startMs && each.endMs <= (each.startMs < 20_000 ? 20_000 : 24_000))).toBe(true); // prettier-ignore
+  });
+
+  it('AS-250 leaves a line of one sentence as it is', () => {
+    const line = { startMs: 3_000, endMs: 5_000, text: 'Pulso 72' };
+    expect(sentencesOf([line])).toEqual([line]);
   });
 });

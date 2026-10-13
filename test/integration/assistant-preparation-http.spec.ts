@@ -427,7 +427,7 @@ describe('la escucha de la preparación (AS-240 a AS-244)', () => {
         complaint: { text: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }, // prettier-ignore
       });
       const body = response.body as { lines: { speaker: string }[] };
-      expect(body.lines.map((line) => line.speaker)).toEqual(['nursing', 'patient', 'nursing', 'nursing']); // prettier-ignore
+      expect(body.lines.map((line) => line.speaker)).toEqual(['nursing', 'nursing', 'patient', 'nursing', 'nursing']); // prettier-ignore
       expect(await prisma.encounterVitals.findUnique({ where: { encounterId } })).toBeNull(); // prettier-ignore
       expect(await prisma.aiSuggestion.count({ where: { encounterId } })).toBe(0); // prettier-ignore
       expect(

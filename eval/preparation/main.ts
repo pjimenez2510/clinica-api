@@ -9,7 +9,10 @@ import type { Pseudonymizer } from '../../src/modules/assistant/application/pseu
 import { readPreparation } from '../../src/modules/assistant/application/read-preparation.ts';
 import { AssistantSpendingCeilingReachedError } from '../../src/modules/assistant/domain/assistant.errors.ts';
 import type { TranscriptLine } from '../../src/modules/assistant/domain/note-draft.ts';
-import type { PreparationProposal } from '../../src/modules/assistant/domain/preparation-reading.ts';
+import {
+  sentencesOf,
+  type PreparationProposal,
+} from '../../src/modules/assistant/domain/preparation-reading.ts';
 import { dictationTranscriberFor } from '../../src/modules/assistant/infrastructure/clinica-ai.dictation-transcriber.ts';
 import {
   DEMO_PRICES,
@@ -30,7 +33,13 @@ import {
 } from './cases.ts';
 import { hearPreparations, SPEAKER_VOICES } from './hear.ts';
 import { renderPreparationReport } from './report.ts';
-import { scoreCase, summarise, verdict, type ScoredCase } from './score.ts';
+import {
+  LINE_STRIDE_MS,
+  scoreCase,
+  summarise,
+  verdict,
+  type ScoredCase,
+} from './score.ts';
 
 export const USAGE = `La preparación escuchada (B3, AS-255): la lectura del producto sobre preparaciones inventadas
 
@@ -71,7 +80,7 @@ const invented: Pseudonymizer = {
 
 /** The lines as the listening keeps them: ten seconds apart, in order. */
 const asLines = (texts: readonly string[]): TranscriptLine[] =>
-  texts.map((text, at) => ({ startMs: at * 10_000, endMs: at * 10_000 + 9_000, text })); // prettier-ignore
+  texts.map((text, at) => ({ startMs: at * LINE_STRIDE_MS, endMs: at * LINE_STRIDE_MS + 9_000, text })); // prettier-ignore
 
 interface Run {
   item: PreparationCase;
@@ -187,8 +196,8 @@ async function main(): Promise<void> {
         }
       }
     }
-    // The heard lines keep the case's order: a silent line stays as a blank.
-    scored.push(scoreCase({ item: run.item, arm: run.arm, voice: run.voice, lines: asLines(run.texts), reading, latencyMs })); // prettier-ignore
+    // The sentences the reading answered by (AS-250); a silent line has none.
+    scored.push(scoreCase({ item: run.item, arm: run.arm, voice: run.voice, lines: sentencesOf(lines), reading, latencyMs })); // prettier-ignore
     process.stderr.write(`\r${index + 1}/${runs.length}`);
   }
   process.stderr.write('\n');

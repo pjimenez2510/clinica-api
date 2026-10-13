@@ -24,6 +24,7 @@ import {
 import type { TranscriptLine } from '../domain/note-draft';
 import {
   readPreparationByRules,
+  sentencesOf,
   type PreparationProposal,
   type Speaker,
 } from '../domain/preparation-reading';
@@ -105,10 +106,12 @@ export class PreparationReadingService {
     );
     if (lines.length === 0) throw new AssistantTranscriptEmptyError();
 
+    // AS-250. Read by sentence: a line of the recogniser holds more than one turn.
+    const sentences = sentencesOf(lines);
     const proposal = this.assistant
       ? await this.byAssistant(encounter, lines, requester)
       : null;
-    const read = proposal ?? readPreparationByRules(lines);
+    const read = proposal ?? readPreparationByRules(sentences);
     // AS-252. Counts and the reader: never a line, a phrase or a value.
     this.logger.log(
       {
@@ -116,7 +119,7 @@ export class PreparationReadingService {
         assistant_reader: proposal ? 'assistant' : 'rules',
         assistant_values: Object.keys(read.values).length,
         assistant_unclear: read.unclear.length,
-        assistant_lines: lines.length,
+        assistant_lines: sentences.length,
       },
       'assistant preparation read',
     );
@@ -125,7 +128,7 @@ export class PreparationReadingService {
       ...rest,
       reader: proposal ? 'assistant' : 'rules',
       demo: proposal !== null && this.demo,
-      lines: lines.map((line, at) => ({ ...line, speaker: speakers[at] ?? null })), // prettier-ignore
+      lines: sentences.map((line, at) => ({ ...line, speaker: speakers[at] ?? null })), // prettier-ignore
       upToMs: lines.reduce((most, line) => Math.max(most, line.endMs), 0),
     };
   }

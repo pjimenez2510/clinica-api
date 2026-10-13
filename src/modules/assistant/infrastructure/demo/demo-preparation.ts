@@ -69,8 +69,11 @@ export function preparationOf(prompt: string): AnsweredPreparation {
   };
 }
 
+/** What whoever prepares says to receive the patient. */
+const GREETING = /\b(buenos d[ií]as|buenas tardes|buenas noches|si[eé]ntese|p[aá]sele|pase)\b/iu; // prettier-ignore
+
 function speakerOf(text: string): Speaker {
-  if (/[¿?]/.test(text) || READING.test(text)) return 'nursing';
+  if (/[¿?]/.test(text) || READING.test(text) || GREETING.test(text)) return 'nursing'; // prettier-ignore
   if (COMPLAINT.test(text)) return 'patient';
   return 'other';
 }
