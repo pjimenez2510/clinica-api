@@ -274,6 +274,7 @@ describe('los exámenes propuestos por HTTP (AS-103 a AS-112)', () => {
     expect(shown.headers['cache-control']).toBe('no-store');
     await expectPublicTariffCacheable(app.getHttpServer());
   });
+
   it('AS-103 AS-104 AS-105 AS-107 AS-108 reads the note: each exam asked for with only the catalogue’s candidates; what it brings is not a line; nothing is ordered', async () => {
     const lines = await readLines();
 

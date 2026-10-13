@@ -13,8 +13,10 @@ import type { Observable } from 'rxjs';
 export const ALLOW_HTTP_CACHE_KEY = 'http:allow_cache';
 
 /**
- * AU-061. Exempts a route from the `no-store` default, and sends no
- * `Cache-Control` at all.
+ * AU-061. Exempts a route from the `no-store` default: it answers `no-cache`
+ * instead, so a cache may keep it but must revalidate it every time. Never
+ * no header at all: a proxy would then keep it for as long as it likes, and
+ * the lobby screen would show a tariff that no longer applies.
  *
  * Only for a response that holds nobody's data and is meant for anyone — the
  * public tariff. The exact list is asserted in `route-authorisation.spec.ts`,
@@ -54,8 +56,8 @@ export class NoStoreInterceptor implements NestInterceptor {
       [context.getHandler(), context.getClass()],
     );
     const response = context.switchToHttp().getResponse<Response>();
-    if (exempt !== true && !response.hasHeader('Cache-Control')) {
-      response.setHeader('Cache-Control', 'no-store');
+    if (!response.hasHeader('Cache-Control')) {
+      response.setHeader('Cache-Control', exempt === true ? 'no-cache' : 'no-store'); // prettier-ignore
     }
 
     return next.handle();

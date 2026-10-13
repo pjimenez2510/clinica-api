@@ -44,7 +44,10 @@ export class AssistantListeningController {
     private readonly currentUser: CurrentUserService,
   ) {}
 
-  /** AS-045. A single-use ticket for the audio channel, alive for 30 s. */
+  /**
+   * AS-045. A single-use ticket for the audio channel, alive for 30 s.
+   * `no-store`, like the transcript below, comes from AU-061: never exempt.
+   */
   @Post('ticket')
   @RequirePermission('assistant:use', 'query')
   // A ticket per (re)connection: sixty a minute is a flaky network, not more.

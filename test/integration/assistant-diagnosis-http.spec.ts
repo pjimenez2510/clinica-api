@@ -244,6 +244,7 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
     expect(shown.headers['cache-control']).toBe('no-store');
     await expectPublicTariffCacheable(app.getHttpServer());
   });
+
   it('AS-027 opens with the patient history and the clinic frequency, and leaves its read in the trail', async () => {
     const earlier = await createEncounter(prisma, { siteId, practitionerId: doctor.practitionerId, patientId }); // prettier-ignore
     await prisma.encounterDiagnosis.create({

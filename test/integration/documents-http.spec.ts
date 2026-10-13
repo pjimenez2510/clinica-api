@@ -470,7 +470,7 @@ describe('los documentos por HTTP', () => {
       });
     }
 
-    it('DOC-094 sin sesión dice clase, fecha, establecimiento, sede, profesional y vigencia', async () => {
+    it('DOC-094 AU-061 sin sesión dice clase, fecha, establecimiento, sede, profesional y vigencia', async () => {
       const issuedAt = new Date();
       await issuedReceta({ verificationCode: 'ABCD1234EF567890', issuedAt });
 
@@ -483,6 +483,9 @@ describe('los documentos por HTTP', () => {
         status: 'VALID',
         annulledOn: null,
       });
+      // AU-061: public, but its status changes when the receta is annulled;
+      // a cache must never answer «vigente» for one that no longer is.
+      expect(response.headers['cache-control']).toBe('no-store');
     });
 
     it('DOC-094 una receta pasada su vigencia se dice caducada', async () => {

@@ -1,5 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
-import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import {
+  HEADERS_METADATA,
+  ROUTE_ARGS_METADATA,
+} from '@nestjs/common/constants';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 import { ModulesContainer } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
@@ -18,6 +21,19 @@ import { PERMISSIONS } from '../../src/shared/authorisation/permission.catalogue
 import { ALLOW_HTTP_CACHE_KEY } from '../../src/shared/http/interceptors/no-store.interceptor';
 import { LIVE_STREAM_PERMISSIONS } from '../../src/shared/events/live-event';
 import { closeApp } from './setup/http-server';
+
+/** AU-061. The `Cache-Control` a handler declares with `@Header()`, if any. */
+function declaredCacheControlOf(handler: unknown): string | undefined {
+  const headers: unknown = Reflect.getMetadata(
+    HEADERS_METADATA,
+    handler as object,
+  );
+  if (!Array.isArray(headers)) return undefined;
+  const found = (headers as { name: string; value: string }[]).find(
+    (header) => header.name.toLowerCase() === 'cache-control',
+  );
+  return found?.value;
+}
 
 /** `'agenda/sites/:siteId'` + `'availability'` → `/agenda/sites/:siteId/availability`. */
 function joinPath(controller: unknown, handler: unknown): string {
@@ -141,6 +157,8 @@ describe('every route declares its protection', () => {
     bodySiteFields: string[];
     /** AU-061: exempt from the `no-store` default. */
     allowsHttpCache: boolean;
+    /** AU-061: a `Cache-Control` declared with `@Header()`, if any. */
+    declaredCacheControl?: string;
   }
 
   let routes: RouteInfo[];
@@ -200,6 +218,7 @@ describe('every route declares its protection', () => {
             siteScope: read(SITE_SCOPE_KEY),
             bodySiteFields: siteFieldsOf(bodyDtoOf(metatype, name)),
             allowsHttpCache: read(ALLOW_HTTP_CACHE_KEY) === true,
+            declaredCacheControl: declaredCacheControlOf(handler),
           });
         }
       }
@@ -520,6 +539,18 @@ describe('every route declares its protection', () => {
       .sort();
 
     expect(cacheable).toEqual(['PublicTariffController.onTheWall']);
+  });
+
+  it('AU-061 y ninguna ruta se vuelve cacheable con su propio @Header sin pasar por esa lista', () => {
+    // The interceptor keeps a header the route declared, so
+    // `@Header('Cache-Control', 'max-age=3600')` would exempt a route
+    // without `@AllowHttpCache()`. A declared one must still say no-store.
+    const loose = routes
+      .filter((r) => r.declaredCacheControl !== undefined)
+      .filter((r) => !r.declaredCacheControl!.includes('no-store'))
+      .map((r) => `${r.route}: ${r.declaredCacheControl}`);
+
+    expect(loose).toEqual([]);
   });
 
   it('confines the half-authenticated session to the MFA flow', () => {

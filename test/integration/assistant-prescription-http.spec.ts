@@ -308,6 +308,7 @@ describe('la receta propuesta por HTTP (AS-063 a AS-077)', () => {
     expect(shown.headers['cache-control']).toBe('no-store');
     await expectPublicTariffCacheable(app.getHttpServer());
   });
+
   it('AS-063 AS-064 AS-065 AS-067 AS-072 reads the note: the cuadro’s amoxicillin, 21 tablets marked, and a line outside the cuadro with its sentence only', async () => {
     const lines = await readLines();
 

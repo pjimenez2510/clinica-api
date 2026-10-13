@@ -154,9 +154,9 @@ describe('el tarifario de la pared por HTTP', () => {
     const body = response.body as PublicTariff;
 
     expect(published.headers['cache-control']).toBe('no-store');
-    // AU-061: nobody's data, meant for anyone: the one route a cache may keep.
-    // Control: publishing it, on the same application, is no-store (above).
-    expect(response.headers['cache-control']).toBeUndefined();
+    // AU-061: nobody's data, meant for anyone: a cache may keep it, but must
+    // revalidate. Control: publishing it, on the same application, is no-store.
+    expect(response.headers['cache-control']).toBe('no-cache');
     expect(body.version).toBe(1);
     expect(body.effectiveFrom).toBe(today());
     expect(body.establishmentName).toBe('Clínica de Pruebas S.A.');

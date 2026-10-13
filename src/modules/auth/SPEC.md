@@ -177,7 +177,7 @@ a ser común y cerrada por defecto, como el permiso (REQ-118).
 
 **Prueba independiente:** con una sesión real, `GET /encounters/:id/notes`,
 `GET /patients/:id/history` y `POST /auth/login` responden `Cache-Control:
-no-store`; `GET /public/tariff` no lleva `Cache-Control`.
+no-store`; `GET /public/tariff` responde `Cache-Control: no-cache`.
 **Cubre:** AU-061.
 
 **Solo servidor:** AU-061.
@@ -1146,15 +1146,21 @@ enlace que no sirve y con un correo que no sale.
 - **AU-061** — El sistema DEBERÁ responder con `Cache-Control: no-store` a
   toda petición que llegue al controlador de una ruta, también cuando éste
   responda con un error, salvo en las rutas declaradas con
-  `@AllowHttpCache()`, que NO DEBERÁN llevar `Cache-Control`; una ruta que
-  declare su propia `Cache-Control` DEBERÁ conservarla. La única ruta
+  `@AllowHttpCache()`, que DEBERÁN responder `Cache-Control: no-cache`
+  (se puede guardar, pero se revalida cada vez); una ruta que
+  declare su propia `Cache-Control` DEBERÁ conservarla, y ésta DEBERÁ incluir
+  `no-store`. La única ruta
   declarada con `@AllowHttpCache()` DEBERÁ ser `GET /public/tariff`.
   > Cerrado por defecto y no por prefijo: la consulta, la historia, el
   > paciente y el token de acceso (RFC 6749 §5.1) viajan en respuestas, y una
   > lista de «las rutas que lo necesitan» se queda corta el día que se añade
   > una —ya pasó: el asistente lo llevaba y la nota no—. La excepción es lo
   > raro, así que es lo que se declara: sólo lo que no es de nadie y es para
-  > cualquiera, el tarifario de la pared. Los rechazos de los guards
+  > cualquiera, el tarifario de la pared. Y `no-cache`, no sin cabecera: sin
+  > ella un proxy la guarda el plazo que tenga configurado y la sala vería
+  > precios que ya no rigen (LOS art. 184); con `no-cache` y el `ETag` de
+  > Express, la pantalla recibe un 304 mientras no cambie, y lo nuevo en
+  > cuanto se publique (revisión de la rama). Los rechazos de los guards
   > (401, 403, 429) llegan antes y no llevan datos.
   > Fuentes: OWASP REST Security Cheat Sheet («Security headers»),
   > RFC 9111 §5.2.2.5.

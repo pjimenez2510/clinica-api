@@ -126,7 +126,8 @@ export class PublicTariffController {
 
   @Get()
   @Public()
-  // AU-061: nobody's data and meant for anyone — the one route a cache may keep.
+  // AU-061: nobody's data and meant for anyone — the one route a cache may
+  // keep, revalidating each time (`no-cache`): never a price no longer in force.
   @AllowHttpCache()
   @Throttle({ short: { ttl: 60_000, limit: 30 } })
   @ApiOperation({ summary: 'Consultar el tarifario publicado (sin sesión)' })

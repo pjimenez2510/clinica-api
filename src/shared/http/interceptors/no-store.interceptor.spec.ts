@@ -9,7 +9,7 @@ import { AllowHttpCache, NoStoreInterceptor } from './no-store.interceptor';
 /**
  * AU-061. Every response is `no-store` unless the route says otherwise. What
  * is tested: the default, a header the route already declared (kept), and the
- * opt-out on the handler and on the controller (nothing written). Each case
+ * opt-out on the handler and on the controller (`no-cache`, revalidated). Each case
  * carries its own control: the same response object starts empty.
  */
 function responseDouble(preset?: string) {
@@ -82,7 +82,7 @@ describe('ninguna respuesta se guarda en caché salvo la que lo declara', () => 
     expect(response.headers.get('cache-control')).toBe('no-store, private');
   });
 
-  it('AU-061 con @AllowHttpCache() en el handler o en el controlador no escribe nada', async () => {
+  it('AU-061 con @AllowHttpCache() en el handler o en el controlador responde no-cache', async () => {
     const onHandler = responseDouble();
     const onController = responseDouble();
 
@@ -99,7 +99,7 @@ describe('ninguna respuesta se guarda en caché salvo la que lo declara', () => 
       ),
     );
 
-    expect(onHandler.headers.has('cache-control')).toBe(false);
-    expect(onController.headers.has('cache-control')).toBe(false);
+    expect(onHandler.headers.get('cache-control')).toBe('no-cache');
+    expect(onController.headers.get('cache-control')).toBe('no-cache');
   });
 });
