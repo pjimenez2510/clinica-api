@@ -229,8 +229,48 @@ export interface DiagnosisProposal {
   /** The resolved codes, in the model's order: what AS-022's distance reads. */
   codes: string[];
   candidates: OfferedCode[];
+  /**
+   * AS-267. The symptoms the note names that this diagnosis explains: shown
+   * as its phrases, never coded apart. Absent on readings before AS-267.
+   */
+  symptoms?: { problem: string; quote: string }[];
   /** AS-029. Written by the fake of the demonstration mode, not by a model. */
   demo: boolean;
+}
+
+/** AS-267. Chapter XVIII of the ICD-10: symptoms, signs and abnormal findings. */
+const SYMPTOM = /^R\d/i;
+
+/**
+ * AS-267. With a definite diagnosis among the problems — one whose proposed
+ * code is not of chapter XVIII — no chapter XVIII code is proposed: the
+ * problems that only had such codes become phrases of the first diagnosis,
+ * and the alternatives of that chapter go. Without one, nothing changes:
+ * a symptom with no diagnosis is what there is to code. A problem the
+ * catalogue gave no code keeps its row (the physician searches it).
+ */
+export function withoutSymptoms(
+  proposals: readonly DiagnosisProposal[],
+): DiagnosisProposal[] {
+  const isDefinite = (proposal: DiagnosisProposal) =>
+    proposal.candidates.length > 0 && !SYMPTOM.test(proposal.candidates[0]!.code); // prettier-ignore
+  const main = proposals.find(isDefinite);
+  if (!main) return proposals.map((proposal) => ({ ...proposal }));
+  const symptoms: { problem: string; quote: string }[] = [];
+  const kept: DiagnosisProposal[] = [];
+  for (const proposal of proposals) {
+    const candidates = proposal.candidates.filter((each) => !SYMPTOM.test(each.code)); // prettier-ignore
+    if (proposal.candidates.length > 0 && candidates.length === 0) {
+      symptoms.push({ problem: proposal.problem, quote: proposal.quote });
+      continue;
+    }
+    kept.push({ ...proposal, candidates, codes: candidates.map(({ code }) => code) }); // prettier-ignore
+  }
+  return kept.map((proposal) =>
+    proposal.problem === main.problem && proposal.quote === main.quote
+      ? { ...proposal, symptoms: [...(proposal.symptoms ?? []), ...symptoms] }
+      : proposal,
+  );
 }
 
 /** The fields of a stored proposal this module reads back. */

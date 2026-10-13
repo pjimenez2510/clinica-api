@@ -7,6 +7,8 @@ import {
   currentReading,
   foldText,
   type OfferedCode,
+  withoutSymptoms,
+  type DiagnosisProposal,
 } from './problem-coding';
 
 const SECTIONS = [
@@ -188,5 +190,44 @@ describe('the reading on screen (AS-036, AS-038)', () => {
 
   it('AS-036 with nothing read, nothing is shown', () => {
     expect(currentReading([])).toEqual([]);
+  });
+});
+
+describe('no symptom coded apart from the diagnosis that explains it (AS-267)', () => {
+  const code = (value: string, display = value) => ({ conceptId: `c-${value}`, code: value, display }); // prettier-ignore
+  const proposal = (problem: string, codes: string[]): DiagnosisProposal => ({
+    problem,
+    quote: `frase de ${problem}`,
+    section: 'diagnostico',
+    codes,
+    candidates: codes.map((each) => code(each)),
+    demo: false,
+  });
+
+  it('AS-267 the libreto’s tonsillitis: sore throat and fever become its phrases, and no R code is proposed', () => {
+    const shown = withoutSymptoms([
+      proposal('AMIGDALITIS AGUDA', ['J03.9', 'J02.9', 'R07.0']),
+      proposal('ADENOPATÍA CERVICAL', ['L04.0', 'R59.0']),
+      proposal('DOLOR DE GARGANTA', ['R07.0']),
+      proposal('FIEBRE', ['R50.9']),
+    ]);
+
+    expect(shown.map((each) => [each.problem, each.codes])).toEqual([
+      ['AMIGDALITIS AGUDA', ['J03.9', 'J02.9']],
+      ['ADENOPATÍA CERVICAL', ['L04.0']],
+    ]);
+    expect(shown[0]!.symptoms).toEqual([
+      { problem: 'DOLOR DE GARGANTA', quote: 'frase de DOLOR DE GARGANTA' },
+      { problem: 'FIEBRE', quote: 'frase de FIEBRE' },
+    ]);
+    expect(shown.flatMap((each) => each.candidates).some((each) => each.code.startsWith('R'))).toBe(false); // prettier-ignore
+  });
+
+  it('AS-267 without a definite diagnosis the symptoms are proposed as before, and an uncoded problem keeps its row', () => {
+    const symptomsOnly = [proposal('CEFALEA', ['R51.X']), proposal('FIEBRE', ['R50.9'])]; // prettier-ignore
+    expect(withoutSymptoms(symptomsOnly)).toEqual(symptomsOnly);
+
+    const shown = withoutSymptoms([proposal('LUMBALGIA', ['M54.5']), proposal('MALESTAR RARO', [])]); // prettier-ignore
+    expect(shown.map((each) => each.problem)).toEqual(['LUMBALGIA', 'MALESTAR RARO']); // prettier-ignore
   });
 });
