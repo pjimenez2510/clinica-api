@@ -20,6 +20,7 @@ import {
 } from '../application/listening-access';
 import {
   ListeningService,
+  PREPARATION_LISTENING,
   type ListeningChannel,
 } from '../application/listening.service';
 import {
@@ -117,6 +118,9 @@ export class ListeningGateway
     private readonly adapterHost: HttpAdapterHost,
     private readonly access: ListeningAccess,
     private readonly listening: ListeningService,
+    /** AS-241. The preparation's, chosen by the scope of the ticket. */
+    @Inject(PREPARATION_LISTENING)
+    private readonly preparation: ListeningService,
     @Inject(LISTENING_GATEWAY_OPTIONS)
     private readonly options: ListeningGatewayOptions,
     /** AS-026, AS-046. The same switch as the routes. */
@@ -140,7 +144,7 @@ export class ListeningGateway
   }
 
   async beforeApplicationShutdown(): Promise<void> {
-    await this.listening.shutdown();
+    await Promise.all([this.listening.shutdown(), this.preparation.shutdown()]);
     for (const connection of this.connections) connection.socket.close(1001);
     this.server?.close();
   }
@@ -215,8 +219,9 @@ export class ListeningGateway
       }
       // AS-051. A channel that goes away without pausing pauses its listening,
       // after the recogniser handed over what it held.
+      const service = this.serviceOf(connection.grant);
       connection.queue = connection.queue.then(() =>
-        this.listening.disconnected(connection.channel).catch(() => {
+        service.disconnected(connection.channel).catch(() => {
           this.logger.warn(
             { error_code: 'listening-disconnect' },
             'a listening could not be paused after its channel went away',
@@ -241,10 +246,14 @@ export class ListeningGateway
     }
     if (data.length <= 4) return;
     try {
-      await this.listening.receive(encounterId, connection.channel, {
-        offsetMs: data.readUInt32LE(0),
-        pcm: data.subarray(4),
-      });
+      await this.serviceOf(connection.grant).receive(
+        encounterId,
+        connection.channel,
+        {
+          offsetMs: data.readUInt32LE(0),
+          pcm: data.subarray(4),
+        },
+      );
     } catch (error) {
       // AS-054, AS-055. A frame is never answered on its own: one of a
       // channel that lost the capture is dropped, and a listening that cannot
@@ -284,7 +293,7 @@ export class ListeningGateway
       }, this.options.liveCheckMs ?? LIVE_CHECK_MS),
     );
 
-    const session = await this.listening.sessionOf(grant.encounterId);
+    const session = await this.serviceOf(grant).sessionOf(grant.encounterId);
     send(connection.socket, {
       type: 'ready',
       offsetMs: session?.offsetMs ?? 0,
@@ -301,12 +310,13 @@ export class ListeningGateway
     if (!command.success) return;
     const { encounterId } = grant;
     const { channel } = connection;
+    const listening = this.serviceOf(grant);
 
     switch (command.data.type) {
       case 'start': {
         // AS-045. Asked again: the attention may have been signed since.
         await this.access.confirm(grant);
-        const { offsetMs } = await this.listening.start(
+        const { offsetMs } = await listening.start(
           encounterId,
           grant.userId,
           command.data.device,
@@ -316,12 +326,12 @@ export class ListeningGateway
         return;
       }
       case 'pause': {
-        const { offsetMs } = await this.listening.pause(encounterId, channel);
+        const { offsetMs } = await listening.pause(encounterId, channel);
         send(connection.socket, { type: 'paused', offsetMs });
         return;
       }
       case 'stop': {
-        const { offsetMs } = await this.listening.stop(encounterId, channel);
+        const { offsetMs } = await listening.stop(encounterId, channel);
         send(connection.socket, { type: 'stopped', offsetMs });
         return;
       }
@@ -346,9 +356,12 @@ export class ListeningGateway
       // AS-163, AS-166. Revoked, or the site switched off: what the
       // recogniser holds was heard after that, and is dropped.
       const discardHeld = DISCARD_HELD.has(error.code);
-      const { offsetMs } = await this.listening.close(grant.encounterId, {
-        discardHeld,
-      });
+      const { offsetMs } = await this.serviceOf(grant).close(
+        grant.encounterId,
+        {
+          discardHeld,
+        },
+      );
       send(connection.socket, {
         type: 'stopped',
         offsetMs,
@@ -356,6 +369,11 @@ export class ListeningGateway
       });
       connection.socket.close(ATTENTION_CLOSED, 'atención cerrada');
     }
+  }
+
+  /** AS-241. The listening a ticket opened: the consultation's or the preparation's. */
+  private serviceOf(grant: ListeningGrant): ListeningService {
+    return grant.scope === 'PREPARATION' ? this.preparation : this.listening;
   }
 
   private forgetUnticketed(connection: Connection): void {

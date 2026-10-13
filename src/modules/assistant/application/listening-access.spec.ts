@@ -136,3 +136,55 @@ describe('ListeningAccess (A3)', () => {
     expect(other.recording.grant).not.toHaveBeenCalled();
   });
 });
+
+describe('ListeningAccess, the preparation (B3)', () => {
+  const nurse = (requester: ListeningRequester): ListeningRequester => ({
+    ...requester,
+    userId: 'nurse',
+  });
+
+  it('AS-240 gives whoever prepares a ticket of the preparation, without being the attention’s professional', async () => {
+    const { access, requester } = scene({ owner: 'doctor' });
+    const { ticket } = await access.issuePreparation('enc-1', nurse(requester));
+    expect(access.redeem(ticket)).toMatchObject({
+      encounterId: 'enc-1',
+      userId: 'nurse',
+      scope: 'PREPARATION',
+    });
+  });
+
+  it('AS-240 a ticket of the consultation stays the consultation’s', async () => {
+    const { access, requester } = scene();
+    const { ticket } = await access.issue('enc-1', requester);
+    expect(access.redeem(ticket)).toMatchObject({ scope: 'CONSULTATION' });
+  });
+
+  it('AS-240 refuses without the authorization to record, and the attention’s refusals answer first', async () => {
+    const unauthorized = scene({ authorized: false });
+    await expect(unauthorized.access.issuePreparation('enc-1', nurse(unauthorized.requester))).rejects.toBeInstanceOf(AssistantRecordingNotAuthorizedError); // prettier-ignore
+
+    const closed = scene({ status: 'DISCHARGED', authorized: false });
+    await expect(closed.access.issuePreparation('enc-1', nurse(closed.requester))).rejects.toBeInstanceOf(AssistantEncounterClosedError); // prettier-ignore
+    const away = scene({ site: 'site-2', authorized: false });
+    await expect(away.access.issuePreparation('enc-1', nurse(away.requester))).rejects.toBeInstanceOf(AssistantEncounterNotFoundError); // prettier-ignore
+    expect(closed.recording.isAuthorized).not.toHaveBeenCalled();
+    expect(away.recording.isAuthorized).not.toHaveBeenCalled();
+  });
+
+  it('AS-244 a preparation confirms without owner, and stops on a revoked authorization, a site off or a closed attention', async () => {
+    const { access, state, requester } = scene({ owner: 'doctor' });
+    const grant = access.redeem((await access.issuePreparation('enc-1', nurse(requester))).ticket)!; // prettier-ignore
+    await expect(access.confirm(grant)).resolves.toBeUndefined();
+
+    state.authorized = false;
+    await expect(access.confirm(grant)).rejects.toBeInstanceOf(AssistantRecordingNotAuthorizedError); // prettier-ignore
+    state.authorized = true;
+    state.enabled = [];
+    await expect(access.confirm(grant)).rejects.toBeInstanceOf(AssistantEncounterNotFoundError); // prettier-ignore
+  });
+
+  it('AS-243 the read of the preparation needs no ownership, is trailed, and says whether the authorization stands', async () => {
+    const { access, requester } = scene({ owner: 'doctor', authorized: false, status: 'DISCHARGED' }); // prettier-ignore
+    await expect(access.readPreparation('enc-1', nurse(requester))).resolves.toEqual({ recordingAuthorized: false }); // prettier-ignore
+  });
+});

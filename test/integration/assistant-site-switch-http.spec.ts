@@ -248,7 +248,7 @@ describe('el asistente por sede y la autorización de grabar (A3)', () => {
 
       expect(await ch.next('stopped')).toMatchObject({ reason: 'ASSISTANT_ENCOUNTER_NOT_FOUND' }); // prettier-ignore
       expect(await ch.closing).toBe(4409);
-      const session = await prisma.listeningSession.findUnique({ where: { encounterId } }); // prettier-ignore
+      const session = await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } }); // prettier-ignore
       expect(session?.state).toBe('STOPPED');
     });
   });
