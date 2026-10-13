@@ -118,6 +118,38 @@ function headWord(name: string): string {
 const says = (line: string, word: string) =>
   word !== '' && new RegExp(`(^|[^\\p{L}])${word}`, 'u').test(foldText(line));
 
+/** The sentences of a line; a question («¿…?») is never what the patient states. */
+function statements(line: string): string[] {
+  return line
+    .split(/(?<=[.!?])\s+|(?=¿)/)
+    .map((sentence) => sentence.trim())
+    .filter(
+      (sentence) =>
+        sentence !== '' && !sentence.includes('?') && !sentence.startsWith('¿'),
+    ) // prettier-ignore
+    .map(foldText);
+}
+
+/** AS-262. An allergy denied in the sentence: «no soy alérgico», «niega alergias». */
+const DENIED_ALLERGY = /\b(?:no|nunca|ni)\s+(?:\p{L}+\s+){0,2}alergi|\bniega/u;
+/** AS-262. «Sin alergias» as the patient says it. */
+const NO_ALLERGY =
+  /\b(?:ningun[ao]?|que yo sepa|no tengo alergi|no soy alergic|sin alergi|niega alergi)/;
+/** AS-262. An allergy stated: «soy alérgica a…», «alergia a…». */
+const STATED_ALLERGY = /\balergi(?:c[oa]s?|as?)\s+a\b/;
+
+/** AS-262. The first letters of a disease's name: «hipertens» says «Hipertensión». */
+function stemOf(description: string): string {
+  const head = headWord(description);
+  return head.length > 7 ? head.slice(0, 7) : head;
+}
+
+/** AS-262. A disease said and not denied right before it («no es hipertensa»). */
+function saysDisease(sentence: string, stem: string): boolean {
+  if (stem === '' || !says(sentence, stem)) return false;
+  return !new RegExp(`\\b(?:no|nunca|niega|nadie|ningun\\p{L}*)\\s+(?:\\p{L}+\\s+)?${stem}`, 'u').test(sentence); // prettier-ignore
+}
+
 /**
  * AS-260, AS-262. The proposals the answer backs: each with a line the
  * model was given; an allergy whose substance that line names; a family
@@ -155,7 +187,12 @@ export function backedChart(input: {
       substance === null ||
       substance.length > SUBSTANCE_LIMIT ||
       (reaction?.length ?? 0) > REACTION_LIMIT ||
-      !says(line.text, headWord(substance))
+      // Stated, not asked and not denied: «¿Es alérgica a la penicilina?» —
+      // «No» names the penicillin too (clinical review I2).
+      !statements(line.text).some(
+        (sentence) =>
+          says(sentence, headWord(substance)) && !DENIED_ALLERGY.test(sentence),
+      )
     ) {
       dropped += 1;
       continue;
@@ -173,8 +210,15 @@ export function backedChart(input: {
   const none = input.answer.noKnownAllergies;
   if (none) {
     const line = lineOf(none.source, input.markers);
-    // A reading that says both is contradicting itself: the allergy stays.
-    if (!line || allergies.length > 0) dropped += 1;
+    // P5 (clinical review G1): the line says there is none, and states no
+    // allergy; a reading that says both is contradicting itself.
+    const sentences = line ? statements(line.text) : [];
+    const backed =
+      sentences.some((sentence) => NO_ALLERGY.test(sentence)) &&
+      !sentences.some(
+        (sentence) => STATED_ALLERGY.test(sentence) && !DENIED_ALLERGY.test(sentence), // prettier-ignore
+      );
+    if (!line || !backed || allergies.length > 0) dropped += 1;
     else {
       keep({ kind: 'chart-no-allergy', text: NO_KNOWN_ALLERGIES, fromMs: line.startMs, toMs: line.endMs }); // prettier-ignore
     }
@@ -188,12 +232,18 @@ export function backedChart(input: {
       each.kind === 'FAMILY'
         ? (RELATIVES.find((known) => known === each.relative?.trim()) ?? null)
         : null;
+    // The disease said, not denied, in a sentence that is no question; and a
+    // family one with its relative in that same sentence (clinical review I2).
     const backed =
       line !== null &&
       description !== null &&
       description.length <= DESCRIPTION_LIMIT &&
-      (each.kind === 'PERSONAL' ||
-        (relative !== null && SAID_AS[relative].test(foldText(line.text))));
+      (each.kind === 'PERSONAL' || relative !== null) &&
+      statements(line.text).some(
+        (sentence) =>
+          saysDisease(sentence, stemOf(description)) &&
+          (relative === null || SAID_AS[relative].test(sentence)),
+      );
     if (!backed) {
       dropped += 1;
       continue;
@@ -252,7 +302,7 @@ export function shownChart(
   chart: ChartNow,
   transcript: readonly TranscriptLine[],
 ): ChartProposalView[] {
-  return stored.flatMap((each) => {
+  const views = stored.flatMap((each): ChartProposalView[] => {
     if (each.status !== 'PROPOSED') return [];
     const proposal = each.proposal as unknown as ChartProposal;
     if (typeof proposal.text !== 'string') return [];
@@ -283,6 +333,46 @@ export function shownChart(
     if (said === '') return [];
     return [{ ...proposal, id: each.id, quote: sentenceOf(proposal, said), conflict }]; // prettier-ignore
   });
+  // P5 (clinical review G1). An allergy said and not yet decided, of this
+  // reading or an earlier one, and «sin alergias» is never offered beside it.
+  return views.some((view) => view.kind === 'chart-allergy')
+    ? views.filter((view) => view.kind !== 'chart-no-allergy')
+    : views;
+}
+
+/**
+ * AS-263 (clinical review G1). The proposals of the latest reading, and the
+ * allergies of an earlier one still undecided: a later reading that missed
+ * an allergy said earlier does not make it disappear.
+ */
+export function currentChartReading<
+  S extends StoredChartProposal & {
+    aiRunId: string;
+    proposedAt: Date;
+    kind: string;
+  },
+>(stored: readonly S[]): S[] {
+  const latest = stored.reduce<S | null>(
+    (last, each) => (last === null || each.proposedAt > last.proposedAt ? each : last), // prettier-ignore
+    null,
+  );
+  if (!latest) return [];
+  const current = stored.filter((each) => each.aiRunId === latest.aiRunId);
+  const substances = new Set(
+    current.flatMap(
+      (each) =>
+      typeof each.proposal.substance === 'string' ? [foldText(each.proposal.substance)] : [], // prettier-ignore
+    ),
+  );
+  const earlier = stored.filter(
+    (each) =>
+      each.aiRunId !== latest.aiRunId &&
+      each.kind === 'chart-allergy' &&
+      each.status === 'PROPOSED' &&
+      typeof each.proposal.substance === 'string' &&
+      !substances.has(foldText(each.proposal.substance)),
+  );
+  return [...current, ...earlier];
 }
 
 /** AS-261. What, in a sentence, says the proposal: the words it is checked by. */

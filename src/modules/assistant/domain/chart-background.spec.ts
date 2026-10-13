@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   backedChart,
+  currentChartReading,
   sentenceOf,
   shownChart,
   type ChartAnswer,
@@ -61,24 +62,50 @@ describe('what the conversation said of the chart (AS-260, AS-262)', () => {
     expect(dropped).toBe(2);
   });
 
-  it('AS-262 a family entry needs a relative of the list said in its line; a personal one needs none', () => {
+  it('AS-262 a family entry needs a relative of the list said with the disease; a question backs nothing', () => {
     const { kept, dropped } = backedChart({
       answer: answer({
         history: [
           { kind: 'FAMILY', description: 'Hipertensión arterial', relative: 'Padre', source: 'L4' }, // prettier-ignore
           { kind: 'FAMILY', description: 'Hipertensión arterial', relative: 'Vecina', source: 'L4' }, // prettier-ignore
           { kind: 'FAMILY', description: 'Hipertensión arterial', relative: null, source: 'L4' }, // prettier-ignore
-          { kind: 'PERSONAL', description: 'Asma', relative: 'Madre', source: 'L3' }, // prettier-ignore
+          { kind: 'PERSONAL', description: 'Asma', relative: null, source: 'L3' }, // prettier-ignore
         ],
       }),
       markers,
       restore: same,
     });
 
-    expect(dropped).toBe(3);
-    expect(kept).toEqual([
-      { kind: 'chart-history', text: 'Asma', history: 'PERSONAL', description: 'Asma', relative: null, fromMs: 7_500, toMs: 11_000 }, // prettier-ignore
-    ]);
+    expect(dropped).toBe(4);
+    expect(kept).toEqual([]);
+  });
+
+  it('AS-262 (review G1, I2) what is asked, denied or not said is no record; what is stated is', () => {
+    const talk: TranscriptLine[] = [
+      { startMs: 0, endMs: 1, text: '¿Es alérgico a la penicilina?' },
+      { startMs: 2, endMs: 3, text: 'No.' },
+      { startMs: 4, endMs: 5, text: 'Me duele la garganta desde ayer.' },
+      { startMs: 6, endMs: 7, text: 'Mi mamá me trajo. Yo tengo asma desde niña.' }, // prettier-ignore
+      { startMs: 8, endMs: 9, text: 'No soy alérgico a nada, pero mi papá no es diabético.' }, // prettier-ignore
+    ];
+    const { markers: talked } = conversationOf(talk);
+    const { kept } = backedChart({
+      answer: answer({
+        noKnownAllergies: { source: 'L3' },
+        allergies: [{ substance: 'Penicilina', reaction: null, source: 'L1' }],
+        history: [
+          { kind: 'FAMILY', description: 'Diabetes mellitus', relative: 'Madre', source: 'L4' }, // prettier-ignore
+          { kind: 'FAMILY', description: 'Diabetes mellitus', relative: 'Padre', source: 'L5' }, // prettier-ignore
+          { kind: 'PERSONAL', description: 'Asma', relative: null, source: 'L4' }, // prettier-ignore
+        ],
+      }),
+      markers: talked,
+      restore: same,
+    });
+    expect(kept.map((each) => each.text)).toEqual(['Asma']);
+
+    const denied = backedChart({ answer: answer({ noKnownAllergies: { source: 'L5' } }), markers: talked, restore: same }); // prettier-ignore
+    expect(denied.kept.map((each) => each.text)).toEqual(['Sin alergias conocidas']); // prettier-ignore
   });
 
   it('AS-262 «sin alergias» beside an allergy of the same reading is no proposal; with no line, neither', () => {
@@ -124,13 +151,29 @@ describe('what Antecedentes shows (AS-263, AS-264)', () => {
   const empty = { allergies: [], absence: false, history: [] };
 
   it('AS-263 on an empty chart every proposal shows, with the line read again from the transcript', () => {
-    const shown = shownChart(proposals, [], empty, LINES);
+    const shown = shownChart([proposals[0]!, proposals[2]!], [], empty, LINES);
 
     expect(shown.map((each) => [each.id, each.quote, each.conflict])).toEqual([
       ['s-1', 'No, que yo sepa, a ninguno.', null],
-      ['s-2', 'Soy alérgica a la amoxicilina, me da ronchas.', null],
       ['s-3', 'Mi mamá es hipertensa.', null],
     ]);
+  });
+
+  it('AS-264 (review G1) beside an allergy said and undecided, «sin alergias» is never offered', () => {
+    expect(shownChart(proposals, [], empty, LINES).map((each) => each.id)).toEqual(['s-2', 's-3']); // prettier-ignore
+  });
+
+  it('AS-263 (review G1) an allergy of an earlier reading still undecided stays when a later reading missed it', () => {
+    const at = (ms: number) => new Date(ms);
+    const stored = [
+      { ...proposals[1]!, aiRunId: 'run-1', proposedAt: at(1), kind: 'chart-allergy' }, // prettier-ignore
+      { ...proposals[0]!, id: 's-4', aiRunId: 'run-2', proposedAt: at(2), kind: 'chart-no-allergy' }, // prettier-ignore
+    ];
+
+    const current = currentChartReading(stored);
+
+    expect(current.map((each) => each.id)).toEqual(['s-4', 's-2']);
+    expect(shownChart(current, [], empty, LINES).map((each) => each.id)).toEqual(['s-2']); // prettier-ignore
   });
 
   it('AS-263 what the chart already has is not proposed again; nor what was discarded, in a later reading', () => {

@@ -35,6 +35,7 @@ import {
   SuggestionNotFoundError,
 } from '../domain/assistant.errors';
 import {
+  currentChartReading,
   shownChart,
   type ChartProposal,
   type ChartProposalView,
@@ -259,18 +260,12 @@ export class ChartProposalService {
         this.transcripts.transcript(encounter.id),
       ],
     );
-    const latest = stored.reduce<SuggestionView | null>(
-      (last, each) => (last === null || each.proposedAt > last.proposedAt ? each : last), // prettier-ignore
-      null,
-    );
     const discarded = stored.flatMap((each) =>
       each.status === 'DISCARDED' && typeof each.proposal.text === 'string'
         ? [each.proposal.text]
         : [],
     );
-    const current = latest
-      ? stored.filter((each) => each.aiRunId === latest.aiRunId)
-      : [];
+    const current = currentChartReading(stored);
     return {
       proposals: shownChart(
         current,
@@ -308,16 +303,8 @@ export class ChartProposalService {
     requester: ChartRequester,
   ): Promise<SuggestionView> {
     const stored = await this.chartSuggestions(encounter, requester);
-    const latest = stored.reduce<SuggestionView | null>(
-      (last, each) => (last === null || each.proposedAt > last.proposedAt ? each : last), // prettier-ignore
-      null,
-    );
-    const found = stored.find((each) => each.id === suggestionId);
-    if (
-      !found ||
-      found.status !== 'PROPOSED' ||
-      found.aiRunId !== latest?.aiRunId
-    ) {
+    const found = currentChartReading(stored).find((each) => each.id === suggestionId); // prettier-ignore
+    if (!found || found.status !== 'PROPOSED') {
       throw new SuggestionNotFoundError();
     }
     return found;
