@@ -3,6 +3,9 @@ import { Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { ASSISTANT_SITE_SWITCH } from '../../shared/clinical/assistant-site-switch.port';
+import { assistantEnabledProvider } from '../../shared/config/assistant-enabled';
+import { PrismaAssistantSiteSwitch } from '../../shared/infrastructure/clinical/prisma-assistant-site-switch';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 
 import { ConfigurationAuditTrail } from './application/configuration-audit.trail';
@@ -51,6 +54,10 @@ import { ConfigurationController } from './configuration.controller';
     { provide: HOLIDAY_REPOSITORY, useClass: PrismaHolidayRepository },
     { provide: SITE_PARAMETER_REPOSITORY, useClass: PrismaSiteParameterRepository }, // prettier-ignore
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
+    // AS-160, AS-162 (A3). Whether the installation has the assistant, and
+    // where it is on.
+    assistantEnabledProvider,
+    { provide: ASSISTANT_SITE_SWITCH, useClass: PrismaAssistantSiteSwitch },
   ],
 })
 export class ConfigurationModule {}

@@ -199,6 +199,20 @@ export class AssistantEncounterClosedError extends ConflictError {
   }
 }
 
+/**
+ * AS-165, AS-166 (D-221 §3). The patient has not authorized recording the
+ * consultation for the assistant, or revoked it.
+ */
+export class AssistantRecordingNotAuthorizedError extends ConflictError {
+  readonly code = 'ASSISTANT_RECORDING_NOT_AUTHORIZED';
+  override readonly userTitle =
+    'El paciente no ha autorizado grabar la consulta para el asistente';
+
+  constructor() {
+    super('The patient has not authorized recording for the assistant');
+  }
+}
+
 /** AS-028. There is nothing in the note to read the problems from. */
 export class AssistantNoteEmptyError extends ValidationError {
   readonly code = 'ASSISTANT_NOTE_EMPTY';

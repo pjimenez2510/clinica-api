@@ -50,6 +50,7 @@ const PARAMETER_SELECT = {
   criticalEscalationRoleId: true,
   criticalEscalationUserId: true,
   criticalReadBackRequired: true,
+  assistantEnabled: true,
   unmatchedResultOwnerRoleId: true,
   unmatchedResultDeadlineHours: true,
   // EN-272: la línea de referencia de la TA de las gráficas.
@@ -141,6 +142,7 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
             criticalEscalationRoleId: patch.criticalEscalationRoleId,
             criticalEscalationUserId: patch.criticalEscalationUserId,
             criticalReadBackRequired: patch.criticalReadBackRequired,
+            assistantEnabled: patch.assistantEnabled,
             unmatchedResultOwnerRoleId: patch.unmatchedResultOwnerRoleId,
             unmatchedResultDeadlineHours: patch.unmatchedResultDeadlineHours,
             bpReferenceSystolic: patch.bpReferenceSystolic,

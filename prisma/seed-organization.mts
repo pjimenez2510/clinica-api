@@ -125,8 +125,14 @@ export async function seedOrganization(prisma: PrismaClient): Promise<{
   // --- Sites -----------------------------------------------------------
   let sitesCreated = 0;
   if ((await prisma.site.count()) === 0) {
-    await prisma.site.create({
+    const site = await prisma.site.create({
       data: { ...FALLBACK_SITE, establishmentId: establishment.id },
+    });
+    // AS-160 (A3, D-254 §2). Born off like any site; the development clinic's
+    // is switched on when it is created here, never on a re-run.
+    await prisma.siteParameter.update({
+      where: { siteId: site.id },
+      data: { assistantEnabled: true },
     });
     sitesCreated = 1;
   }

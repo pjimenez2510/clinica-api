@@ -78,6 +78,10 @@ describe('la superficie de configuración', () => {
      */
     expect(Object.keys(updateSiteParametersSchema.shape).sort()).toEqual([
       'allowPastBooking',
+      // AS-160 (A3, D-254): el asistente en la sede. Apagarlo no quita
+      // ninguna garantía —sólo lo que el asistente propone— y encenderlo
+      // sigue pidiendo `assistant:use`, la sesión y el alcance por sede.
+      'assistantEnabled',
       // EN-272 (D-207 §1): la línea de la TA de las gráficas. Dibujarla en
       // otra cifra no deja de garantizar nada: la toma se guarda igual.
       'bpReferenceDiastolic',

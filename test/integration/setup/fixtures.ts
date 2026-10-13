@@ -53,6 +53,37 @@ export async function createSite(prisma: PrismaClient, name = 'Sede Central') {
 }
 
 /**
+ * AS-160 (A3). Switches the assistant on at a site: a site created after the
+ * migration is born with it off (D-254 §2), so a test of the assistant says
+ * on the line that it wants it on — like `setSlotAtom`.
+ */
+export async function enableAssistant(prisma: PrismaClient, siteId: string) {
+  await prisma.siteParameter.update({
+    where: { siteId },
+    data: { assistantEnabled: true },
+  });
+}
+
+/**
+ * AS-165 (A3). The patient's standing authorization to record the
+ * consultation for the assistant (D-221 §3), recorded by `userId`.
+ */
+export async function authorizeRecording(
+  prisma: PrismaClient,
+  patientId: string,
+  userId: string,
+) {
+  return prisma.patientAuthorization.create({
+    data: {
+      patientId,
+      purpose: 'ASSISTANT_RECORDING',
+      recordedAt: new Date(),
+      recordedBy: userId,
+    },
+  });
+}
+
+/**
  * D-021. Sets what the site dices its day into.
  *
  * A SEPARATE CALL AND NOT A FIELD OF `createSite`, for the same reason

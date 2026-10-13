@@ -33,7 +33,12 @@ import type { Env } from '../../src/shared/config/env.schema';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createEncounter, createPatient, createSite } from './setup/fixtures';
+import {
+  createEncounter,
+  createPatient,
+  createSite,
+  enableAssistant,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -115,6 +120,7 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
     await syncAuthorisation(prisma);
     registry.invalidate();
     const site = await createSite(prisma);
+    await enableAssistant(prisma, site.id);
     siteId = site.id;
     const patient = await createPatient(prisma);
     patientId = patient.id;
@@ -281,7 +287,9 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
     expect((refused.body as { code: string }).code).toBe(
       'ASSISTANT_NOT_ENCOUNTER_OWNER',
     );
-    const elsewhere = await attentionWithNote(doctor.practitionerId, NOTE, (await createSite(prisma, 'Sede Sur')).id); // prettier-ignore
+    const south = (await createSite(prisma, 'Sede Sur')).id;
+    await enableAssistant(prisma, south);
+    const elsewhere = await attentionWithNote(doctor.practitionerId, NOTE, south); // prettier-ignore
     const hidden = await post(elsewhere.id, '/read', doctor.token).expect(404);
     expect((hidden.body as { code: string }).code).toBe(
       'ASSISTANT_ENCOUNTER_NOT_FOUND',

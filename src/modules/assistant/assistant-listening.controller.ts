@@ -1,5 +1,6 @@
 import {
   Controller,
+  Inject,
   Get,
   Header,
   HttpCode,
@@ -17,6 +18,10 @@ import {
   CurrentUserService,
   MissingTokenError,
 } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -25,7 +30,11 @@ import {
 } from './application/listening-access';
 import { ListeningService } from './application/listening.service';
 import { withAssistant } from './assistant-sites';
-import { ListeningDto, ListeningTicketDto } from './dto/listening.dto';
+import {
+  ListeningDto,
+  ListeningTicketDto,
+  RecordingAuthorizationDto,
+} from './dto/listening.dto';
 
 /**
  * AS-045, AS-056. The HTTP half of the listening: the ticket the audio
@@ -43,6 +52,8 @@ export class AssistantListeningController {
     private readonly access: ListeningAccess,
     private readonly listening: ListeningService,
     private readonly currentUser: CurrentUserService,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-045. A single-use ticket for the audio channel, alive for 30 s. */
@@ -59,7 +70,10 @@ export class AssistantListeningController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,
   ): Promise<ListeningTicketDto> {
-    const issued = await this.access.issue(encounterId, this.requester(req));
+    const issued = await this.access.issue(
+      encounterId,
+      await this.requester(req),
+    );
     return {
       ticket: issued.ticket,
       expiresAt: issued.expiresAt.toISOString(),
@@ -76,7 +90,10 @@ export class AssistantListeningController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,
   ): Promise<ListeningDto> {
-    await this.access.read(encounterId, this.requester(req));
+    const { recordingAuthorized } = await this.access.read(
+      encounterId,
+      await this.requester(req),
+    );
     const [session, segments] = await Promise.all([
       this.listening.sessionOf(encounterId),
       this.listening.transcriptOf(encounterId),
@@ -92,17 +109,35 @@ export class AssistantListeningController {
         updatedAt: session.updatedAt.toISOString(),
       },
       segments,
+      recordingAuthorized,
     };
   }
 
-  private requester(req: Request): ListeningRequester {
+  /**
+   * AS-168 (D-254 §3). The patient authorizes recording in the consultation
+   * room: the attention's own professional records it, like AS-045 asks.
+   */
+  @Post('authorization')
+  @RequirePermission('assistant:use', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Registrar la autorización de grabar la consulta' })
+  @ApiOkResponse({ type: RecordingAuthorizationDto })
+  async authorize(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Req() req: Request,
+  ): Promise<RecordingAuthorizationDto> {
+    return this.access.authorize(encounterId, await this.requester(req));
+  }
+
+  private async requester(req: Request): Promise<ListeningRequester> {
     const principal = this.currentUser.requirePrincipal();
+    const enabled = await this.siteSwitch.enabledSites();
     const exp = this.currentUser.get()?.exp;
     // AS-047. Every token `jose` signs carries `exp`.
     if (typeof exp !== 'number') throw new MissingTokenError();
     return {
       userId: this.currentUser.requireUserId(),
-      writeSites: withAssistant(principal, 'record:write'),
+      writeSites: withAssistant(principal, 'record:write', enabled),
       tokenExpiresAt: new Date(exp * 1000),
       ip: req.ip,
       userAgent: req.get('user-agent'),

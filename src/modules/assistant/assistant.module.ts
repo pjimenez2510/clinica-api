@@ -17,6 +17,9 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
 import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
 import { ASSISTANT_AT_SIGNING } from '../../shared/clinical/assistant-at-signing.port';
+import { ASSISTANT_SITE_SWITCH } from '../../shared/clinical/assistant-site-switch.port';
+import { RECORDING_AUTHORIZATION } from '../../shared/clinical/recording-authorization.port';
+import { assistantEnabledProvider } from '../../shared/config/assistant-enabled';
 import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
 import { NOTE_DRAFT_CONTEXT_READER } from '../../shared/clinical/note-draft-context.port';
 import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
@@ -27,6 +30,8 @@ import { DomainError } from '../../shared/domain/errors/domain-error';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-cie10.lookup';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
+import { PrismaAssistantSiteSwitch } from '../../shared/infrastructure/clinical/prisma-assistant-site-switch';
+import { PrismaRecordingAuthorization } from '../../shared/infrastructure/clinical/prisma-recording-authorization';
 import { PrismaCodingContextReader } from '../../shared/infrastructure/clinical/prisma-coding-context.reader';
 import { PrismaNoteDraftContextReader } from '../../shared/infrastructure/clinical/prisma-note-draft-context.reader';
 import { PrismaOrderingContextReader } from '../../shared/infrastructure/clinical/prisma-ordering-context.reader';
@@ -45,10 +50,7 @@ import {
   type Pseudonymizer,
 } from './application/pseudonymizer.port';
 import { RoutingLlmClient } from './application/routing-llm.client';
-import {
-  ASSISTANT_ENABLED,
-  AssistantDiagnosisController,
-} from './assistant-diagnosis.controller';
+import { AssistantDiagnosisController } from './assistant-diagnosis.controller';
 import { AssistantOrdersController } from './assistant-orders.controller';
 import { AssistantPrescriptionController } from './assistant-prescription.controller';
 import { OrderProposalService } from './application/order-proposal.service';
@@ -165,12 +167,11 @@ const PURGE_EVERY_MS = 86_400_000;
       useFactory: (config: ConfigService<Env, true>): boolean =>
         config.get('ASSISTANT_FAKE_PROVIDER', { infer: true }) === true,
     },
-    {
-      provide: ASSISTANT_ENABLED,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>): boolean =>
-        config.get('ASSISTANT_ENABLED', { infer: true }) === true,
-    },
+    assistantEnabledProvider,
+    // AS-161 (A3). The sites with the assistant on, read on each request.
+    { provide: ASSISTANT_SITE_SWITCH, useClass: PrismaAssistantSiteSwitch },
+    // AS-165 to AS-168. The patient's authorization to record (D-221 §3).
+    { provide: RECORDING_AUTHORIZATION, useClass: PrismaRecordingAuthorization }, // prettier-ignore
     DiagnosisProposalService,
     // AS-063 to AS-078 (D2). The receta: the cuadro and the receta of the
     // attention, and the allergies through the SAME reader the receta checks
