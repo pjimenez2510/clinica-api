@@ -1,5 +1,9 @@
 import { datesNotSaid } from './date-restore';
-import type { SuggestionSource, SuggestionStatus } from './suggestion';
+import type {
+  SuggestionSource,
+  SuggestionStatus,
+  SuggestionView,
+} from './suggestion';
 
 /**
  * AS-087 to AS-090, AS-095. The draft of the consultation note, without any
@@ -161,6 +165,19 @@ export interface StoredDraftSection {
   text: string;
   status: SuggestionStatus;
   proposedAt: Date;
+}
+
+/** AS-090, AS-144. A kept proposal of a section, read back from `ai_suggestion`. */
+export function asStoredSection(view: SuggestionView): StoredDraftSection {
+  const proposal = view.proposal as Partial<Record<'draftId' | 'section' | 'text', unknown>>; // prettier-ignore
+  return {
+    id: view.id,
+    draftId: String(proposal.draftId ?? ''),
+    section: String(proposal.section ?? ''),
+    text: String(proposal.text ?? ''),
+    status: view.status,
+    proposedAt: view.proposedAt,
+  };
 }
 
 /** A section on screen, and what was accepted for it before, if anything. */

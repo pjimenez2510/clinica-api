@@ -326,7 +326,7 @@ export class ClinicalNoteService {
   ): Promise<NoteWithTemplate> {
     const signer = await this.requirePractitioner(requester.userId);
     this.assertLicensed(signer.acessExpiresOn);
-    await this.assertAssistantIdle(request.encounterId);
+    await this.assertAssistantIdle(request, requester);
     const now = new Date();
     // EN-204, EN-205. The template the note was opened with — fixed by
     // `trg_clinical_note_template_is_fixed`, so reading it before the
@@ -456,12 +456,17 @@ export class ClinicalNoteService {
       signed.formCode,
       signed.formVersion,
     ).dischargesTheEncounter;
-    // AS-143, AS-144. The signature is stored: what the assistant had running
-    // stops and its proposals are reviewed. It never throws.
-    if (discharges) await this.assistant.signed(request.encounterId);
     // AG-179, BI-238. The signature that discharges ends the attention; caja
     // hears only that one.
     await this.announce(request.encounterId, requester, discharges);
+    // AS-143, AS-144. The signature is stored: what the assistant had running
+    // stops and its proposals are reviewed — after the answer, not inside
+    // it: stopping waits for the recogniser to hand over (up to 90 s), and
+    // the doctor and caja must not wait for that. It never throws; what it
+    // could not review, the sweep does.
+    if (discharges) {
+      this.assistant.signed(request.encounterId).catch(() => undefined);
+    }
 
     return { ...signed, template };
   }
@@ -473,8 +478,20 @@ export class ClinicalNoteService {
    * before the transaction; whatever slips in between is stopped after the
    * signature (AS-143).
    */
-  private async assertAssistantIdle(encounterId: string): Promise<void> {
-    const activity = await this.assistant.activity(encounterId);
+  private async assertAssistantIdle(
+    request: { encounterId: string; noteId: string },
+    requester: Requester,
+  ): Promise<void> {
+    // Only over a draft the signer reaches: an attention of another site, an
+    // unknown note or a signed one get their own answer from the transaction
+    // (404, NOTE_ALREADY_SIGNED) and never say what the assistant is doing.
+    const note = await this.notes.findById({
+      encounterId: request.encounterId,
+      noteId: request.noteId,
+      sites: requester.sites,
+    });
+    if (note?.status !== 'DRAFT') return;
+    const activity = await this.assistant.activity(request.encounterId);
     if (activity.listening) throw new NoteSignWhileListeningError();
     if (activity.drafting) throw new NoteSignWhileDraftingError();
   }

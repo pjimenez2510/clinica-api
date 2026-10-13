@@ -31,11 +31,11 @@ import {
 } from '../domain/assistant.errors';
 import { buildLexicon, type Lexicon } from '../domain/lexicon';
 import {
+  asStoredSection,
   type DraftPhrase,
   draftDue,
   type NoteDraftStatus,
   shownSections,
-  type StoredDraftSection,
   type TranscriptLine,
 } from '../domain/note-draft';
 import type { SuggestionStatus, SuggestionView } from '../domain/suggestion';
@@ -238,6 +238,15 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
   ): Promise<DraftOverview> {
     const encounter = await this.ownLiveEncounter(encounterId, requester);
     if ((await this.cancel(encounter.id)) > 0) {
+      // Who stopped it: `requested_by` still names who asked for it.
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: READ_RESOURCE,
+        resourceId: encounter.id,
+        action: 'UPDATE',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
       this.announce(encounter.siteId, requester.userId);
     }
     return this.overview(encounter.id, requester);
@@ -653,18 +662,6 @@ function codeOf(error: unknown): string {
   return error instanceof DomainError
     ? error.code
     : new AssistantDraftFailedError().code;
-}
-
-export function asStoredSection(view: SuggestionView): StoredDraftSection {
-  const proposal = view.proposal as Partial<SectionProposal>;
-  return {
-    id: view.id,
-    draftId: String(proposal.draftId ?? ''),
-    section: String(proposal.section ?? ''),
-    text: String(proposal.text ?? ''),
-    status: view.status,
-    proposedAt: view.proposedAt,
-  };
 }
 
 function sectionView(

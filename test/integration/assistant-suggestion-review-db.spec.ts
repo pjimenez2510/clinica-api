@@ -141,7 +141,7 @@ describe('ai_suggestion_review (AS-145)', () => {
     );
   });
 
-  it('AS-145 refuses a review against a note that is not signed, or of another attention', async () => {
+  it('AS-145 refuses a review against a note that is not signed, not the 002, or of another attention', async () => {
     const prisma = db();
     const signed = await anAttention(prisma);
     const unsigned = await anAttention(prisma, false);
@@ -160,7 +160,27 @@ describe('ai_suggestion_review (AS-145)', () => {
     await expect(review(prisma, ofUnsigned.id, signed.note.id)).rejects.toThrow(
       /ai_suggestion_review_of_a_signed_note/,
     );
-    // Positive control: the same insert with its own signed note.
+    // An evolution note signed in the same attention is not what the draft wrote into.
+    const id = randomUUID();
+    const evolution = await prisma.clinicalNote.create({
+      data: {
+        id,
+        chainId: id,
+        encounterId: signed.encounter.id,
+        formCode: '005',
+        formVersion: '1',
+        content: { evolucion: 'Curación de la herida.' },
+        authorId: signed.note.authorId,
+        status: 'SIGNED',
+        signedAt: new Date(),
+        signedById: signed.note.authorId,
+        contentHash: 'b'.repeat(64),
+      },
+    });
+    await expect(review(prisma, ofSigned.id, evolution.id)).rejects.toThrow(
+      /ai_suggestion_review_of_a_signed_note/,
+    );
+    // Positive control: the same insert with its own signed 002.
     await review(prisma, ofSigned.id, signed.note.id);
   });
 

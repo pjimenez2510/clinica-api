@@ -5,10 +5,11 @@ import type {
   AssistantAtSigning,
 } from '../../../shared/clinical/assistant-at-signing.port';
 import { DomainError } from '../../../shared/domain/errors/domain-error';
-import { reviewAtSigning } from '../domain/signing-review';
+import { asStoredSection } from '../domain/note-draft';
+import { reviewOf, sectionsToReview } from '../domain/signing-review';
 
 import { ListeningService } from './listening.service';
-import { asStoredSection, NoteDraftService } from './note-draft.service';
+import { NoteDraftService } from './note-draft.service';
 import { NOTE_DRAFT_STORE, type NoteDraftStore } from './note-draft.store';
 import {
   SUGGESTION_REVIEW_STORE,
@@ -73,11 +74,16 @@ export class SigningReviewService implements AssistantAtSigning {
       this.suggestions.listOfEncounter(encounterId, 'all', 'note-section'),
       this.draftStore.doneIds(encounterId),
     ]);
-    const reviewed = reviewAtSigning(
+    const reviewed = [];
+    for (const section of sectionsToReview(
       stored.map(asStoredSection),
       new Set(doneIds),
-      signed,
-    );
+    )) {
+      // prettier-ignore
+      reviewed.push(reviewOf(section, signed));
+      // A long section is milliseconds of the event loop: the others wait less.
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     const kept = await this.reviews.record(reviewed, this.clock());
     // AS-146. Counts only: no section, no text.
     if (kept > 0) {
@@ -96,7 +102,10 @@ export class SigningReviewService implements AssistantAtSigning {
   async sweep(): Promise<number> {
     let kept = 0;
     for (const encounterId of await this.reviews.unreviewed()) {
-      kept += await this.review(encounterId);
+      // One attention that fails does not keep the others unreviewed for ever.
+      await this.quietly(encounterId, 'ai_suggestion_review', async () => {
+        kept += await this.review(encounterId);
+      });
     }
     return kept;
   }

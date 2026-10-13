@@ -304,10 +304,10 @@ borrador en cola se rechaza; dejar de esperarlo lo deja cancelado; firmar
 entonces detiene la escucha y deja dos revisiones con la nota firmada, su
 estado y una distancia mayor que cero en la retocada; una revisión de una nota
 sin firmar se rechaza.
-**Cubre:** AS-140 a AS-150.
+**Cubre:** AS-140 a AS-152.
 **Solo servidor:** AS-143 (lo que corre al firmar), AS-145 (la base) y AS-146
 (lo que no llega al log). La pantalla los ve como AS-148 y AS-150.
-**Solo interfaz:** AS-148, AS-149 y AS-150. Son «Firmar…» deshabilitado con su
+**Solo interfaz:** AS-148, AS-149, AS-150 y AS-152. Son «Firmar…» deshabilitado con su
 motivo, el rechazo dicho en el diálogo y lo que queda tras firmar; su mitad del
 servidor es AS-140, AS-141 y AS-147, que ya se prueban con esos números.
 
@@ -1496,9 +1496,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 ### 38. Firmar con el asistente en marcha (E1, U-03, D-247 §7)
 
 - **AS-140** — MIENTRAS el asistente esté capturando la escucha de una
-  atención, SI alguien pide firmar una nota de esa atención, ENTONCES el
-  sistema DEBERÁ rechazarlo con `NOTE_SIGN_WHILE_LISTENING` (409) sin firmar
-  nada. Una escucha en pausa o detenida NO DEBERÁ impedir la firma.
+  atención, SI alguien pide firmar una nota en borrador de esa atención a
+  su alcance, ENTONCES el sistema DEBERÁ rechazarlo con
+  `NOTE_SIGN_WHILE_LISTENING` (409) sin firmar nada. Una escucha en pausa o
+  detenida NO DEBERÁ impedir la firma; y una nota fuera del alcance de quien
+  firma, o ya firmada, DEBERÁ recibir su respuesta de siempre (404,
+  `NOTE_ALREADY_SIGNED`), nunca la que dice qué hace el asistente.
   > Lo que el paciente dice mientras se firma no llegaría a la nota firmada:
   > o se detiene la escucha, o la nota no está terminada. En pausa no entra
   > nada nuevo; se detiene al firmar (AS-143). D-252 §2.
@@ -1514,9 +1517,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > Es la salida de una consulta que no puede seguir —el paciente se fue, se
   > descompensó—; bloquearla obligaría a buscar el botón de detener en el peor
   > momento (D-252 §1).
-- **AS-143** — CUANDO se firme la nota que da el alta (la 002) o se
-  interrumpa la atención, el sistema DEBERÁ, después de guardar la firma,
-  detener la escucha de la atención —lo dicho antes queda, nada después,
+- **AS-143** — CUANDO se firme la nota que da el alta (la 002), se
+  interrumpa la atención o se anule, el sistema DEBERÁ, después de guardarlo
+  y sin hacer esperar la respuesta, detener la escucha de la atención —lo dicho antes queda, nada después,
   como AS-045— y cancelar los borradores en cola o redactándose: quedan
   fallidos con `ASSISTANT_DRAFT_CANCELLED`, la llamada en curso se corta y
   nada de lo que devuelva se guarda. Un fallo de estos pasos NO DEBERÁ
@@ -1524,8 +1527,20 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   queda en el log sin texto.
   > Lo que se cuela entre la comprobación y la firma —una escucha que
   > empieza, un borrador que pide la escucha al detenerse— se detiene aquí.
+  > Fuera de la respuesta: detener espera a que el reconocedor entregue lo
+  > que tiene (hasta 90 s), y ni el médico ni caja deben esperarlo (revisión
+  > del 12-10-2026). Anular también: la atención abierta por error no debe
+  > seguir mandando la conversación al proveedor.
   > Lo que se lee de la nota (CIE-10, receta, exámenes) responde a un clic y
   > no corre aparte: una atención cerrada mientras lee no guarda nada (AS-039).
+
+- **AS-151** — CUANDO el profesional detenga la escucha desde un canal que
+  no tiene la captura —otra pestaña, un equipo que perdió la red con el canal
+  medio abierto—, el sistema DEBERÁ detenerla igual, avisar al canal que la
+  tenía (`taken-over`, como AS-054) e ignorar desde entonces sus tramas.
+  > Antes se rechazaba: la firma quedaba bloqueada (AS-140) sin nada que
+  > detener a la vista, y la única salida era interrumpir una consulta
+  > terminada (revisión clínica del 12-10-2026, M1).
 
 ### 39. La revisión de lo propuesto (E1, P1, SigmAI RF-I02)
 
@@ -1538,12 +1553,16 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   esa sección (vacía si no dice nada). SI no pudo hacerlo al firmar,
   ENTONCES DEBERÁ hacerlo al arrancar la API y después cada día, para toda
   nota firmada a la que le falte.
+  > Contra lo FIRMADO: la primera versión firmada de la 002, aunque el
+  > barrido llegue después de una enmienda (EN-025). El barrido aísla cada
+  > atención: una que falla no deja sin revisar a las demás.
   > «Para cada nota con borrador»: una sección descartada y escrita igual a
   > mano también se mide —es lo que dice si «Descartar» se usa para copiar a
   > mano—. La de una sección aceptada con «Añadir» cuenta lo que el médico ya
   > tenía, como AS-022 (D-252 §4).
 - **AS-145** — La base DEBERÁ rechazar una revisión de una propuesta que no
-  sea `note-section`, de una nota sin firmar o de otra atención, con un estado
+  sea `note-section`, de una nota que no sea la 002 firmada (o sustituida
+  por su enmienda) de su atención, con un estado
   distinto del que la propuesta tiene, o con una distancia fuera de [0, 1]; una
   segunda revisión de la misma propuesta; y cualquier cambio o borrado de una
   revisión.
@@ -1568,6 +1587,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   «Detenga la escucha para firmar.» o «El asistente está redactando el
   borrador.» con «Dejar de esperar» (AS-147); CUANDO la escucha se detenga o
   el borrador termine, DEBERÁ habilitarse sin recargar la página.
+- **AS-152** — MIENTRAS la escucha de la atención se capture en otra
+  pestaña o equipo, «Firmar…» y «Terminar y firmar» DEBERÁN esperar con «La
+  consulta se está escuchando en otra pestaña o equipo: deténgala para
+  firmar.», y «Detener» de esta pantalla DEBERÁ detenerla (AS-151).
 - **AS-149** — SI el servidor rechaza la firma por AS-140 o AS-141 (la escucha
   o el borrador de otra pestaña), ENTONCES el diálogo de firma DEBERÁ decir el
   motivo con las mismas palabras y la nota DEBERÁ seguir en borrador en
@@ -1649,9 +1672,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-114 | Arnés (`eval/`), fuera del verify |
 | AS-115 a AS-117 | Componente de la pestaña y recorrido F-05 |
 | AS-140 a AS-142, AS-144, AS-147 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-143, AS-146 | Unitario con almacenes, reloj y proveedor falsos |
+| AS-143, AS-146, AS-151 | Unitario con almacenes, reloj, reconocedor y proveedor falsos |
 | AS-145 | Integración contra PostgreSQL, con control positivo |
-| AS-148 a AS-150 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
 
 ## Preguntas abiertas
 

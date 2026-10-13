@@ -168,6 +168,9 @@ export class EncounterExitService {
       'encounter annulled',
     );
     announceEncounterChange(this.liveEvents, annulled.siteId, { ended: true });
+    // AS-143. An attention opened on the wrong patient: what the assistant
+    // was hearing or drafting for it stops now, not at the next check.
+    this.assistant.signed(annulled.id).catch(() => undefined);
 
     return annulled;
   }
@@ -288,11 +291,12 @@ export class EncounterExitService {
       });
     }
 
+    announceEncounterChange(this.liveEvents, discontinued.siteId, { ended: true }); // prettier-ignore
     // AS-142, AS-143. Not refused while the assistant listens or drafts —it
     // is the way out of a consultation that cannot go on (D-252 §1)—, but
-    // what it had running stops and its proposals are reviewed. Never throws.
-    await this.assistant.signed(discontinued.id);
-    announceEncounterChange(this.liveEvents, discontinued.siteId, { ended: true }); // prettier-ignore
+    // what it had running stops and its proposals are reviewed, after the
+    // answer (see ClinicalNoteService.sign). Never throws.
+    this.assistant.signed(discontinued.id).catch(() => undefined);
 
     return { encounter: discontinued, unsignedEmptyNoteIds };
   }

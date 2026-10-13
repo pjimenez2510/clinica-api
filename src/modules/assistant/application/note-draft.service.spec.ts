@@ -424,6 +424,10 @@ describe('NoteDraftService — stopping waiting for it (AS-143, AS-147)', () => 
       failureCode: 'ASSISTANT_DRAFT_CANCELLED',
     });
     expect(world.signals[0]?.aborted).toBe(true);
+    // Who stopped it is in the trail; `requested_by` names who asked.
+    expect(world.audits).toContainEqual(
+      expect.objectContaining({ action: 'UPDATE', userId: DOCTOR, resourceType: 'assistant_note_draft' }), // prettier-ignore
+    );
     expect(world.events).toContainEqual(
       expect.objectContaining({ kind: 'assistant-draft', userIds: [DOCTOR] }),
     );

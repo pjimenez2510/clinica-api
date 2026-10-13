@@ -15,11 +15,16 @@ export class PrismaSuggestionReviewStore implements SuggestionReviewStore {
   constructor(private readonly prisma: PrismaService) {}
 
   async signedConsultation(encounterId: string): Promise<SignedNote | null> {
-    // The version standing now: the first one, or its amendment when the
-    // sweep comes after one (EN-025).
+    // What was SIGNED, not what stands now: a sweep after an amendment
+    // (EN-025) still measures the first signed version of the chain.
     const note = await this.prisma.clinicalNote.findFirst({
-      where: { encounterId, formCode: CONSULTATION_FORM, status: 'SIGNED' },
-      orderBy: { version: 'desc' },
+      where: {
+        encounterId,
+        formCode: CONSULTATION_FORM,
+        signedAt: { not: null },
+        status: { in: ['SIGNED', 'SUPERSEDED'] },
+      },
+      orderBy: { version: 'asc' },
       select: { id: true, content: true },
     });
     if (!note) return null;
@@ -48,20 +53,21 @@ export class PrismaSuggestionReviewStore implements SuggestionReviewStore {
 
   async unreviewed(): Promise<string[]> {
     const rows = await this.prisma.$queryRaw<{ encounter_id: string }[]>`
-      SELECT DISTINCT s.encounter_id
-        FROM ai_suggestion s
+      SELECT DISTINCT n.encounter_id
+        FROM clinical_note n
         JOIN note_draft d
-          ON d.id::text = s.proposal ->> 'draftId' AND d.status = 'DONE'
-       WHERE s.kind = 'note-section'
+          ON d.encounter_id = n.encounter_id AND d.status = 'DONE'
+       WHERE n.form_code = ${CONSULTATION_FORM}
+         AND n.signed_at IS NOT NULL
          AND EXISTS (
-           SELECT 1 FROM clinical_note n
-            WHERE n.encounter_id = s.encounter_id
-              AND n.form_code = ${CONSULTATION_FORM}
-              AND n.status = 'SIGNED')
+           SELECT 1 FROM ai_suggestion s
+            WHERE s.encounter_id = n.encounter_id
+              AND s.kind = 'note-section'
+              AND (s.proposal ->> 'draftId')::uuid = d.id)
          AND NOT EXISTS (
-           SELECT 1 FROM ai_suggestion_review r
-             JOIN ai_suggestion o ON o.id = r.suggestion_id
-            WHERE o.encounter_id = s.encounter_id)`;
+           SELECT 1 FROM ai_suggestion o
+             JOIN ai_suggestion_review r ON r.suggestion_id = o.id
+            WHERE o.encounter_id = n.encounter_id)`;
     return rows.map(({ encounter_id }) => encounter_id);
   }
 }

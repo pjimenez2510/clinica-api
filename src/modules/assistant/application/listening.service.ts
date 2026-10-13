@@ -220,9 +220,10 @@ export class ListeningService {
   }
 
   /**
-   * AS-050. A pause the physician does not come back from — until they start
-   * again, on the same clock. A stop from a channel that never started (the
-   * server refused, the page reloaded) still stops what is written down.
+   * AS-050, AS-151. A pause the physician does not come back from — until
+   * they start again, on the same clock. A stop from a channel that does not
+   * hold the capture still stops it, and one that never started (the server
+   * refused, the page reloaded) still stops what is written down.
    */
   stop(
     encounterId: string,
@@ -230,12 +231,17 @@ export class ListeningService {
   ): Promise<{ offsetMs: number }> {
     return this.inTurn(encounterId, async () => {
       const live = this.live.get(encounterId);
-      if (live?.channel === channel) {
+      if (live) {
+        // AS-151. Held by another channel —another tab, a device that lost
+        // the network with its socket half open—: the professional stops it
+        // from here (the gateway only lets the owner in), and the other one
+        // is told, as when a start takes the capture over (AS-054). Refusing
+        // it left a note nobody could sign (AS-140) with nothing to stop.
+        if (live.channel !== channel) live.channel.onTakenOver();
         const stopped = await this.finish(live, 'STOPPED', null);
         this.observer?.listeningStopped(encounterId);
         return stopped;
       }
-      if (live) throw new ListeningNotOpenError();
       // AS-087. Paused first and stopped now (or after a cut): the last
       // stretch is drafted as well (review I1).
       const before = await this.store.find(encounterId);

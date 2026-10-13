@@ -23,6 +23,7 @@ import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-al
 import { ORDERING_CONTEXT_READER } from '../../shared/clinical/ordering-context.port';
 import { PRESCRIBING_CONTEXT_READER } from '../../shared/clinical/prescribing-context.port';
 import type { Env } from '../../shared/config/env.schema';
+import { DomainError } from '../../shared/domain/errors/domain-error';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-cie10.lookup';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
@@ -208,7 +209,9 @@ const PURGE_EVERY_MS = 86_400_000;
     SigningReviewService,
     { provide: ASSISTANT_AT_SIGNING, useExisting: SigningReviewService },
   ],
-  exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER, ASSISTANT_AT_SIGNING],
+  // Only the port `encounter` asks at a signature: `@Global` makes every
+  // export injectable anywhere, and the model client is not for anyone else.
+  exports: [ASSISTANT_AT_SIGNING],
 })
 export class AssistantModule
   implements NestModule, OnModuleInit, OnModuleDestroy
@@ -279,7 +282,7 @@ export class AssistantModule
       this.logger.warn(
         {
           dependency: 'ai_suggestion_review',
-          error_code: error instanceof Error ? error.name : 'unknown',
+          error_code: error instanceof DomainError ? error.code : 'unknown',
         },
         'signed notes could not be reviewed',
       );

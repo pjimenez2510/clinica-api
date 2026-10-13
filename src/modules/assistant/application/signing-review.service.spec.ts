@@ -74,7 +74,10 @@ class World {
   draftStore = { doneIds: () => Promise.resolve(['draft-1']) } as unknown as NoteDraftStore; // prettier-ignore
   suggestions = { listOfEncounter: () => Promise.resolve(this.stored) } as unknown as SuggestionStore; // prettier-ignore
   reviews: SuggestionReviewStore = {
-    signedConsultation: () => Promise.resolve(this.signedNote),
+    signedConsultation: (id) =>
+      id === 'enc-broken'
+        ? Promise.reject(new Error('a row the trigger refuses'))
+        : Promise.resolve(this.signedNote),
     record: (reviews) => {
       const fresh = reviews.filter((each) => !this.kept.some((k) => k.suggestionId === each.suggestionId)); // prettier-ignore
       this.kept.push(...fresh);
@@ -150,6 +153,15 @@ describe('SigningReviewService (E1)', () => {
 
     expect(await world.service().review(ENCOUNTER)).toBe(0);
     expect(world.kept).toHaveLength(0);
+  });
+
+  it('AS-144 an attention the sweep cannot review does not keep the next ones unreviewed', async () => {
+    const world = new World();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    world.unreviewed = ['enc-broken', ENCOUNTER];
+
+    expect(await world.service().sweep()).toBe(2);
+    expect(world.kept).toHaveLength(2);
   });
 
   it('AS-144 the sweep reviews what a signature left unreviewed, once', async () => {

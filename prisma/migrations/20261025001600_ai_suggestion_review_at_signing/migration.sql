@@ -43,12 +43,14 @@ DECLARE
   proposal_encounter UUID;
   note_encounter     UUID;
   note_signed_at     TIMESTAMPTZ;
+  note_form          TEXT;
+  note_status        TEXT;
 BEGIN
   SELECT "kind", "status", "encounter_id"
     INTO proposal_kind, proposal_status, proposal_encounter
     FROM "ai_suggestion" WHERE "id" = NEW."suggestion_id";
-  SELECT "encounter_id", "signed_at"
-    INTO note_encounter, note_signed_at
+  SELECT "encounter_id", "signed_at", "form_code", "status"::text
+    INTO note_encounter, note_signed_at, note_form, note_status
     FROM "clinical_note" WHERE "id" = NEW."clinical_note_id";
 
   IF proposal_kind IS DISTINCT FROM 'note-section' THEN
@@ -57,8 +59,13 @@ BEGIN
             CONSTRAINT = 'ai_suggestion_review_of_a_section',
             HINT = 'AS-145.';
   END IF;
-  IF note_signed_at IS NULL OR note_encounter IS DISTINCT FROM proposal_encounter THEN
-    RAISE EXCEPTION 'ai_suggestion_review_of_a_signed_note: the note is not signed, or belongs to another attention'
+  -- The consultation note the draft writes into (002), as it was signed:
+  -- SIGNED, or SUPERSEDED by an amendment since; never a retracted one.
+  IF note_signed_at IS NULL
+     OR note_form IS DISTINCT FROM '002'
+     OR note_status NOT IN ('SIGNED', 'SUPERSEDED')
+     OR note_encounter IS DISTINCT FROM proposal_encounter THEN
+    RAISE EXCEPTION 'ai_suggestion_review_of_a_signed_note: the note is not the signed consultation note of this attention'
       USING ERRCODE = 'check_violation',
             CONSTRAINT = 'ai_suggestion_review_of_a_signed_note',
             HINT = 'AS-145. Se revisa contra la nota firmada de la misma atención.';

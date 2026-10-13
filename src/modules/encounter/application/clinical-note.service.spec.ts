@@ -552,6 +552,28 @@ describe('los casos de uso de la nota clínica', () => {
     expect(notes.stored.status).toBe('SIGNED');
   });
 
+  it('AS-140 una nota ya firmada dice que está firmada, no lo que hace el asistente', async () => {
+    assistant.now = { listening: true, drafting: true };
+    notes.stored = aNote({ status: 'SIGNED' });
+
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(NoteAlreadySignedError);
+  });
+
+  it('AS-143 lo que el asistente hace tras la firma no retrasa la respuesta ni el aviso a caja', async () => {
+    assistant.signed = (encounterId) => {
+      assistant.told.push(encounterId);
+      return new Promise(() => undefined);
+    };
+
+    const signed = await service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester); // prettier-ignore
+
+    expect(signed.status).toBe('SIGNED');
+    expect(assistant.told).toEqual([ENCOUNTER]);
+    expect(heard.length).toBeGreaterThan(0);
+  });
+
   it('AS-143 una nota que no da el alta no detiene al asistente', async () => {
     notes.stored = aNote({ formCode: '005', content: { evolucion: 'Curación de la herida.' } }); // prettier-ignore
 

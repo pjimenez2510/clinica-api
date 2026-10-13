@@ -6,6 +6,7 @@ import type { ListeningStore } from './application/listening.store';
 import type { SigningReviewService } from './application/signing-review.service';
 import type { ConfigService } from '@nestjs/config';
 
+import { ASSISTANT_AT_SIGNING } from '../../shared/clinical/assistant-at-signing.port';
 import type { Env } from '../../shared/config/env.schema';
 
 import type { AiRunRecord } from './application/ai-run.store';
@@ -129,6 +130,14 @@ describe('the purge of transcripts (AS-057)', () => {
     module.onModuleDestroy();
 
     expect(JSON.stringify(warn.mock.calls)).not.toContain('garganta');
+  });
+});
+
+describe('what the module lends to the rest (AS-140)', () => {
+  it('AS-140 is global for the signing port only: the model client and the pseudonymizer stay inside', () => {
+    expect(Reflect.getMetadata('exports', AssistantModule)).toEqual([
+      ASSISTANT_AT_SIGNING,
+    ]);
   });
 });
 

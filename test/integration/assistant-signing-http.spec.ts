@@ -205,7 +205,12 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
     return { encounterId: encounter.id, noteId: id };
   }
 
-  async function signIn(roleCode: string, email: string, cedula: string) {
+  async function signIn(
+    roleCode: string,
+    email: string,
+    cedula: string,
+    atSite = siteId,
+  ) {
     const user = await prisma.user.create({
       data: {
         email,
@@ -222,7 +227,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
     });
     const practitioner = await prisma.practitioner.create({ data: { userId: user.id } }); // prettier-ignore
     const role = await prisma.role.findUniqueOrThrow({ where: { code: roleCode } }); // prettier-ignore
-    await prisma.userRoleGrant.create({ data: { userId: user.id, roleId: role.id, siteId } }); // prettier-ignore
+    await prisma.userRoleGrant.create({ data: { userId: user.id, roleId: role.id, siteId: atSite } }); // prettier-ignore
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ email, password: PASSWORD })
@@ -343,6 +348,8 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
 
     await sign().expect(200);
 
+    // AS-143: after the answer, not inside it.
+    await vi.waitFor(async () => expect(await prisma.aiSuggestionReview.count()).toBe(shown.length)); // prettier-ignore
     expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId } })).state).toBe('STOPPED'); // prettier-ignore
     const reviews = await prisma.aiSuggestionReview.findMany({
       where: { suggestion: { encounterId } },
@@ -365,6 +372,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
       .mockRejectedValueOnce(new Error('database down'));
 
     await sign().expect(200);
+    await vi.waitFor(() => expect(review).toHaveBeenCalled());
     expect(await prisma.aiSuggestionReview.count()).toBe(0);
     review.mockRestore();
 
@@ -390,11 +398,57 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
       .set('Authorization', `Bearer ${doctor.token}`)
       .send({ reason: 'El paciente se retiró', origin: 'PATIENT' })
       .expect(200);
+    await vi.waitFor(async () => expect((await prisma.noteDraft.findFirstOrThrow({ where: { encounterId } })).status).toBe('FAILED')); // prettier-ignore
     release();
     await drafts.settled();
 
     expect((await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } })).status).toBe('DISCONTINUED'); // prettier-ignore
     expect(await prisma.noteDraft.findFirstOrThrow({ where: { encounterId } })).toMatchObject({ status: 'FAILED', failureCode: 'ASSISTANT_DRAFT_CANCELLED' }); // prettier-ignore
+    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId } })).state).toBe('STOPPED'); // prettier-ignore
+    expect(await prisma.aiSuggestion.count({ where: { encounterId } })).toBe(0);
+  });
+
+  it('AS-140 a signer of another site gets the 404 of an attention out of reach, never what the assistant is doing', async () => {
+    const { held, release } = heldPseudonymizer();
+    pseudonymizer.current = held;
+    await postDraft('').expect(202);
+    const elsewhere = await createSite(prisma, 'Sede Sur');
+    const farDoctor = await signIn('MEDICO', 'medico3@clinica.ec', '1713175071', elsewhere.id); // prettier-ignore
+
+    const refused = await withReadRevision(
+      prisma,
+      `/encounters/${encounterId}/notes/${noteId}/sign`,
+      request(app.getHttpServer())
+        .post(`/api/v1/encounters/${encounterId}/notes/${noteId}/sign`)
+        .set('Authorization', `Bearer ${farDoctor.token}`)
+        .send({ dischargeCondition: 'ALIVE' }),
+    );
+
+    expect(refused.status).not.toBe(409);
+    expect([403, 404]).toContain(refused.status);
+    // Positive control: the attention's own site hears the 409.
+    const own = await sign().expect(409);
+    expect((own.body as Problem).code).toBe('NOTE_SIGN_WHILE_DRAFTING');
+    release();
+  });
+
+  it('AS-143 annulling the attention cancels the draft being written and stops the listening', async () => {
+    await prisma.listeningSession.create({
+      data: { encounterId, state: 'PAUSED', offsetMs: 24_018, device: 'computador', startedBy: doctor.userId, startedAt: new Date(), updatedAt: new Date() }, // prettier-ignore
+    });
+    const { held, release } = heldPseudonymizer();
+    pseudonymizer.current = held;
+    await postDraft('').expect(202);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/encounters/${encounterId}/enter-in-error`)
+      .set('Authorization', `Bearer ${doctor.token}`)
+      .send({ reason: 'Paciente equivocado' })
+      .expect(200);
+    await vi.waitFor(async () => expect((await prisma.noteDraft.findFirstOrThrow({ where: { encounterId } })).failureCode).toBe('ASSISTANT_DRAFT_CANCELLED')); // prettier-ignore
+    release();
+    await drafts.settled();
+
     expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId } })).state).toBe('STOPPED'); // prettier-ignore
     expect(await prisma.aiSuggestion.count({ where: { encounterId } })).toBe(0);
   });

@@ -85,6 +85,8 @@ export class AssistantNoteDraftController {
   /** AS-147. «Dejar de esperar»: cancels the draft queued or being written. */
   @Post('cancel')
   @RequirePermission('assistant:use', 'query')
+  // Each one writes the trail: a physician changing their mind, not a loop.
+  @Throttle({ long: { ttl: 60_000, limit: 12 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Dejar de esperar el borrador en curso' })
   @ApiOkResponse({ type: NoteDraftOverviewDto })

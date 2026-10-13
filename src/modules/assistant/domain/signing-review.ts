@@ -28,21 +28,40 @@ export function reviewAtSigning(
   doneDraftIds: ReadonlySet<string>,
   signed: SignedNote,
 ): SectionReview[] {
+  return sectionsToReview(stored, doneDraftIds).map((each) =>
+    reviewOf(each, signed),
+  );
+}
+
+/** AS-144. The sections the physician had in front of them (see above). */
+export function sectionsToReview<S extends StoredDraftSection>(
+  stored: readonly S[],
+  doneDraftIds: ReadonlySet<string>,
+): S[] {
   const shown = new Set(
     shownSections(stored, doneDraftIds).map((each) => each.section.id),
   );
-  return stored
-    .filter(
-      (each) =>
-        doneDraftIds.has(each.draftId) &&
-        (each.status !== 'PROPOSED' || shown.has(each.id)),
-    )
-    .map((each) => ({
-      suggestionId: each.id,
-      clinicalNoteId: signed.id,
-      statusAtSigning: each.status,
-      distance: normalisedEditDistance(each.text, textOf(signed, each.section)),
-    }));
+  return stored.filter(
+    (each) =>
+      doneDraftIds.has(each.draftId) &&
+      (each.status !== 'PROPOSED' || shown.has(each.id)),
+  );
+}
+
+/**
+ * AS-144. One section against the signed note. Quadratic up to
+ * `EDIT_DISTANCE_LIMIT`: whoever reviews many yields between them.
+ */
+export function reviewOf(
+  section: StoredDraftSection,
+  signed: SignedNote,
+): SectionReview {
+  return {
+    suggestionId: section.id,
+    clinicalNoteId: signed.id,
+    statusAtSigning: section.status,
+    distance: normalisedEditDistance(section.text, textOf(signed, section.section)), // prettier-ignore
+  };
 }
 
 /** A section that is not text (a choice, the background snapshot) says nothing. */
