@@ -63,6 +63,10 @@ const lineSchema = z.object({
     'DISCARDED',
   ]),
   prescriptionId: z.uuid().nullable(),
+  /** AS-275. Linked and still in the receta; false once taken out; null undecided. */
+  inPrescription: z.boolean().nullable(),
+  /** AS-270. Why the medicine went without presentation. */
+  presentationGap: z.enum(['none', 'several']).nullable(),
   /** AS-029. Written by the demonstration script, not by a model. */
   demo: z.boolean(),
 });

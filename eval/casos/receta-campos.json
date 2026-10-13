@@ -1,0 +1,150 @@
+{
+  "description": "AS-277, SC-102. La sección Plan de notas inventadas —el libreto de la amigdalitis del 13-10-2026 como lo escribe c2-draft-4, como lo escribió c2-draft-3 en la prueba del autor, y variantes— y, por línea, el medicamento del CNMB y los campos que la receta debe llenar, dichos o deducibles (la forma de la presentación única, la vía del cuadro, la dosis de una unidad).",
+  "cases": [
+    {
+      "id": "receta-campos-libreto",
+      "origin": "invented",
+      "plan": "Amoxicilina 500 mg cápsulas, una cápsula cada 8 horas por 7 días. Paracetamol de 500 cada 8 horas si tiene fiebre o dolor.",
+      "expected": [
+        {
+          "cnmbCode": "J01CA04",
+          "form": "CAPSULE",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "CAPSULE"
+        },
+        {
+          "cnmbCode": "N02BE01",
+          "form": "TABLET",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        }
+      ]
+    },
+    {
+      "id": "receta-campos-libreto-autor",
+      "origin": "invented",
+      "plan": "Amoxicilina 500 miligramos cada 8 horas por 7 días. Paracetamol de 500 cada 8 horas si presenta fiebre o dolor. Biometría hemática. Reposo dos días.",
+      "expected": [
+        {
+          "cnmbCode": "J01CA04",
+          "form": "TABLET",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        },
+        {
+          "cnmbCode": "N02BE01",
+          "form": "TABLET",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        }
+      ]
+    },
+    {
+      "id": "receta-campos-libreto-dicho",
+      "origin": "invented",
+      "plan": "Le voy a recetar amoxicilina de quinientos miligramos, una cápsula cada ocho horas por siete días, y siga con el paracetamol de quinientos cada ocho horas si tiene fiebre o dolor.",
+      "expected": [
+        {
+          "cnmbCode": "J01CA04",
+          "form": "CAPSULE",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "CAPSULE"
+        },
+        {
+          "cnmbCode": "N02BE01",
+          "form": "TABLET",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        }
+      ]
+    },
+    {
+      "id": "receta-campos-azitromicina",
+      "origin": "invented",
+      "plan": "Como es alérgica a la amoxicilina: azitromicina de 500, una tableta al día por tres días. Paracetamol 500 mg una tableta cada 8 horas si hay fiebre.",
+      "expected": [
+        {
+          "cnmbCode": "J01FA10",
+          "form": "TABLET",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        },
+        {
+          "cnmbCode": "N02BE01",
+          "form": "TABLET",
+          "concentration": "500 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        }
+      ]
+    },
+    {
+      "id": "receta-campos-esguince",
+      "origin": "invented",
+      "plan": "Ibuprofeno 400 mg, una tableta cada 8 horas por 5 días, después de las comidas. Loratadina 10 miligramos una vez al día por 5 días.",
+      "expected": [
+        {
+          "cnmbCode": "M01AE01",
+          "form": "TABLET",
+          "concentration": "400 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        },
+        {
+          "cnmbCode": "R06AX13",
+          "form": "TABLET",
+          "concentration": "10 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        }
+      ]
+    },
+    {
+      "id": "receta-campos-gastritis",
+      "origin": "invented",
+      "plan": "Suspende el ibuprofeno. Omeprazol 20 mg una cápsula en ayunas por 14 días.",
+      "expected": [
+        {
+          "cnmbCode": "A02BC01",
+          "form": "CAPSULE",
+          "concentration": "20 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "CAPSULE"
+        }
+      ]
+    },
+    {
+      "id": "receta-campos-presion",
+      "origin": "invented",
+      "plan": "Continúa con losartán de 50, una tableta cada mañana. Control en un mes.",
+      "expected": [
+        {
+          "cnmbCode": "C09CA01",
+          "form": "TABLET",
+          "concentration": "50 mg",
+          "route": "ORAL",
+          "doseAmount": 1,
+          "doseUnit": "TABLET"
+        }
+      ]
+    }
+  ]
+}

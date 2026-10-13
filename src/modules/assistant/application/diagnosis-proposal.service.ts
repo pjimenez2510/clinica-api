@@ -35,6 +35,7 @@ import {
   type DiagnosisProposal,
   type OfferedCode,
   PROPOSED,
+  withoutSymptoms,
 } from '../domain/problem-coding';
 import type { SuggestionStatus, SuggestionView } from '../domain/suggestion';
 
@@ -95,6 +96,8 @@ export interface ProblemView {
   quote: string;
   section: string;
   candidates: (OfferedCode & { recorded: boolean })[];
+  /** AS-267. The symptoms this diagnosis explains: its phrases, not codes. */
+  symptoms: { problem: string; quote: string }[];
   status: SuggestionStatus;
   /** The diagnosis it was accepted as, if it was. */
   diagnosisId: string | null;
@@ -287,20 +290,23 @@ export class DiagnosisProposalService {
       encounter.clinicalDate,
     );
     let next = 0;
-    const proposals = coded.map(({ problem, written }) => {
-      const candidates = dedupe(
-        written.map(() => resolved[next++]).filter(isEntry),
-      );
-      const proposal: DiagnosisProposal = {
-        problem: problem.problem,
-        quote: problem.quote,
-        section: problem.section,
-        codes: candidates.map(({ code }) => code),
-        candidates,
-        demo: this.demo,
-      };
-      return proposal;
-    });
+    // AS-267. No symptom coded apart from the diagnosis that explains it.
+    const proposals = withoutSymptoms(
+      coded.map(({ problem, written }) => {
+        const candidates = dedupe(
+          written.map(() => resolved[next++]).filter(isEntry),
+        );
+        const proposal: DiagnosisProposal = {
+          problem: problem.problem,
+          quote: problem.quote,
+          section: problem.section,
+          codes: candidates.map(({ code }) => code),
+          candidates,
+          demo: this.demo,
+        };
+        return proposal;
+      }),
+    );
 
     // AS-039. Up to 90 s went by: the attention may have been signed or
     // closed meanwhile, in another tab. Nothing is kept on a closed one.
@@ -499,6 +505,7 @@ function problemView(
       ...candidate,
       recorded: recorded.has(candidate.code),
     })),
+    symptoms: proposal.symptoms ?? [],
     status: suggestion.status,
     diagnosisId:
       suggestion.record?.kind === 'encounter_diagnosis'

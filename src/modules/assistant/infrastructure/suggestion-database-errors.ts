@@ -1,5 +1,6 @@
 import {
   AssistantNoteNotOpenError,
+  SuggestionChartMismatchError,
   SuggestionOrderMismatchError,
 } from '../domain/assistant.errors';
 
@@ -33,6 +34,13 @@ interface PrismaErrorLike {
 
 const ONE_PER_ORDERED_EXAM = 'ai_suggestion_one_per_ordered_exam';
 const QUESTION_OF_A_DRAFT = 'note_question_of_a_draft';
+/** AS-265, AS-266. A chart record answers one proposal, the one it was made for. */
+const ONE_PER_CHART_RECORD = [
+  'ai_suggestion_one_per_patient_allergy',
+  'ai_suggestion_one_per_patient_allergy_absence',
+  'ai_suggestion_one_per_patient_history',
+];
+const CHART_RECORD_IS_THE_ANSWER = 'ai_suggestion_chart_record_is_the_answer';
 
 export function suggestionErrorFrom(error: unknown): Error | undefined {
   if (
@@ -54,6 +62,29 @@ export function suggestionErrorFrom(error: unknown): Error | undefined {
     )
   ) {
     return new AssistantNoteNotOpenError();
+  }
+  for (const index of ONE_PER_CHART_RECORD) {
+    if (
+      refusedBy(
+        error,
+        '23505',
+        (message) => message.includes(`constraint "${index}"`),
+        index,
+      )
+    ) {
+      // prettier-ignore
+      return new SuggestionChartMismatchError();
+    }
+  }
+  if (
+    refusedBy(
+      error,
+      '23514',
+      (message) => message.startsWith(`${CHART_RECORD_IS_THE_ANSWER}:`),
+      CHART_RECORD_IS_THE_ANSWER,
+    )
+  ) {
+    return new SuggestionChartMismatchError();
   }
   return undefined;
 }

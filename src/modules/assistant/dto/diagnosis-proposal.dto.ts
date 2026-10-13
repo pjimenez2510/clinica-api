@@ -33,6 +33,8 @@ const problemSchema = z.object({
       recorded: z.boolean(),
     }),
   ),
+  /** AS-267. The symptoms this diagnosis explains, with their phrase: not codes. */
+  symptoms: z.array(z.object({ problem: z.string(), quote: z.string() })),
   status: z.enum([
     'PROPOSED',
     'ACCEPTED',

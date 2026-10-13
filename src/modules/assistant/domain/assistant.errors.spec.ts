@@ -24,6 +24,7 @@ import {
   AssistantNotEncounterOwnerError,
   AssistantProposalNotKeptError,
   AssistantSpendingCeilingReachedError,
+  SuggestionChartMismatchError,
   SuggestionDiagnosisMismatchError,
   LlmCallFailed,
   SuggestionAlreadyDecidedError,
@@ -179,6 +180,13 @@ describe('assistant errors', () => {
       'SUGGESTION_DIAGNOSIS_MISMATCH',
       ValidationError,
       /diagnóstico/,
+    ],
+    [
+      'AS-265',
+      () => new SuggestionChartMismatchError(),
+      'SUGGESTION_CHART_MISMATCH',
+      ValidationError,
+      /para este paciente/,
     ],
     [
       'AS-048',

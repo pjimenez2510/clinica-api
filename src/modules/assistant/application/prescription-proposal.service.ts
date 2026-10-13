@@ -56,11 +56,12 @@ import {
   backedLines,
   blockOf,
   canonicalLine,
+  choosePresentation,
   chosenIsWritten,
   cnmbSearchName,
   knownCodes,
-  presentationFor,
   proposedFields,
+  strengthIn,
   type AllergyVerdict,
   type LineBlock,
   type PrescriptionProposal,
@@ -145,6 +146,13 @@ export interface PrescriptionLineView {
   status: SuggestionStatus;
   /** The receta it went to, once linked. */
   prescriptionId: string | null;
+  /**
+   * AS-275. Linked, and its medicine still in a standing receta of the
+   * attention; false once «Quitar» took it out; null while undecided.
+   */
+  inPrescription: boolean | null;
+  /** AS-270. Why the medicine went without presentation. */
+  presentationGap: 'none' | 'several' | null;
   demo: boolean;
 }
 
@@ -315,12 +323,21 @@ export class PrescriptionProposalService {
         choice && chosenIsWritten(choice.medicine.display, line.quote)
           ? choice.medicine
           : null;
-      const presentation = presentationFor(choice?.presentation, {
-        form: line.form,
-        strength: line.strength,
-      });
+      // AS-269, AS-270. The model's presentation when it agrees with what
+      // was written; else the only one that does, or none and why.
+      const presentation = medicine
+        ? choosePresentation(medicine.presentations, choice?.presentation, {
+            form: line.form,
+            strength: line.strength ?? strengthIn(line.quote, line.drug),
+          })
+        : null;
       const { fields, unsaid, doseByWeight } = medicine
-        ? proposedFields(line, presentation, noteText(note.sections))
+        ? proposedFields(
+            { ...line, strength: presentation?.strength ?? null },
+            presentation?.chosen ?? null,
+            noteText(note.sections),
+            { strengthDeduced: presentation?.strengthDeduced ?? false },
+          )
         : { fields: unchosen(), unsaid: [], doseByWeight: false };
       return {
         quote: line.quote,
@@ -334,6 +351,7 @@ export class PrescriptionProposalService {
         instructions: medicine ? line.instructions : null,
         unsaid,
         doseByWeight,
+        presentationGap: presentation?.gap ?? null,
         text: canonicalLine(medicine?.conceptId ?? null, fields),
         demo: this.demo,
       };
@@ -604,6 +622,11 @@ export class PrescriptionProposalService {
             suggestion.record?.kind === 'prescription'
               ? suggestion.record.id
               : null,
+          inPrescription:
+            suggestion.status === 'PROPOSED' || !proposal.medicine
+              ? null
+              : prescribed.has(proposal.medicine.code),
+          presentationGap: proposal.presentationGap ?? null,
           demo: proposal.demo,
         };
       }),

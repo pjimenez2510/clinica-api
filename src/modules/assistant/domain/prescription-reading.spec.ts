@@ -6,14 +6,17 @@ import {
   blockOf,
   backedFields,
   canonicalLine,
+  choosePresentation,
   chosenIsWritten,
   cnmbSearchName,
   cuadroStrength,
   knownCodes,
   presentationFor,
   proposedFields,
+  strengthIn,
   totalOf,
   writtenByWeight,
+  writtenStrength,
   type BackedLine,
   type PrescriptionProposal,
   type ReadLine,
@@ -399,5 +402,160 @@ describe('the medicine chosen is the one written (AS-064 — clinical review m3)
     expect(chosenIsWritten('Amoxicilina + ácido clavulánico', 'Amoxicilina 500 mg cada 8 horas')).toBe(false); // prettier-ignore
     expect(chosenIsWritten('Amoxicilina + ácido clavulánico', 'Amoxicilina con ácido clavulánico 500/125 mg')).toBe(true); // prettier-ignore
     expect(chosenIsWritten('Levotiroxina sódica', 'Levotiroxina 50 mcg en ayunas')).toBe(true); // prettier-ignore
+  });
+});
+
+/** The CNMB's own presentations (cnmb-2026.xlsx), as the reader gives them. */
+const AMOXICILLIN = [
+  { form: 'TABLET', forms: ['TABLET', 'COATED_TABLET', 'CHEWABLE_TABLET', 'CAPSULE'], concentration: '500 mg', route: 'O - Oral' }, // prettier-ignore
+  { form: 'POWDER_FOR_ORAL_SUSPENSION', forms: ['POWDER_FOR_ORAL_SUSPENSION'], concentration: '250 mg/5 mL', route: 'O - Oral' }, // prettier-ignore
+  { form: 'POWDER_FOR_ORAL_SUSPENSION', forms: ['POWDER_FOR_ORAL_SUSPENSION'], concentration: '100 mg/mL', route: 'O - Oral' }, // prettier-ignore
+];
+const PARACETAMOL = [
+  { form: 'SUPPOSITORY', forms: ['SUPPOSITORY'], concentration: '100 mg', route: 'R - Rectal' }, // prettier-ignore
+  { form: 'ORAL_SUSPENSION', forms: ['ORAL_SUSPENSION', 'SYRUP'], concentration: '150 mg/5 mL', route: 'O - Oral' }, // prettier-ignore
+  { form: 'INJECTABLE_SOLUTION', forms: ['INJECTABLE_SOLUTION'], concentration: '10 mg/mL', route: 'P - Parenteral' }, // prettier-ignore
+  { form: 'TABLET', forms: ['TABLET', 'COATED_TABLET', 'CHEWABLE_TABLET', 'CAPSULE'], concentration: '500 mg', route: 'O - Oral' }, // prettier-ignore
+  { form: 'SUPPOSITORY', forms: ['SUPPOSITORY'], concentration: '300 mg', route: 'R - Rectal' }, // prettier-ignore
+  { form: 'ORAL_DROPS', forms: ['ORAL_DROPS'], concentration: '100 mg/mL', route: 'O - Oral' }, // prettier-ignore
+];
+
+describe('the strength as the cuadro writes it (AS-269)', () => {
+  it('AS-269 «500 miligramos», «500mg» and «500 MG» are «500 mg»; grams and micrograms too', () => {
+    expect(writtenStrength('500 miligramos')).toBe('500 mg');
+    expect(writtenStrength('500mg')).toBe('500 mg');
+    expect(writtenStrength('500 MG')).toBe('500 mg');
+    expect(writtenStrength('1 gramo')).toBe('1 g');
+    expect(writtenStrength('100 microgramos')).toBe('100 mcg');
+    expect(writtenStrength('500/125 mg')).toBe('500 mg + 125 mg');
+    expect(writtenStrength('250 mg/5 mL')).toBe('250 mg/5 mL');
+    expect(writtenStrength('500')).toBe('500');
+    expect(writtenStrength(null)).toBeNull();
+  });
+
+  it('AS-269 a bare figure right after the medicine («paracetamol de 500») is its strength; elsewhere it is not', () => {
+    expect(strengthIn('siga con el paracetamol de 500 cada 8 horas', 'paracetamol')).toBe('500'); // prettier-ignore
+    expect(strengthIn('Amoxicilina 500 miligramos cada 8 horas', 'Amoxicilina')).toBe('500 mg'); // prettier-ignore
+    expect(strengthIn('paracetamol cada 8 horas', 'paracetamol')).toBeNull();
+    expect(strengthIn('y siga con el paracetamol de quinientos cada ocho horas', 'paracetamol')).toBe('500'); // prettier-ignore
+    expect(strengthIn('amoxicilina de quinientos miligramos, una cápsula', 'amoxicilina')).toBe('500 mg'); // prettier-ignore
+  });
+});
+
+describe('the presentation when the model chose none (AS-269, AS-270, AS-272)', () => {
+  it('AS-270 amoxicillin 500 mg capsule: the only solid of 500 mg, as a capsule, with the cuadro’s oral route', () => {
+    const chosen = choosePresentation(AMOXICILLIN, undefined, { form: 'CAPSULE', strength: '500 mg' }); // prettier-ignore
+
+    expect(chosen).toEqual({
+      chosen: { form: 'CAPSULE', concentration: '500 mg', route: 'O - Oral' },
+      strength: '500 mg',
+      strengthDeduced: false,
+      gap: null,
+    });
+  });
+
+  it('AS-269 «paracetamol de 500»: the 500 mg tablet, the figure read as its strength and marked', () => {
+    const chosen = choosePresentation(PARACETAMOL, undefined, { form: null, strength: '500' }); // prettier-ignore
+
+    expect(chosen.chosen).toEqual({ form: 'TABLET', concentration: '500 mg', route: 'O - Oral' }); // prettier-ignore
+    expect(chosen.strength).toBe('500 mg');
+    expect(chosen.strengthDeduced).toBe(true);
+  });
+
+  it('AS-270 a choice of the model that contradicts what was written gives way to the only one that agrees', () => {
+    const chosen = choosePresentation(AMOXICILLIN, AMOXICILLIN[1], { form: 'CAPSULE', strength: '500 miligramos' }); // prettier-ignore
+
+    expect(chosen.chosen?.concentration).toBe('500 mg');
+    expect(chosen.gap).toBeNull();
+  });
+
+  it('AS-270 with several that agree, or none, the presentation stays empty and says why', () => {
+    expect(choosePresentation(PARACETAMOL, undefined, { form: null, strength: null })).toMatchObject({ chosen: null, gap: 'several' }); // prettier-ignore
+    expect(choosePresentation(AMOXICILLIN, undefined, { form: 'CAPSULE', strength: '875 mg' })).toMatchObject({ chosen: null, gap: 'none' }); // prettier-ignore
+    expect(choosePresentation(PARACETAMOL, undefined, { form: 'SUPPOSITORY', strength: null })).toMatchObject({ chosen: null, gap: 'several' }); // prettier-ignore
+  });
+
+  it('AS-270 the model’s own choice stands when it agrees with what was written', () => {
+    const chosen = choosePresentation(AMOXICILLIN, AMOXICILLIN[0], { form: null, strength: '500 mg' }); // prettier-ignore
+
+    expect(chosen).toMatchObject({ chosen: { form: 'TABLET', concentration: '500 mg' }, gap: null }); // prettier-ignore
+  });
+});
+
+describe('the libreto’s receta, every field (AS-269 to AS-272)', () => {
+  it('AS-272 «amoxicilina de 500 miligramos, una cápsula cada 8 horas por 7 días»: capsule said, oral and 21 deduced', () => {
+    const line = backed({ strength: '500 mg', form: 'CAPSULE', doseAmount: 1, doseUnit: null, route: null }); // prettier-ignore
+    const { fields, unsaid } = proposedFields(line, { form: 'CAPSULE', concentration: '500 mg', route: 'O - Oral' }); // prettier-ignore
+
+    expect(fields).toMatchObject({
+      form: 'CAPSULE',
+      concentration: '500 mg',
+      route: 'ORAL',
+      doseAmount: 1,
+      doseUnit: 'CAPSULE',
+      frequency: 'EVERY_8_HOURS',
+      durationDays: 7,
+      quantity: 21,
+    });
+    expect(unsaid).toEqual(['route', 'quantity']);
+  });
+
+  it('AS-272 «paracetamol de 500 cada 8 horas si tiene fiebre»: the tablet, oral and one tablet, all marked; no quantity without a duration', () => {
+    const line = backed({ drug: 'paracetamol', strength: '500 mg', form: null, doseAmount: null, doseUnit: null, durationDays: null }); // prettier-ignore
+    const { fields, unsaid } = proposedFields(line, { form: 'TABLET', concentration: '500 mg', route: 'O - Oral' }, '', { strengthDeduced: true }); // prettier-ignore
+
+    expect(fields).toMatchObject({
+      form: 'TABLET',
+      concentration: '500 mg',
+      route: 'ORAL',
+      doseAmount: 1,
+      doseUnit: 'TABLET',
+      quantity: null,
+    });
+    expect(unsaid).toEqual(['presentation', 'route', 'dose']);
+  });
+
+  it('AS-272 a dose said in units with no unit written takes the unit of the form, marked when the form was deduced', () => {
+    const line = backed({ form: null, doseAmount: 2, doseUnit: null, strength: '500 mg', quote: 'Amoxicilina 500 mg, dos tabletas cada 8 horas por 7 días' }); // prettier-ignore
+    const { fields, unsaid } = proposedFields(line, { form: 'TABLET', concentration: '500 mg', route: 'O - Oral' }); // prettier-ignore
+
+    expect(fields).toMatchObject({ doseAmount: 2, doseUnit: 'TABLET' });
+    expect(unsaid).toContain('dose');
+  });
+});
+
+describe('a dose read in milligrams of a tablet of that strength (AS-272)', () => {
+  it('AS-272 «500 miligramos cada 8 horas» of the 500 mg tablet is 1 tablet, marked; 250 mg of it is not guessed', () => {
+    const chosen = { form: 'TABLET' as const, concentration: '500 mg', route: 'O - Oral' }; // prettier-ignore
+    const read = (doseAmount: number) =>
+      proposedFields(backed({ form: null, strength: '500 mg', doseAmount, doseUnit: 'MILLIGRAM' }), chosen); // prettier-ignore
+
+    expect(read(500).fields).toMatchObject({ doseAmount: 1, doseUnit: 'TABLET', quantity: 21 }); // prettier-ignore
+    expect(read(500).unsaid).toContain('dose');
+    expect(read(250).fields).toMatchObject({ doseAmount: 250, doseUnit: 'MILLIGRAM' }); // prettier-ignore
+  });
+});
+
+describe('a count is said with its unit (AS-272, code review)', () => {
+  const tablet = { form: 'TABLET' as const, concentration: '500 mg', route: 'O - Oral' }; // prettier-ignore
+
+  it('AS-272 «paracetamol de 500» read as a dose of 500 with no unit is no dose of 500 tablets: one tablet, deduced', () => {
+    const line = backed({ drug: 'paracetamol', strength: '500 mg', form: null, doseAmount: 500, doseUnit: null, durationDays: 3, quote: 'paracetamol de 500 cada 8 horas por 3 días' }); // prettier-ignore
+
+    const { fields, unsaid } = proposedFields(line, tablet);
+
+    expect(fields).toMatchObject({ doseAmount: 1, doseUnit: 'TABLET', quantity: 9 }); // prettier-ignore
+    expect(unsaid).toContain('dose');
+  });
+
+  it('AS-272 «dos tabletas» is a count; «1 tableta» after the medicine is no strength', () => {
+    const line = backed({ form: 'TABLET', doseAmount: 2, doseUnit: null, quote: 'Amoxicilina 500 mg, dos tabletas cada 8 horas por 7 días' }); // prettier-ignore
+    expect(proposedFields(line, tablet).fields).toMatchObject({ doseAmount: 2, doseUnit: 'TABLET' }); // prettier-ignore
+    expect(strengthIn('Paracetamol 1 tableta cada 8 horas', 'paracetamol')).toBeNull(); // prettier-ignore
+    expect(strengthIn('amoxicilina de doscientos cincuenta', 'amoxicilina')).toBeNull(); // prettier-ignore
+  });
+
+  it('AS-270 a bare figure no presentation has leaves the model’s choice standing', () => {
+    expect(choosePresentation(PARACETAMOL, PARACETAMOL[3], { form: null, strength: '1' }).chosen).toMatchObject({ concentration: '500 mg' }); // prettier-ignore
   });
 });
