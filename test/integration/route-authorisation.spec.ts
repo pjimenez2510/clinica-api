@@ -15,6 +15,7 @@ import {
   SITE_SCOPE_KEY,
 } from '../../src/shared/http/auth.decorators';
 import { PERMISSIONS } from '../../src/shared/authorisation/permission.catalogue';
+import { ALLOW_HTTP_CACHE_KEY } from '../../src/shared/http/interceptors/no-store.interceptor';
 import { LIVE_STREAM_PERMISSIONS } from '../../src/shared/events/live-event';
 import { closeApp } from './setup/http-server';
 
@@ -138,6 +139,8 @@ describe('every route declares its protection', () => {
     siteScope?: unknown;
     /** D-023: the fields of the `@Body()` DTO that name a site, at any depth. */
     bodySiteFields: string[];
+    /** AU-061: exempt from the `no-store` default. */
+    allowsHttpCache: boolean;
   }
 
   let routes: RouteInfo[];
@@ -196,6 +199,7 @@ describe('every route declares its protection', () => {
             permission,
             siteScope: read(SITE_SCOPE_KEY),
             bodySiteFields: siteFieldsOf(bodyDtoOf(metatype, name)),
+            allowsHttpCache: read(ALLOW_HTTP_CACHE_KEY) === true,
           });
         }
       }
@@ -505,6 +509,17 @@ describe('every route declares its protection', () => {
       'LivenessController.ping',
       'PublicTariffController.onTheWall',
     ]);
+  });
+
+  it('AU-061 sólo el tarifario de la pared puede quedarse en una caché', () => {
+    // Every other response is `no-store` (NoStoreInterceptor). Exempting one
+    // is a decision somebody has to write down in this list, in a diff.
+    const cacheable = routes
+      .filter((r) => r.allowsHttpCache)
+      .map((r) => r.route)
+      .sort();
+
+    expect(cacheable).toEqual(['PublicTariffController.onTheWall']);
   });
 
   it('confines the half-authenticated session to the MFA flow', () => {

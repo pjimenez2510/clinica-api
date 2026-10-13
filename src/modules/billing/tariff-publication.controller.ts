@@ -20,6 +20,7 @@ import type { Request } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
 import { Public, RequirePermission } from '../../shared/http/auth.decorators';
+import { AllowHttpCache } from '../../shared/http/interceptors/no-store.interceptor';
 
 import { TariffPublicationService } from './application/tariff-publication.service';
 import type { TariffDifference, TariffLine } from './domain/tariff-publication';
@@ -125,6 +126,8 @@ export class PublicTariffController {
 
   @Get()
   @Public()
+  // AU-061: nobody's data and meant for anyone — the one route a cache may keep.
+  @AllowHttpCache()
   @Throttle({ short: { ttl: 60_000, limit: 30 } })
   @ApiOperation({ summary: 'Consultar el tarifario publicado (sin sesión)' })
   @ApiOkResponse({ type: PublicTariffDto })
