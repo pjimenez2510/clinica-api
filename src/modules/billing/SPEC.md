@@ -3312,7 +3312,7 @@ lo ve._
   motivo ENTONCES DEBERÁ rechazarlo con `NUMBERING_REASON_REQUIRED`; SI un
   número no es un entero de 1 a 999 999 999 ENTONCES DEBERÁ rechazarlo
   nombrando el campo; SI el punto no existe o es de una sede fuera de su
-  alcance ENTONCES DEBERÁ responder `EMISSION_POINT_NOT_FOUND`.
+  alcance ENTONCES DEBERÁ responder `NUMBERING_EMISSION_POINT_NOT_FOUND`.
   > D-262 §2: administración, nunca caja. Es el permiso con que se dan de alta
   > los puntos de emisión; caja no lo tiene.
 - **BI-307** — SI el «próximo número» que se fija no supera el mayor
@@ -3365,7 +3365,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_NAME_DUPLICATE` | 409 | BI-278 (lo produce `service_active_name_unique`: va en `billing.constraints.ts`, no en el catálogo) |
 | `NUMBERING_REASON_REQUIRED` | 422 | BI-306 |
 | `NUMBERING_BELOW_USED` | 409 | BI-307 (también `emission_point_numbering_not_below_used`, de la base) |
-| `EMISSION_POINT_NOT_FOUND` | 404 | BI-306 |
+| `NUMBERING_EMISSION_POINT_NOT_FOUND` | 404 | BI-306 (un punto de otra sede, o un tipo que no es `01` ni `04`) |
 | `TAX_RATE_REQUIRED` | 422 | BI-013 |
 | `TAX_RATE_NOT_FOUND` | 404 | BI-020 |
 | `TAX_RATE_IN_USE` | 409 | BI-026 |
@@ -3571,8 +3571,8 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `PATCH` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si trae `exam`, o si cambia nombre, código o estado de un servicio con extensión de orden, BI-299) | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286, BI-299 |
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si tiene extensión de orden, BI-299) | `global` | BI-012, BI-299 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
-| `GET` | `/billing/numbering?siteId=` | `site:read` | `query` | BI-309 |
-| `PUT` | `/billing/numbering/{emissionPointId}/{documentType}` | `site:manage` | `query` (la sede del punto) | BI-306, BI-307 |
+| `GET` | `/billing/sites/{siteId}/numbering` | `site:read` | `param:siteId` | BI-309 |
+| `PUT` | `/billing/sites/{siteId}/numbering/{emissionPointId}/{documentType}` | `site:manage` | `param:siteId` | BI-306, BI-307 |
 | `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |
 | `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |
 | `GET` | `/billing/services/{id}/exams` | `billing:read` | `global` | BI-188 |

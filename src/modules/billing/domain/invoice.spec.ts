@@ -264,7 +264,6 @@ describe('BI-035, BI-087 el pagador no decide quién figura en la factura', () =
   });
 });
 
-
 describe('BI-271 los compradores habituales del paciente', () => {
   const receiver = (
     identification: string,
