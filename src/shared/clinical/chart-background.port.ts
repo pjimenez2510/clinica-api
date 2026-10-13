@@ -33,6 +33,11 @@ export type ChartRecordKind = 'allergy' | 'absence' | 'history';
 export interface ChartBackgroundReader {
   /** EN-085. The chart's unrefuted history entries. */
   activeHistory(chartId: string): Promise<readonly ChartHistoryEntry[]>;
+  /**
+   * D-169.2. The chart a record of this one is written on: the one that
+   * absorbed it after a merge, or itself — where the screen records (EN-238).
+   */
+  survivorOf(chartId: string): Promise<string>;
   /** AS-265. A record of the chart, or null when there is none with that id. */
   record(kind: ChartRecordKind, id: string): Promise<ChartRecord | null>;
 }

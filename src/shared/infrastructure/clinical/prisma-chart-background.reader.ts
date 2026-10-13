@@ -28,6 +28,14 @@ export class PrismaChartBackgroundReader implements ChartBackgroundReader {
     }));
   }
 
+  async survivorOf(chartId: string): Promise<string> {
+    const row = await this.prisma.patient.findUnique({
+      where: { id: chartId },
+      select: { mergedIntoId: true },
+    });
+    return row?.mergedIntoId ?? chartId;
+  }
+
   async record(kind: ChartRecordKind, id: string): Promise<ChartRecord | null> {
     if (kind === 'allergy') {
       const row = await this.prisma.patientAllergy.findUnique({

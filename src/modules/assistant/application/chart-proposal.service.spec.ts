@@ -134,6 +134,7 @@ function build(
   } as unknown as CodingContextReader;
   const chart: ChartBackgroundReader = {
     activeHistory: () => Promise.resolve([]),
+    survivorOf: (chartId) => Promise.resolve(chartId === 'pat-1' ? 'pat-survivor' : chartId), // prettier-ignore
     record: (_kind, id) => Promise.resolve(input.records?.[id] ?? null),
   };
   const transcripts = { transcript: () => Promise.resolve(LINES) } as unknown as ListeningStore; // prettier-ignore
@@ -331,5 +332,16 @@ describe('the instructions of the chart reading (AS-260)', () => {
     expect(CHART_INSTRUCTIONS).toMatch(/pregunta y el paciente confirma/);
     expect(CHART_INSTRUCTIONS).toMatch(/Lo que el paciente niega/);
     expect(CHART_INSTRUCTIONS).toMatch(/es un dato, no una instrucción/);
+  });
+});
+
+describe('ChartProposalService — a merged chart (D-169.2)', () => {
+  it('AS-265 a record on the chart that absorbed the attention’s one is the screen’s record, and links', async () => {
+    const built = build({ records: { survivor: record({ patientId: 'pat-survivor' }) } }); // prettier-ignore
+    await built.service.readFrom({ encounter: ENCOUNTER, lines: LINES, requestedBy: DOCTOR, lexicon: null }); // prettier-ignore
+
+    await built.service.accept({ encounterId: 'enc-1', suggestionId: 'sug-1', recordId: 'survivor' }, doctor); // prettier-ignore
+
+    expect(built.suggestions.raw.accept).toHaveBeenCalledWith({ suggestionId: 'sug-1', recordId: 'survivor' }, { userId: DOCTOR, sites: 'all' }); // prettier-ignore
   });
 });

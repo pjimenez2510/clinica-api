@@ -177,4 +177,26 @@ describe('ai_suggestion for the chart (AS-266)', () => {
     await expect(service.accept({ suggestionId: second!.id, recordId: mine.id }, as)).rejects.toBeInstanceOf(SuggestionChartMismatchError); // prettier-ignore
     expect(third).toBeDefined();
   });
+
+  it('AS-266 (D-169.2) a record on the chart that absorbed the attention’s one links; another patient’s still does not', async () => {
+    const prisma = db();
+    const { encounter, run, patient, other, user } = await anAttention(prisma);
+    const survivor = await createPatient(prisma);
+    await prisma.patient.update({ where: { id: patient.id }, data: { mergedIntoId: survivor.id, mergedAt: new Date() } }); // prettier-ignore
+    const service = serviceOf(prisma);
+    const as = { userId: user.id, sites: 'all' as const };
+    const [first, second] = await service.propose(
+      [0, 1].map(() => ({ encounterId: encounter.id, aiRunId: run.id, kind: 'chart-history' as const, proposal: { text: 'Asma' }, sources: [] })), // prettier-ignore
+      as,
+    );
+    const onSurvivor = await prisma.patientHistory.create({
+      data: { patientId: survivor.id, kind: 'PERSONAL', description: 'Asma', recordedById: user.id }, // prettier-ignore
+    });
+    const onOther = await prisma.patientHistory.create({
+      data: { patientId: other.id, kind: 'PERSONAL', description: 'Asma', recordedById: user.id }, // prettier-ignore
+    });
+
+    await expect(service.accept({ suggestionId: second!.id, recordId: onOther.id }, as)).rejects.toThrow(/ai_suggestion_record_in_its_encounter/); // prettier-ignore
+    await expect(service.accept({ suggestionId: first!.id, recordId: onSurvivor.id }, as)).resolves.toMatchObject({ status: 'ACCEPTED' }); // prettier-ignore
+  });
 });

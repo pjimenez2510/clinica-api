@@ -217,10 +217,12 @@ export class ChartProposalService {
       CHART_KINDS[suggestion.kind as ChartKind],
       input.recordId,
     );
+    // D-169.2. The screen records on the chart that absorbed this one.
+    const charts = [encounter.patientId, await this.chart.survivorOf(encounter.patientId)]; // prettier-ignore
     if (
       !record ||
       record.withdrawn ||
-      record.patientId !== encounter.patientId ||
+      !charts.includes(record.patientId) ||
       record.authorId !== requester.userId ||
       record.recordedAt < suggestion.proposedAt
     ) {
@@ -255,8 +257,9 @@ export class ChartProposalService {
       [
         this.chartSuggestions(encounter, requester),
         this.allergies.activeForSurvivorOf(encounter.patientId),
-        this.absences.standingAbsenceFor(encounter.patientId),
-        this.chart.activeHistory(encounter.patientId),
+        // D-169.2. What the screen shows and records: the surviving chart.
+        this.chart.survivorOf(encounter.patientId).then((chart) => this.absences.standingAbsenceFor(chart)), // prettier-ignore
+        this.chart.survivorOf(encounter.patientId).then((chart) => this.chart.activeHistory(chart)), // prettier-ignore
         this.transcripts.transcript(encounter.id),
       ],
     );
