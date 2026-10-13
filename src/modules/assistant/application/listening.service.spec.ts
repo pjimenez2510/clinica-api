@@ -586,6 +586,39 @@ describe('ListeningService', () => {
     ).rejects.toBeInstanceOf(ListeningNotOpenError);
   });
 
+  it('AS-151: a stop from a channel that does not hold the capture stops it, and the one that held it is told', async () => {
+    const { service, store, observer } = setup();
+    const lost = channel();
+    const here = channel();
+    await service.start(ENCOUNTER, USER, 'computador', lost.events);
+    await speak(service, lost.events, 0, 300);
+
+    await service.stop(ENCOUNTER, here.events);
+
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+    expect(lost.takenOver()).toBe(1);
+    expect(store.session).toMatchObject({ state: 'STOPPED' });
+    await flush();
+    expect(observer.stopped).toEqual([ENCOUNTER]);
+    await expect(
+      service.receive(ENCOUNTER, lost.events, frame(300)),
+    ).rejects.toBeInstanceOf(ListeningNotOpenError);
+  });
+
+  it('AS-140: says it captures only while it holds the capture: not paused, not stopped', async () => {
+    const { service } = setup();
+    const ch = channel();
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    expect(service.capturing(ENCOUNTER)).toBe(true);
+    await service.pause(ENCOUNTER, ch.events);
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await service.close(ENCOUNTER);
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+  });
+
   it('AS-087: tells the draft how far the transcript goes each time segments are kept', async () => {
     const { service, recognizer, observer } = setup();
     const ch = channel();

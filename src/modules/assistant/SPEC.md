@@ -38,7 +38,11 @@ Este módulo **posee**:
   purga;
 - el **borrador de la nota** (C2): cada borrador pedido en `note_draft`, su
   redacción desde la transcripción y sus secciones propuestas en
-  `ai_suggestion`.
+  `ai_suggestion`;
+- lo que pasa **al firmar** (E1): firmar no se admite mientras se escucha o
+  se redacta; al firmar se detiene la escucha, se cancelan los borradores en
+  curso y cada sección propuesta queda revisada en `ai_suggestion_review`, con
+  la distancia a lo que la nota firmada dice.
 
 **Fuera de alcance:**
 
@@ -47,15 +51,15 @@ Este módulo **posee**:
   ninguno llama a un proveedor (AS-001).
 - **El interruptor por sede y el permiso `assistant:use`**: es A3. Este módulo
   no expone ninguna ruta HTTP; quien la exponga declara su permiso (REQ-118).
-- Lo que pasa con la escucha y el borrador al firmar, y la distancia entre
-  el borrador y la nota firmada (E1); las preguntas «Para completar la nota»
-  (C3).
+- Las preguntas «Para completar la nota» (C3).
 - Escribir en la nota: la sección aceptada la guarda la pantalla por la ruta
   de la nota, con su `If-Match` (EN-281); el asistente sólo enlaza (P1).
 - Distinguir la voz del médico de la del paciente (dato biométrico, plan §3).
 
-**Depende de:** la configuración (`shared/config`) y la base. Ningún módulo
-depende de éste todavía.
+**Depende de:** la configuración (`shared/config`) y la base. `encounter`
+depende de él por un solo puerto de `shared/clinical`
+(`ASSISTANT_AT_SIGNING`, E10): antes de firmar pregunta qué está en marcha y,
+después, avisa de la firma.
 
 ## Por qué se guarda lo que se guarda (LOPDP)
 
@@ -278,6 +282,34 @@ evaluación, fuera del verify).
 **Solo interfaz:** AS-115 a AS-117. Son el bloque «Propuesta del asistente» de
 la pestaña Exámenes y su paso al borrador; la mitad del servidor es AS-103,
 AS-106, AS-108 y AS-109, que ya se prueban con esos números.
+
+### E10 — Revisión al firmar _(E1, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 E1 y D-247 §7: firmar es declarar que la nota está
+terminada, y no lo está mientras el asistente sigue oyendo la consulta o
+escribiendo su borrador. Firmar se niega entonces, y la pantalla dice por qué
+junto al botón (SigmAI U-03: «Firmar» se bloqueaba sin decir por qué). Al
+firmar, lo que el asistente tenía en marcha se detiene —la escucha, los
+borradores en cola o redactándose— y cada sección que propuso queda revisada:
+qué hizo el médico con ella y cuánto se parece lo que firmó a lo propuesto. Es
+lo que la fase F y el tablero de E2 miden (SigmAI RF-I02, `note-distance.ts`).
+
+**Por qué va así:** P1. La firma es el acto del médico; nada del asistente
+puede seguir escribiendo en una atención firmada ni gastando en ella. La
+distancia se calcula en el servidor y contra la nota firmada, no contra lo
+que la pantalla dice: es un dato del sistema para el estudio.
+**Prueba independiente:** contra PostgreSQL, una atención con borrador de dos
+secciones —una aceptada y retocada después, otra sin decidir—: firmar con un
+borrador en cola se rechaza; dejar de esperarlo lo deja cancelado; firmar
+entonces detiene la escucha y deja dos revisiones con la nota firmada, su
+estado y una distancia mayor que cero en la retocada; una revisión de una nota
+sin firmar se rechaza.
+**Cubre:** AS-140 a AS-152.
+**Solo servidor:** AS-143 (lo que corre al firmar), AS-145 (la base) y AS-146
+(lo que no llega al log). La pantalla los ve como AS-148 y AS-150.
+**Solo interfaz:** AS-148, AS-149, AS-150 y AS-152. Son «Firmar…» deshabilitado con su
+motivo, el rechazo dicho en el diálogo y lo que queda tras firmar; su mitad del
+servidor es AS-140, AS-141 y AS-147, que ya se prueban con esos números.
 
 ## Criterios de éxito
 
@@ -1461,6 +1493,111 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   DEBERÁ enlazar la propuesta (AS-109) y mostrarla «Aceptada» con el examen;
   SI el enlace falla, ENTONCES DEBERÁ decir que la orden quedó guardada.
 
+### 38. Firmar con el asistente en marcha (E1, U-03, D-247 §7)
+
+- **AS-140** — MIENTRAS el asistente esté capturando la escucha de una
+  atención, SI alguien pide firmar una nota en borrador de esa atención a
+  su alcance, ENTONCES el sistema DEBERÁ rechazarlo con
+  `NOTE_SIGN_WHILE_LISTENING` (409) sin firmar nada. Una escucha en pausa o
+  detenida NO DEBERÁ impedir la firma; y una nota fuera del alcance de quien
+  firma, o ya firmada, DEBERÁ recibir su respuesta de siempre (404,
+  `NOTE_ALREADY_SIGNED`), nunca la que dice qué hace el asistente.
+  > Lo que el paciente dice mientras se firma no llegaría a la nota firmada:
+  > o se detiene la escucha, o la nota no está terminada. En pausa no entra
+  > nada nuevo; se detiene al firmar (AS-143). D-252 §2.
+- **AS-141** — MIENTRAS un borrador de la nota de la atención esté en cola o
+  redactándose (AS-086), SI alguien pide firmar una nota de esa atención,
+  ENTONCES el sistema DEBERÁ rechazarlo con `NOTE_SIGN_WHILE_DRAFTING` (409)
+  sin firmar nada.
+  > El médico decide si espera lo que el borrador trae o deja de esperarlo
+  > (AS-147); firmar no lo decide por él.
+- **AS-142** — Interrumpir la atención (EN-167) NO DEBERÁ rechazarse por la
+  escucha ni por el borrador, y DEBERÁ hacer lo que hace firmar (AS-143,
+  AS-144).
+  > Es la salida de una consulta que no puede seguir —el paciente se fue, se
+  > descompensó—; bloquearla obligaría a buscar el botón de detener en el peor
+  > momento (D-252 §1).
+- **AS-143** — CUANDO se firme la nota que da el alta (la 002), se
+  interrumpa la atención o se anule, el sistema DEBERÁ, después de guardarlo
+  y sin hacer esperar la respuesta, detener la escucha de la atención —lo dicho antes queda, nada después,
+  como AS-045— y cancelar los borradores en cola o redactándose: quedan
+  fallidos con `ASSISTANT_DRAFT_CANCELLED`, la llamada en curso se corta y
+  nada de lo que devuelva se guarda. Un fallo de estos pasos NO DEBERÁ
+  convertir la firma en un error: la firma ya está guardada, y el fallo
+  queda en el log sin texto.
+  > Lo que se cuela entre la comprobación y la firma —una escucha que
+  > empieza, un borrador que pide la escucha al detenerse— se detiene aquí.
+  > Fuera de la respuesta: detener espera a que el reconocedor entregue lo
+  > que tiene (hasta 90 s), y ni el médico ni caja deben esperarlo (revisión
+  > del 12-10-2026). Anular también: la atención abierta por error no debe
+  > seguir mandando la conversación al proveedor.
+  > Lo que se lee de la nota (CIE-10, receta, exámenes) responde a un clic y
+  > no corre aparte: una atención cerrada mientras lee no guarda nada (AS-039).
+
+- **AS-151** — CUANDO el profesional detenga la escucha desde un canal que
+  no tiene la captura —otra pestaña, un equipo que perdió la red con el canal
+  medio abierto—, el sistema DEBERÁ detenerla igual, avisar al canal que la
+  tenía (`taken-over`, como AS-054) e ignorar desde entonces sus tramas.
+  > Antes se rechazaba: la firma quedaba bloqueada (AS-140) sin nada que
+  > detener a la vista, y la única salida era interrumpir una consulta
+  > terminada (revisión clínica del 12-10-2026, M1).
+
+### 39. La revisión de lo propuesto (E1, P1, SigmAI RF-I02)
+
+- **AS-144** — CUANDO se firme la 002 de una atención con borrador, el
+  sistema DEBERÁ guardar en `ai_suggestion_review`, por cada sección propuesta
+  que el médico tuvo delante —las que decidió y las vigentes sin decidir
+  (AS-090); no las que un borrador posterior sustituyó sin que nadie las
+  decidiera—, la nota firmada, el estado de la propuesta al firmar y la
+  **distancia** (AS-022) entre lo propuesto y lo que la nota firmada dice en
+  esa sección (vacía si no dice nada). SI no pudo hacerlo al firmar,
+  ENTONCES DEBERÁ hacerlo al arrancar la API y después cada día, para toda
+  nota firmada a la que le falte.
+  > Contra lo FIRMADO: la primera versión firmada de la 002, aunque el
+  > barrido llegue después de una enmienda (EN-025). El barrido aísla cada
+  > atención: una que falla no deja sin revisar a las demás.
+  > «Para cada nota con borrador»: una sección descartada y escrita igual a
+  > mano también se mide —es lo que dice si «Descartar» se usa para copiar a
+  > mano—. La de una sección aceptada con «Añadir» cuenta lo que el médico ya
+  > tenía, como AS-022 (D-252 §4).
+- **AS-145** — La base DEBERÁ rechazar una revisión de una propuesta que no
+  sea `note-section`, de una nota que no sea la 002 firmada (o sustituida
+  por su enmienda) de su atención, con un estado
+  distinto del que la propuesta tiene, o con una distancia fuera de [0, 1]; una
+  segunda revisión de la misma propuesta; y cualquier cambio o borrado de una
+  revisión.
+- **AS-146** — Ninguna revisión, línea de log ni mensaje de error DEBERÁ
+  contener el texto de la nota ni el de la propuesta: sólo ids, estados,
+  distancias y cuántas.
+
+### 40. Dejar de esperar el borrador (E1)
+
+- **AS-147** — CUANDO el profesional de la atención pida dejar de esperar el
+  borrador, el sistema DEBERÁ cancelar el que esté en cola o redactándose como
+  AS-143, publicar `assistant-draft` (AS-097) y responder lo que la Nota
+  muestra (AS-096); sin ninguno en curso, DEBERÁ responder igual sin cambiar
+  nada. Quién, dónde y la atención viva, como AS-039. Un borrador cancelado se
+  puede volver a pedir (AS-086).
+
+### 41. En la pestaña Nota (solo interfaz)
+
+- **AS-148** — MIENTRAS la escucha esté capturando, o el borrador en cola o
+  redactándose, «Firmar…» —y «Terminar y firmar», la salida de la atención—
+  DEBERÁ verse deshabilitado y, junto a él, el motivo:
+  «Detenga la escucha para firmar.» o «El asistente está redactando el
+  borrador.» con «Dejar de esperar» (AS-147); CUANDO la escucha se detenga o
+  el borrador termine, DEBERÁ habilitarse sin recargar la página.
+- **AS-152** — MIENTRAS la escucha de la atención se capture en otra
+  pestaña o equipo, «Firmar…» y «Terminar y firmar» DEBERÁN esperar con «La
+  consulta se está escuchando en otra pestaña o equipo: deténgala para
+  firmar.», y «Detener» de esta pantalla DEBERÁ detenerla (AS-151).
+- **AS-149** — SI el servidor rechaza la firma por AS-140 o AS-141 (la escucha
+  o el borrador de otra pestaña), ENTONCES el diálogo de firma DEBERÁ decir el
+  motivo con las mismas palabras y la nota DEBERÁ seguir en borrador en
+  pantalla.
+- **AS-150** — CUANDO la nota quede firmada, la pantalla NO DEBERÁ seguir
+  mostrando el control de la escucha ni el bloque «Borrador del asistente».
+
 ---
 
 ## Códigos de error nuevos
@@ -1495,6 +1632,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_DRAFT_INTERRUPTED`        | `ExternalServiceError` | 503       | La API se reinició mientras redactaba el borrador (AS-093) |
 | `ASSISTANT_DRAFT_FAILED`             | `ExternalServiceError` | 503       | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
 | `ASSISTANT_DRAFT_RETRY_LIMIT`        | `QuotaExceededError`   | 429       | «Volver a pedir» sobre un tramo que ya falló tres veces (AS-093) |
+| `ASSISTANT_DRAFT_CANCELLED`          | `ConflictError`        | 409       | El borrador se canceló: se firmó la nota o el médico dejó de esperarlo (AS-143, AS-147) |
+| `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
+| `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
 
 ## Niveles de prueba
 
@@ -1531,6 +1671,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-109 (la base) | Integración contra PostgreSQL, con control positivo |
 | AS-114 | Arnés (`eval/`), fuera del verify |
 | AS-115 a AS-117 | Componente de la pestaña y recorrido F-05 |
+| AS-140 a AS-142, AS-144, AS-147 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-143, AS-146, AS-151 | Unitario con almacenes, reloj, reconocedor y proveedor falsos |
+| AS-145 | Integración contra PostgreSQL, con control positivo |
+| AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
 
 ## Preguntas abiertas
 
@@ -1547,4 +1691,6 @@ diagnóstico dicho, de qué reloj son los 3 minutos, el borrador con la nota
 abierta, el vocabulario protegido del léxico y la redacción en el proceso.
 En **D-250**: los procedimientos ordenables, lo que pide el paciente en la
 conversación, el umbral para encender, el catálogo entero en el prompt y la
-prioridad que nadie marca.
+prioridad que nadie marca. En **D-252**: interrumpir sin bloqueo, la escucha
+en pausa, firmar cualquier nota de la atención, qué secciones se miden y
+«Dejar de esperar».

@@ -98,6 +98,8 @@ class World {
   audits: { action: string; resourceType: string; userId: string | null }[] =
     [];
   prompts: string[] = [];
+  /** The signal each call to the model was given (AS-143: cancelling cuts it). */
+  signals: (AbortSignal | undefined)[] = [];
   answer: unknown = ANSWER;
   llmFails: Error | null = null;
   /** Lets a test hold the model's answer to see the draft in flight. */
@@ -177,8 +179,15 @@ class World {
       return Promise.resolve(Boolean(draft));
     },
     fail: (id, failureCode, at) => {
-      Object.assign(this.drafts.find((d) => d.id === id)!, { status: 'FAILED', failureCode, finishedAt: at }); // prettier-ignore
+      // Only one in flight, as `note_draft` does: a cancelled one keeps its code.
+      const draft = this.drafts.find((d) => d.id === id && (d.status === 'QUEUED' || d.status === 'RUNNING')); // prettier-ignore
+      if (draft) Object.assign(draft, { status: 'FAILED', failureCode, finishedAt: at }); // prettier-ignore
       return Promise.resolve();
+    },
+    cancelInFlight: (e, code, at) => {
+      const open = this.drafts.filter((d) => d.encounterId === e && (d.status === 'QUEUED' || d.status === 'RUNNING')); // prettier-ignore
+      for (const draft of open) Object.assign(draft, { status: 'FAILED', failureCode: code, finishedAt: at }); // prettier-ignore
+      return Promise.resolve(open.map((d) => d.id));
     },
     failInFlight: (code, at) => {
       const open = this.drafts.filter((d) => d.status === 'QUEUED' || d.status === 'RUNNING'); // prettier-ignore
@@ -203,6 +212,7 @@ class World {
       request: LlmRequest<Shape>,
     ): Promise<LlmAnswer<z.infer<Shape>>> => {
       this.prompts.push(request.prompt);
+      this.signals.push(request.signal);
       if (this.gate) await this.gate;
       if (this.llmFails) throw this.llmFails;
       return {
@@ -394,6 +404,131 @@ describe('NoteDraftService — asking for it (AS-086)', () => {
       AssistantEncounterClosedError,
     );
     expect(world.drafts).toHaveLength(0);
+  });
+});
+
+describe('NoteDraftService — stopping waiting for it (AS-143, AS-147)', () => {
+  it('AS-147 cuts the draft being written: failed as cancelled, its call aborted, nothing it returns kept, and the screen told', async () => {
+    const world = new World();
+    const service = world.service();
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+    await service.request(ENCOUNTER, doctor);
+    await vi.waitFor(() => expect(world.prompts).toHaveLength(1));
+    world.events = [];
+
+    const after = await service.stopWaiting(ENCOUNTER, doctor);
+
+    expect(after.draft).toMatchObject({
+      status: 'FAILED',
+      failureCode: 'ASSISTANT_DRAFT_CANCELLED',
+    });
+    expect(world.signals[0]?.aborted).toBe(true);
+    // Who stopped it is in the trail; `requested_by` names who asked.
+    expect(world.audits).toContainEqual(
+      expect.objectContaining({ action: 'UPDATE', userId: DOCTOR, resourceType: 'assistant_note_draft' }), // prettier-ignore
+    );
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ kind: 'assistant-draft', userIds: [DOCTOR] }),
+    );
+    release();
+    await service.settled();
+    expect(world.suggestions).toHaveLength(0);
+    expect(world.drafts[0]).toMatchObject({
+      status: 'FAILED',
+      failureCode: 'ASSISTANT_DRAFT_CANCELLED',
+    });
+  });
+
+  it('AS-147 a queued draft never starts, and a cancelled stretch can be asked for again', async () => {
+    const world = new World();
+    const service = world.service();
+    world.drafts.push({
+      id: 'draft-queued',
+      encounterId: ENCOUNTER,
+      upToMs: 11_000,
+      status: 'QUEUED',
+      failureCode: null,
+      attempts: 1,
+      requestedBy: DOCTOR,
+      aiRunId: null,
+      requestedAt: new Date(world.clock),
+      startedAt: null,
+      finishedAt: null,
+    });
+
+    await service.stopWaiting(ENCOUNTER, doctor);
+    expect(world.drafts[0]).toMatchObject({ status: 'FAILED', failureCode: 'ASSISTANT_DRAFT_CANCELLED' }); // prettier-ignore
+    expect(world.prompts).toHaveLength(0);
+
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+    expect(world.drafts[0]).toMatchObject({ status: 'DONE', attempts: 2 });
+  });
+
+  it('AS-147 with nothing in flight answers what the Nota shows and changes nothing', async () => {
+    const world = new World();
+    const service = world.service();
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+
+    const after = await service.stopWaiting(ENCOUNTER, doctor);
+
+    expect(after.draft).toMatchObject({ status: 'DONE' });
+    expect(after.sections).toHaveLength(2);
+  });
+
+  it('AS-147 only the attention’s professional, where they write, while it is live', async () => {
+    const world = new World();
+    const service = world.service();
+
+    await expect(
+      service.stopWaiting(ENCOUNTER, { userId: OTHER, writeSites: [SITE] }),
+    ).rejects.toBeInstanceOf(AssistantNotEncounterOwnerError);
+    await expect(
+      service.stopWaiting(ENCOUNTER, {
+        userId: DOCTOR,
+        writeSites: ['site-2'],
+      }),
+    ).rejects.toBeInstanceOf(AssistantEncounterNotFoundError);
+    world.encounter = { ...world.encounter, status: 'DISCHARGED' };
+    await expect(service.stopWaiting(ENCOUNTER, doctor)).rejects.toBeInstanceOf(
+      AssistantEncounterClosedError,
+    );
+  });
+
+  it('AS-143 the signature cancels what is in flight of a closed attention, and a later stretch is not asked for behind it', async () => {
+    const world = new World();
+    const service = world.service();
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+    await service.request(ENCOUNTER, doctor);
+    world.lines = [...SAID, { startMs: 11_000, endMs: 15_000, text: 'Y me duele al tragar.' }]; // prettier-ignore
+    await service.request(ENCOUNTER, doctor); // waits behind the first
+    world.encounter = { ...world.encounter, status: 'DISCHARGED' };
+
+    await service.cancel(ENCOUNTER);
+    world.gate = null;
+    release();
+    await service.settled();
+
+    expect(world.drafts).toHaveLength(1);
+    expect(world.drafts[0]).toMatchObject({ status: 'FAILED', failureCode: 'ASSISTANT_DRAFT_CANCELLED' }); // prettier-ignore
+    expect(world.suggestions).toHaveLength(0);
+  });
+
+  it('AS-141 says whether a draft of the attention is queued or being written', async () => {
+    const world = new World();
+    const service = world.service();
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+    expect(await service.drafting(ENCOUNTER)).toBe(false);
+
+    await service.request(ENCOUNTER, doctor);
+    expect(await service.drafting(ENCOUNTER)).toBe(true);
+    release();
+    await service.settled();
+    expect(await service.drafting(ENCOUNTER)).toBe(false);
   });
 });
 

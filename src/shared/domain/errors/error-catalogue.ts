@@ -113,6 +113,9 @@ export const DOMAIN_ERROR_CODES = [
   'ASSISTANT_DRAFT_FAILED',
   // AS-093: «Volver a pedir» sobre un tramo que ya falló tres veces (429).
   'ASSISTANT_DRAFT_RETRY_LIMIT',
+  // AS-143, AS-147 (E1): el borrador se canceló al firmar o porque el médico
+  // dejó de esperarlo (409).
+  'ASSISTANT_DRAFT_CANCELLED',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los
@@ -881,6 +884,10 @@ export const DOMAIN_ERROR_CODES = [
   'ENCOUNTER_NOT_FOUND',
   'ENCOUNTER_STATE_TRANSITION_INVALID',
   'NOTE_ALREADY_SIGNED',
+  // AS-140, AS-141 (E1, D-247 §7). Firmar mientras el asistente escucha la
+  // atención o redacta el borrador de su nota (409): la nota no está terminada.
+  'NOTE_SIGN_WHILE_LISTENING',
+  'NOTE_SIGN_WHILE_DRAFTING',
   // EN-229 (D-139.5). Una sola cadena 002 por atención.
   'CLINICAL_NOTE_ALREADY_OPEN',
   'NOTE_CONTENT_INCOMPLETE',

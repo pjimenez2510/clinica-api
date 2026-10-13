@@ -82,6 +82,22 @@ export class AssistantNoteDraftController {
     return toResponse(await this.drafts.request(encounterId, this.requester(req))); // prettier-ignore
   }
 
+  /** AS-147. «Dejar de esperar»: cancels the draft queued or being written. */
+  @Post('cancel')
+  @RequirePermission('assistant:use', 'query')
+  // Each one writes the trail: a physician changing their mind, not a loop.
+  @Throttle({ long: { ttl: 60_000, limit: 12 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Dejar de esperar el borrador en curso' })
+  @ApiOkResponse({ type: NoteDraftOverviewDto })
+  async cancel(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Req() req: Request,
+  ): Promise<NoteDraftOverviewDto> {
+    this.requireEnabled();
+    return toResponse(await this.drafts.stopWaiting(encounterId, this.requester(req))); // prettier-ignore
+  }
+
   /** AS-094. Links a section to the note it was saved into. Never signs. */
   @Post('sections/:suggestionId/accept')
   @RequirePermission('assistant:use', 'query')

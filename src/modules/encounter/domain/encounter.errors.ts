@@ -1791,3 +1791,31 @@ export class ProtectedSectionRequiredError extends ForbiddenError {
     super('The vaccination carries a protected risk group');
   }
 }
+
+/**
+ * AS-140 (D-247 §7, SigmAI U-03). The assistant is capturing the
+ * consultation: what is said while signing would never reach the signed note.
+ */
+export class NoteSignWhileListeningError extends ConflictError {
+  readonly code = 'NOTE_SIGN_WHILE_LISTENING';
+  override readonly userTitle =
+    'El asistente está escuchando la consulta. Detenga la escucha para firmar';
+
+  constructor() {
+    super('The assistant is listening to this encounter');
+  }
+}
+
+/**
+ * AS-141. A draft of the note is queued or being written: the physician waits
+ * for it or stops waiting (AS-147); signing does not decide for them.
+ */
+export class NoteSignWhileDraftingError extends ConflictError {
+  readonly code = 'NOTE_SIGN_WHILE_DRAFTING';
+  override readonly userTitle =
+    'El asistente está redactando el borrador de la nota. Espere a que termine o deje de esperarlo para firmar';
+
+  constructor() {
+    super('A draft of the note is being written');
+  }
+}

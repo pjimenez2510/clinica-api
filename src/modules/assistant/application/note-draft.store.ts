@@ -46,6 +46,11 @@ export interface NoteDraftStore {
   /** False when it was not running any more (it failed meanwhile). */
   succeed(id: string, aiRunId: string, at: Date): Promise<boolean>;
   fail(id: string, code: string, at: Date): Promise<void>;
+  /**
+   * AS-143, AS-147. What the attention has queued or being written, failed
+   * with `code`: answers their ids, so the calls out can be cut.
+   */
+  cancelInFlight(encounterId: string, code: string, at: Date): Promise<string[]>; // prettier-ignore
   /** AS-093. At boot, what was in flight failed: answers how many. */
   failInFlight(code: string, at: Date): Promise<number>;
 }
