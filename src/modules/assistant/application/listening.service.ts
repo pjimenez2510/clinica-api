@@ -257,11 +257,20 @@ export class ListeningService {
    * AS-059 (D-247 §7). The attention no longer takes content — signed with
    * its discharge, annulled, interrupted —: whatever channel holds it, the
    * listening stops, and nothing more is written into the closed attention.
+   *
+   * AS-166 (A3). `discardHeld`: the patient revoked the authorization, or the
+   * site switched the assistant off. What the recogniser still holds was
+   * heard after that, and is dropped instead of kept (security review M-2).
    */
-  close(encounterId: string): Promise<{ offsetMs: number }> {
+  close(
+    encounterId: string,
+    options: { discardHeld?: boolean } = {},
+  ): Promise<{ offsetMs: number }> {
     return this.inTurn(encounterId, async () => {
       const live = this.live.get(encounterId);
-      if (live) return this.finish(live, 'STOPPED', null);
+      if (live) {
+        return this.finish(live, 'STOPPED', null, options.discardHeld);
+      }
       return this.stopWritten(encounterId);
     });
   }
@@ -384,10 +393,19 @@ export class ListeningService {
     live: Live,
     state: ListeningState,
     reason: PauseReason | null,
+    discardHeld = false,
   ): Promise<{ offsetMs: number }> {
     // Nothing more is accepted: frames that arrive while it ends are refused.
     this.live.delete(live.encounterId);
     if (live.reopening) await live.reopening.catch(() => undefined);
+    if (discardHeld) {
+      // AS-166. Nothing the recogniser holds becomes a segment.
+      live.recognition?.abort();
+      await live.keeping;
+      live.unstored.length = 0;
+      await this.write(live, state, reason);
+      return { offsetMs: live.offsetMs };
+    }
     try {
       await live.recognition?.end();
     } catch {

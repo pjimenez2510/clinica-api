@@ -119,6 +119,8 @@ export class AssistantListeningController {
    */
   @Post('authorization')
   @RequirePermission('assistant:use', 'query')
+  // Recorded once per patient: ten a minute is a doctor retrying, not more.
+  @Throttle({ long: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Registrar la autorización de grabar la consulta' })
   @ApiOkResponse({ type: RecordingAuthorizationDto })

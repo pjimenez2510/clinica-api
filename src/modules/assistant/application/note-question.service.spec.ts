@@ -197,6 +197,9 @@ class World {
     },
   };
 
+  /** AS-169 (A3). The authorization to record. */
+  authorized = true;
+
   service(demo = false) {
     return new NoteQuestionService(
       this.context,
@@ -209,6 +212,10 @@ class World {
       this.audit,
       () => new Date(this.clock),
       demo,
+      {
+        isAuthorized: () => Promise.resolve(this.authorized),
+        grant: () => Promise.resolve(),
+      },
     );
   }
 }

@@ -318,7 +318,7 @@ describe('el asistente por sede y la autorización de grabar (A3)', () => {
       expect(await ch.closing).toBe(4409);
     });
 
-    it('AS-168 the attention own professional records it once, trailed, on the surviving chart', async () => {
+    it('AS-168 the attention own professional records it once, trailed', async () => {
       const recorded = await as(doctor.token).post(assistant('/listening/authorization')).expect(200); // prettier-ignore
       expect(recorded.body).toEqual({ recordingAuthorized: true });
       await as(doctor.token).post(assistant('/listening/authorization')).expect(200); // prettier-ignore
@@ -343,7 +343,7 @@ describe('el asistente por sede y la autorización de grabar (A3)', () => {
       expect(await prisma.patientAuthorization.count()).toBe(0);
     });
 
-    it('AS-169 the other functions answer without the authorization to record', async () => {
+    it('AS-169 the functions that read the note answer without the authorization; the draft and the questions, which read the conversation, do not', async () => {
       for (const path of [
         '/diagnoses',
         '/orders',
@@ -355,7 +355,29 @@ describe('el asistente por sede y la autorización de grabar (A3)', () => {
         const response = await as(doctor.token).get(assistant(path));
         expect([path, response.status]).toEqual([path, 200]);
       }
+      for (const path of ['/note-draft', '/note-questions']) {
+        const refused = await as(doctor.token).post(assistant(path));
+        expect([path, refused.status, codeOf(refused)]).toEqual([path, 409, 'ASSISTANT_RECORDING_NOT_AUTHORIZED']); // prettier-ignore
+      }
+      expect(await prisma.aiRun.count()).toBe(0);
       expect(await prisma.patientAuthorization.count()).toBe(0);
+      // Control: authorized, the same draft route goes past the authorization
+      // to its own next answer (there is no note open yet).
+      await authorizeRecording(prisma, patientId, reception.userId);
+      const past = await as(doctor.token).post(assistant('/note-draft'));
+      expect(codeOf(past)).not.toBe('ASSISTANT_RECORDING_NOT_AUTHORIZED');
+    });
+
+    it('AS-168 from an attention of a merged chart it is recorded on the surviving one, where the chart lists it', async () => {
+      const survivor = await createPatient(prisma);
+      await prisma.patient.update({ where: { id: patientId }, data: { mergedIntoId: survivor.id, mergedAt: new Date() } }); // prettier-ignore
+
+      await as(doctor.token).post(assistant('/listening/authorization')).expect(200); // prettier-ignore
+
+      const rows = await prisma.patientAuthorization.findMany({ where: { purpose: 'ASSISTANT_RECORDING' } }); // prettier-ignore
+      expect(rows.map((row) => row.patientId)).toEqual([survivor.id]);
+      const listed = await as(reception.token).get(`/privacy/patients/${survivor.id}/authorizations`).expect(200); // prettier-ignore
+      expect((listed.body as { items: { purpose: string }[] }).items.map((each) => each.purpose)).toContain('ASSISTANT_RECORDING'); // prettier-ignore
     });
   });
 });

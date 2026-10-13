@@ -1835,8 +1835,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-166** — SI la autorización se revoca con la escucha abierta, ENTONCES
   en la siguiente comprobación (AS-045) el sistema DEBERÁ detenerla, decírselo
   al canal (`stopped` con `ASSISTANT_RECORDING_NOT_AUTHORIZED`) y cerrarlo con
-  **4409**; lo ya transcrito queda hasta su purga (AS-057).
-  > D-254 §4: se grabó con autorización; borrarlo es otra decisión.
+  **4409**; lo ya transcrito queda hasta su purga (AS-057), y lo que el
+  reconocedor retenía —oído después— DEBERÁ descartarse sin guardarse. Lo
+  mismo al apagarse la sede (AS-163).
+  > D-254 §4: se grabó con autorización; borrarlo es otra decisión. Lo
+  > retenido se descarta (auditoría de seguridad del 12-10-2026, M-2).
 - **AS-167** — La lectura de la escucha (AS-056) DEBERÁ decir si la ficha
   tiene la autorización vigente (`recordingAuthorized`).
 - **AS-168** — CUANDO el profesional de la atención —con lo que pide AS-045
@@ -1847,12 +1850,18 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   igual sin escribir nada.
   > D-254 §3: el paciente la da en el consultorio, delante del médico, que no
   > tiene `patient:write`. Revocarla sigue siendo de la ficha (PD-072).
-- **AS-169** — El CIE-10, la receta, los exámenes, las preguntas y el
-  borrador pedido a mano NO DEBERÁN depender de la autorización de grabar:
-  sólo del interruptor de la instalación, el de la sede y el permiso.
-  > D-254 §6: leen lo que el médico escribió, no la voz del paciente. El
-  > borrador sale de la escucha: sin escucha no hay de qué redactarlo
-  > (`ASSISTANT_TRANSCRIPT_EMPTY`).
+- **AS-169** — El CIE-10, la receta y los exámenes NO DEBERÁN depender de
+  la autorización de grabar: sólo del interruptor de la instalación, el de la
+  sede y el permiso. El borrador y las preguntas, que leen la conversación,
+  SÍ: sin la autorización vigente, pedirlos DEBERÁ rechazarse con
+  `ASSISTANT_RECORDING_NOT_AUTHORIZED` (409) sin llamar a nadie; y SI la
+  autorización se revoca o la sede se apaga, ENTONCES ningún borrador
+  pedido solo, en cola o pendiente DEBERÁ llegar al proveedor, y el que se
+  esté redactando DEBERÁ cancelarse (`ASSISTANT_DRAFT_CANCELLED`).
+  > D-254 §6: el CIE-10, la receta y los exámenes leen lo que el médico
+  > escribió, no la voz del paciente. Revisión clínica del 12-10-2026 (G1):
+  > la transcripción guardada salía al proveedor después de revocar, por el
+  > borrador automático y a mano, y por las preguntas.
 
 ### 44. En pantalla (solo interfaz)
 
