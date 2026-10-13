@@ -340,6 +340,37 @@ sin firmar se rechaza.
 motivo, el rechazo dicho en el diálogo y lo que queda tras firmar; su mitad del
 servidor es AS-140, AS-141 y AS-147, que ya se prueban con esos números.
 
+### E11 — El interruptor por sede y la autorización de grabar _(A3, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 A3, P7 y D-221 §3. Cada sede enciende o apaga el
+asistente en **Parámetros por sede** (D-254 §1: la pantalla «Funciones» de
+D-207 §7 aún no existe); con la sede apagada ninguna ruta del asistente
+responde sobre sus atenciones y el médico no ve nada de IA. Grabar la consulta
+para el asistente es una **autorización opcional y revocable** más de D-221
+§3: recepción la registra junto al teléfono en la ficha o al registrar la
+llegada, y el médico de la atención cuando el paciente se la da en el
+consultorio (D-254 §3). Sin ella no se escucha, y «Escuchar» dice por qué.
+Las demás funciones, que leen lo que el médico escribió, obedecen sólo al
+interruptor (D-254 §6).
+
+**Por qué va así:** P7 —medir antes de encender, por sede— y LOPDP art. 7 y
+8: grabar la voz del paciente para mandarla a un proveedor no es atenderlo
+(art. 31.1 no lo cubre), así que pide su autorización, que puede revocar.
+Un 404 y no un 403 en una sede apagada, como AS-026: la pantalla no debe
+saber que existe.
+**Prueba independiente:** contra PostgreSQL, una sede apagada: el CIE-10, la
+escucha y el borrador de una atención suya responden 404, y los de otra sede
+encendida responden (control); un vale de escucha sin autorización se rechaza
+con `ASSISTANT_RECORDING_NOT_AUTHORIZED` y, registrada por el médico desde la
+atención, se da; revocada con el canal abierto, la escucha se detiene.
+**Cubre:** AS-160 a AS-175.
+**Solo servidor:** AS-161 (la base), AS-163 y AS-166 (el canal). La pantalla
+los ve como AS-171 y AS-174.
+**Solo interfaz:** AS-170 a AS-175. Son el interruptor en Parámetros, la
+atención sin IA, el interruptor de la ficha y de la llegada y «Escuchar» sin
+autorización; su mitad del servidor es AS-160, AS-162, AS-164, AS-165, AS-167
+y AS-168, que ya se prueban con esos números.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -1758,6 +1789,97 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-150** — CUANDO la nota quede firmada, la pantalla NO DEBERÁ seguir
   mostrando el control de la escucha ni el bloque «Borrador del asistente».
 
+### 42. El interruptor por sede (A3, P7, D-254)
+
+- **AS-160** — Cada sede DEBERÁ tener el parámetro `assistantEnabled`, que se
+  lee y se cambia con los demás parámetros de la sede (`settings:read`,
+  `settings:manage`, CF-062 a CF-066) y deja su cambio en la bitácora; una
+  sede creada DEBERÁ nacer con él apagado.
+  > D-254 §2: las sedes que existían al migrar quedan encendidas, como
+  > estaban, para no apagar la presentación; una instalación real migra con
+  > ellas apagadas. La respuesta dice además si la instalación tiene el
+  > asistente (`assistantAvailable`, `ASSISTANT_ENABLED`): sin él la pantalla
+  > no ofrece el interruptor (AS-026).
+- **AS-161** — MIENTRAS una sede tenga `assistantEnabled` apagado, toda ruta
+  del asistente sobre una atención de esa sede DEBERÁ responder lo mismo que
+  a una atención fuera del alcance de quien pide
+  (`ASSISTANT_ENCOUNTER_NOT_FOUND`, 404), sin leer la nota, sin llamar al
+  seudonimizador ni al proveedor y sin escribir en `ai_run` ni en
+  `ai_suggestion`.
+  > La sede apagada se resta de las sedes donde se usa el asistente
+  > (`withAssistant`, AS-026), como una sede sin `assistant:use`. Se lee en
+  > cada petición: encenderla o apagarla no espera a reiniciar la API.
+- **AS-162** — CUANDO alguien con `site:read` pida en qué sedes de su alcance
+  está encendido el asistente, el sistema DEBERÁ responder sus ids; ninguno
+  MIENTRAS `ASSISTANT_ENABLED` no sea `true`.
+  > Para que recepción sepa si ofrecer la autorización de grabar (AS-172,
+  > AS-173) sin `settings:read` ni `assistant:use`.
+- **AS-163** — SI la sede de una atención se apaga con su escucha abierta,
+  ENTONCES en la siguiente comprobación (AS-045, cada 5 s como mucho) el
+  sistema DEBERÁ detenerla, decírselo al canal (`stopped` con
+  `ASSISTANT_ENCOUNTER_NOT_FOUND`) y cerrarlo con **4409**.
+
+### 43. La autorización de grabar (D-221 §3, D-254 §3 a §5)
+
+- **AS-164** — La finalidad `ASSISTANT_RECORDING` —grabar la consulta para el
+  asistente— DEBERÁ registrarse, revocarse y listarse como las demás
+  autorizaciones opcionales (PD-068 a PD-075), sin canal, una vigente por
+  persona; y DEBERÁ valer para todas las atenciones del paciente hasta que se
+  revoque.
+- **AS-165** — SI la ficha de la atención —o la vigente, si se unificó en
+  otra— no tiene una autorización `ASSISTANT_RECORDING` vigente, ENTONCES el
+  sistema DEBERÁ rechazar el vale de la escucha (AS-045) con
+  `ASSISTANT_RECORDING_NOT_AUTHORIZED` (409) sin darlo, y lo mismo al iniciar
+  o reanudar por el canal. Las comprobaciones de AS-045 (atención, sede,
+  profesional) DEBERÁN responder antes que ésta.
+- **AS-166** — SI la autorización se revoca con la escucha abierta, ENTONCES
+  en la siguiente comprobación (AS-045) el sistema DEBERÁ detenerla, decírselo
+  al canal (`stopped` con `ASSISTANT_RECORDING_NOT_AUTHORIZED`) y cerrarlo con
+  **4409**; lo ya transcrito queda hasta su purga (AS-057).
+  > D-254 §4: se grabó con autorización; borrarlo es otra decisión.
+- **AS-167** — La lectura de la escucha (AS-056) DEBERÁ decir si la ficha
+  tiene la autorización vigente (`recordingAuthorized`).
+- **AS-168** — CUANDO el profesional de la atención —con lo que pide AS-045
+  salvo la autorización— registre desde la atención la autorización de grabar
+  que el paciente le da, el sistema DEBERÁ guardarla como PD-068 con su
+  instante y su usuario (PD-069) y una fila `CREATE` en la bitácora (PD-074),
+  y responder la lectura de AS-167; SI ya había una vigente, DEBERÁ responder
+  igual sin escribir nada.
+  > D-254 §3: el paciente la da en el consultorio, delante del médico, que no
+  > tiene `patient:write`. Revocarla sigue siendo de la ficha (PD-072).
+- **AS-169** — El CIE-10, la receta, los exámenes, las preguntas y el
+  borrador pedido a mano NO DEBERÁN depender de la autorización de grabar:
+  sólo del interruptor de la instalación, el de la sede y el permiso.
+  > D-254 §6: leen lo que el médico escribió, no la voz del paciente. El
+  > borrador sale de la escucha: sin escucha no hay de qué redactarlo
+  > (`ASSISTANT_TRANSCRIPT_EMPTY`).
+
+### 44. En pantalla (solo interfaz)
+
+- **AS-170** — En **Feriados y parámetros → Parámetros por sede**, MIENTRAS la
+  instalación tenga el asistente, la pantalla DEBERÁ ofrecer a administración
+  el interruptor «Asistente de IA» de la sede, que se guarda con los demás
+  parámetros; sin la instalación, NO DEBERÁ mostrarlo.
+- **AS-171** — MIENTRAS la sede de la atención tenga el asistente apagado, la
+  atención NO DEBERÁ mostrar nada del asistente: ni «Escuchar», ni el
+  borrador, ni las propuestas de CIE-10, receta o exámenes, ni las preguntas.
+- **AS-172** — En la ficha, junto al teléfono, MIENTRAS alguna sede del
+  alcance de quien la mira tenga el asistente encendido (AS-162), la pantalla
+  DEBERÁ mostrar el interruptor «Grabar la consulta para el asistente»:
+  encenderlo la registra; apagarlo la revoca y pregunta antes (PD-072).
+- **AS-173** — Al registrar la llegada, MIENTRAS la sede tenga el asistente
+  encendido, quien registra con `patient:write` DEBERÁ ver el mismo
+  interruptor, con su estado, para preguntárselo al paciente; NO DEBERÁ
+  condicionar la llegada.
+- **AS-174** — MIENTRAS la ficha no tenga la autorización vigente, la atención
+  DEBERÁ mostrar, en lugar de «Escuchar», «El paciente no ha autorizado grabar
+  la consulta.» y «Registrar la autorización…», que pide confirmar que el
+  paciente la dio y después ofrece «Escuchar»; SI la escucha se detiene por
+  AS-163 o AS-166, ENTONCES DEBERÁ decir por qué.
+- **AS-175** — CUANDO recepción registre o revoque la autorización con la
+  atención abierta en otra pantalla, la atención DEBERÁ reflejarlo al volver a
+  leer la escucha (al enfocar la ventana o tras detener), sin recargar.
+
 ---
 
 ## Códigos de error nuevos
@@ -1840,6 +1962,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-143, AS-146, AS-151 | Unitario con almacenes, reloj, reconocedor y proveedor falsos |
 | AS-145 | Integración contra PostgreSQL, con control positivo |
 | AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-160 (la base), AS-161, AS-162, AS-164, AS-165, AS-167, AS-168, AS-169 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-160 (el dominio), AS-163, AS-166 | Unitario con lector y reloj falsos; AS-163 y AS-166 también en la integración del canal |
+| AS-170 a AS-175 | Componente y composable; recorridos F-08 y F-02 |
 
 ## Preguntas abiertas
 
@@ -1849,7 +1974,7 @@ firma, cuánto se guarda `ai_run`, si los intentos rechazados cuentan en el
 techo, la reserva con varias instancias y la retención en cada proveedor.
 En **D-243**: si las propuestas salen en un derecho de acceso y cuánto se
 guarda la descartada. En **D-247**: escuchar sin la autorización de grabar
-hasta A3, el tope de 90 días de una transcripción sin firma, quién ve la
+hasta A3 (resuelto por A3: AS-165), el tope de 90 días de una transcripción sin firma, quién ve la
 transcripción, el léxico de la clínica y el estado de la escucha en una sola
 instancia de la API. En **D-249**: la ficha fuera del borrador, dónde va un
 diagnóstico dicho, de qué reloj son los 3 minutos, el borrador con la nota
@@ -1862,3 +1987,6 @@ por alergias y lo que la ficha ya sabe.
 prioridad que nadie marca. En **D-252**: interrumpir sin bloqueo, la escucha
 en pausa, firmar cualquier nota de la atención, qué secciones se miden y
 «Dejar de esperar».
+En **D-254**: dónde va el interruptor, con qué valor nacen las sedes, quién
+registra la autorización de grabar, qué pasa con lo transcrito al revocarla,
+si vale para todas las atenciones y qué funciones no la piden.
