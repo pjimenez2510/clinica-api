@@ -516,7 +516,7 @@ describe('the libreto’s receta, every field (AS-269 to AS-272)', () => {
   });
 
   it('AS-272 a dose said in units with no unit written takes the unit of the form, marked when the form was deduced', () => {
-    const line = backed({ form: null, doseAmount: 2, doseUnit: null, strength: '500 mg' }); // prettier-ignore
+    const line = backed({ form: null, doseAmount: 2, doseUnit: null, strength: '500 mg', quote: 'Amoxicilina 500 mg, dos tabletas cada 8 horas por 7 días' }); // prettier-ignore
     const { fields, unsaid } = proposedFields(line, { form: 'TABLET', concentration: '500 mg', route: 'O - Oral' }); // prettier-ignore
 
     expect(fields).toMatchObject({ doseAmount: 2, doseUnit: 'TABLET' });
@@ -533,5 +533,29 @@ describe('a dose read in milligrams of a tablet of that strength (AS-272)', () =
     expect(read(500).fields).toMatchObject({ doseAmount: 1, doseUnit: 'TABLET', quantity: 21 }); // prettier-ignore
     expect(read(500).unsaid).toContain('dose');
     expect(read(250).fields).toMatchObject({ doseAmount: 250, doseUnit: 'MILLIGRAM' }); // prettier-ignore
+  });
+});
+
+describe('a count is said with its unit (AS-272, code review)', () => {
+  const tablet = { form: 'TABLET' as const, concentration: '500 mg', route: 'O - Oral' }; // prettier-ignore
+
+  it('AS-272 «paracetamol de 500» read as a dose of 500 with no unit is no dose of 500 tablets: one tablet, deduced', () => {
+    const line = backed({ drug: 'paracetamol', strength: '500 mg', form: null, doseAmount: 500, doseUnit: null, durationDays: 3, quote: 'paracetamol de 500 cada 8 horas por 3 días' }); // prettier-ignore
+
+    const { fields, unsaid } = proposedFields(line, tablet);
+
+    expect(fields).toMatchObject({ doseAmount: 1, doseUnit: 'TABLET', quantity: 9 }); // prettier-ignore
+    expect(unsaid).toContain('dose');
+  });
+
+  it('AS-272 «dos tabletas» is a count; «1 tableta» after the medicine is no strength', () => {
+    const line = backed({ form: 'TABLET', doseAmount: 2, doseUnit: null, quote: 'Amoxicilina 500 mg, dos tabletas cada 8 horas por 7 días' }); // prettier-ignore
+    expect(proposedFields(line, tablet).fields).toMatchObject({ doseAmount: 2, doseUnit: 'TABLET' }); // prettier-ignore
+    expect(strengthIn('Paracetamol 1 tableta cada 8 horas', 'paracetamol')).toBeNull(); // prettier-ignore
+    expect(strengthIn('amoxicilina de doscientos cincuenta', 'amoxicilina')).toBeNull(); // prettier-ignore
+  });
+
+  it('AS-270 a bare figure no presentation has leaves the model’s choice standing', () => {
+    expect(choosePresentation(PARACETAMOL, PARACETAMOL[3], { form: null, strength: '1' }).chosen).toMatchObject({ concentration: '500 mg' }); // prettier-ignore
   });
 });

@@ -133,6 +133,12 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
   quince: 15,
   veinte: 20,
   treinta: 30,
+  cuarenta: 40,
+  cincuenta: 50,
+  sesenta: 60,
+  setenta: 70,
+  ochenta: 80,
+  noventa: 90,
   // AS-269. The strengths a physician says in words: «de quinientos».
   cien: 100,
   doscientos: 200,
@@ -403,8 +409,11 @@ export function strengthIn(sentence: string, drug: string): string | null {
   const head = headWord(drug);
   if (head === '') return null;
   const words = Object.keys(NUMBER_WORDS).filter((word) => NUMBER_WORDS[word]! >= 100).join('|'); // prettier-ignore
+  const numbers = Object.keys(NUMBER_WORDS).join('|');
+  // Not a count («1 tableta», code review), nor the first word of a compound
+  // figure («doscientos cincuenta», clinical review M3).
   const match = new RegExp(
-    `${head}\\p{L}*\\s+(?:de\\s+)?(\\d+(?:[.,]\\d+)?|${words})\\b(\\s*(?:miligramos?|mg|microgramos?|mcg|gramos?|g)\\b)?`,
+    `${head}\\p{L}*\\s+(?:de\\s+)?(\\d+(?:[.,]\\d+)?|${words})\\b(?!\\s+(?:${UNIT_WORDS}|y\\b|${numbers})\\b)(\\s*(?:miligramos?|mg|microgramos?|mcg|gramos?|g)\\b)?`,
     'u',
   ).exec(foldText(sentence));
   if (!match) return null;
@@ -464,6 +473,10 @@ export function choosePresentation(
       presentationFor(presentation, { form: said.form, strength }) !== null
     );
   });
+  // A bare figure no presentation has is no strength: read as unsaid (review).
+  if (bare && agreeing.length === 0) {
+    return choosePresentation(presentations, modelChoice, { form: said.form, strength: null }); // prettier-ignore
+  }
   if (agreeing.length !== 1) {
     return {
       chosen: null,
@@ -578,6 +591,23 @@ const DOSE_UNIT_SYMBOLS: Readonly<Partial<Record<DoseUnit, string>>> = {
   INTERNATIONAL_UNIT: 'UI',
 };
 
+/** The words a count of units is said with: «una cápsula», «2 tabletas». */
+const UNIT_WORDS =
+  'tabletas?|capsulas?|comprimidos?|grageas?|pastillas?|supositorios?|ovulos?|sobres?|parches?';
+
+/** AS-272. Whether the sentence says this amount as a count of units. */
+function countSaid(sentence: string, amount: number): boolean {
+  const folded = foldText(sentence);
+  for (const match of folded.matchAll(
+    new RegExp(`(\\d+(?:[.,]\\d+)?|\\p{L}+)\\s+(?:${UNIT_WORDS})\\b`, 'gu'),
+  )) {
+    const said = match[1]!;
+    const value = /\d/.test(said) ? Number(said.replace(',', '.')) : NUMBER_WORDS[said]; // prettier-ignore
+    if (value === amount) return true;
+  }
+  return false;
+}
+
 /** AS-067. The fields the system filled in and nobody wrote. */
 export type UnsaidField = 'presentation' | 'route' | 'dose' | 'quantity';
 
@@ -632,8 +662,18 @@ export function proposedFields(
   let doseAmount = doseByWeight ? null : line.doseAmount;
   let doseUnit = doseByWeight ? null : line.doseUnit;
   const unit = form === null ? null : DOSAGE_FORMS[form].unit;
-  // AS-272. «Una cápsula»: an amount said in units takes the form's unit;
-  // marked when the form itself was the system's.
+  // AS-272. «Una cápsula»: an amount said WITH a word of the form takes the
+  // form's unit, marked when the form was the system's. A bare figure is no
+  // count: «de 500» is the strength, and 500 tablets would be the reading
+  // (code review, grave). A counted unit not said so is emptied too.
+  if (
+    doseAmount !== null &&
+    (doseUnit === null || COUNTABLE.has(doseUnit)) &&
+    !countSaid(line.quote, doseAmount)
+  ) {
+    doseAmount = null;
+    doseUnit = null;
+  }
   if (doseAmount !== null && doseUnit === null && unit !== null) {
     doseUnit = unit;
     if (line.form === null) unsaid.push('dose');
