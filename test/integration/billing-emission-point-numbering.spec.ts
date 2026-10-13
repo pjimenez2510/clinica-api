@@ -476,6 +476,7 @@ describe('SRI-111 el número y la clave cambian sólo con su renumeración', () 
 
   it('SRI-111 la base no admite una renumeración de un comprobante no devuelto, ni hacia un número por debajo del siguiente libre', async () => {
     const returned = await aReturnedInvoice();
+    const refused = await aReturnedInvoice();
     await fixNext(10);
 
     // Below the next free number: into a hole the SRI may already hold.
@@ -483,7 +484,6 @@ describe('SRI-111 el número y la clave cambian sólo con su renumeración', () 
       /voucher_renumbering_is_due/,
     );
 
-    const refused = await aReturnedInvoice();
     await context.prisma.$executeRaw`
       UPDATE "electronic_voucher" SET "status" = 'NOT_AUTHORISED'
        WHERE "id" = ${refused.voucher.id}::uuid`;

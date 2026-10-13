@@ -1415,7 +1415,11 @@ describe('SRI-108 a SRI-114 renumerar lo devuelto con «secuencial registrado»'
       include: { attempts: true },
     });
     expect(old).toMatchObject({ status: 'SUPERSEDED', invoiceId: null });
-    expect(old.attempts).toHaveLength(1);
+    // Its reception, and the question asked before renumbering it.
+    expect(old.attempts.map((attempt) => attempt.operation).sort()).toEqual([
+      'AUTHORISATION',
+      'RECEPTION',
+    ]);
 
     const trail = await prisma.voucherRenumbering.findFirstOrThrow({
       where: { invoiceId: invoice.id },
