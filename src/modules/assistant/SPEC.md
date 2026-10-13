@@ -1505,7 +1505,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-118** — MIENTRAS la nota 002 de la atención esté en borrador y la cuenta
   pueda escribirla, la pestaña Nota DEBERÁ mostrar «Para completar la nota»
   con las secciones de su plantilla que siguen vacías, en su orden y con su
-  título —las obligatorias, señaladas como necesarias para firmar—, sin
+  título —las opcionales, señaladas como tales, como en el formulario—, sin
   llamar al servidor y con el asistente apagado o sin `assistant:use`; una
   sección DEBERÁ salir de la lista en cuanto tenga texto, sin esperar a que
   se guarde; «Antecedentes» DEBERÁ contar como escrita cuando la ficha la
@@ -1569,14 +1569,18 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-124** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
   (**45 s**) o el techo no admite el intento, ENTONCES el sistema DEBERÁ
   responder el error con su código sin guardar ninguna revisión ni tocar la
-  anterior; ninguna línea de log, mensaje de error ni fila de la revisión
+  anterior; SI la atención se cerró mientras se revisaba, ENTONCES NO DEBERÁ
+  guardar nada; la respuesta NO DEBERÁ guardarse en ningún caché
+  (`no-store`); ninguna línea de log, mensaje de error ni fila de la revisión
   DEBERÁ contener la transcripción, la nota ni una pregunta (sólo cuántas);
   mandarlas DEBERÁ dejar su `EXPORT` en la bitácora; y las marcas que separan
-  la conversación de la nota DEBERÁN romperse si el texto las contiene
+  la conversación de la nota, y el título de la plantilla, DEBERÁN romperse
+  si el texto los contiene, también escondidos tras un carácter invisible
   (AS-095).
 - **AS-125** — CUANDO el profesional descarte una pregunta («No hace falta»), el
   sistema DEBERÁ hacer lo de AS-038 y exigir lo de AS-039; una pregunta igual
-  NO DEBERÁ volver en las revisiones siguientes de esa atención (AS-120).
+  NO DEBERÁ volver en las revisiones siguientes de esa atención (AS-120), ni
+  en la que ya estaba en curso al descartarla.
 
 ### 36. Medir y demostrar las preguntas
 
