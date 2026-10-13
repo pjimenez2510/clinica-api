@@ -199,6 +199,10 @@ model User {
   accountsChanged     PatientAccount[]           @relation("PatientAccountChanger")
   invoicesChanged     Invoice[]                  @relation("InvoiceChanger")
   creditNotesChanged  CreditNote[]               @relation("CreditNoteChanger")
+  /// BI-306. The «próximo número» of an emission point someone fixed.
+  emissionPointNumberingsChanged EmissionPointNumbering[] @relation("EmissionPointNumberingChanger")
+  /// SRI-109. The vouchers returned with the 45 someone renumbered.
+  voucherRenumberings VoucherRenumbering[] @relation("VoucherRenumberer")
 
   /// REQ-090. Who loaded each issuer certificate (SRI-082).
   signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
@@ -1353,6 +1357,9 @@ model EmissionPoint {
 
   invoices    Invoice[]
   creditNotes CreditNote[]
+  /// BI-306. Its «próximo número», per voucher type.
+  numberings   EmissionPointNumbering[]
+  renumberings VoucherRenumbering[]
 
   @@unique([siteId, code], map: "emission_point_code_unique_per_site")
   @@map("emission_point")
@@ -5021,6 +5028,8 @@ model Invoice {
 
   /// SRI-006. Its electronic voucher, one for ever, once prepared.
   electronicVoucher ElectronicVoucher?
+  /// SRI-109. The numbers the SRI returned with the 45, and what replaced them.
+  renumberings      VoucherRenumbering[]
 
   /// DOC-003, DOC-076. The archived RIDE. The invoice itself is the electronic
   /// voucher; this is the printable representation the SRI's Anexo 2 describes.
@@ -5100,6 +5109,8 @@ model CreditNote {
   lines             CreditNoteLine[]
   /// SRI-086. Its electronic voucher, one for ever, once prepared.
   electronicVoucher ElectronicVoucher?
+  /// SRI-109. As the invoice's.
+  renumberings      VoucherRenumbering[]
   /// SRI-089. Its archived RIDEs.
   documentRenders   DocumentRender[]
 
@@ -5713,6 +5724,7 @@ model ElectronicVoucher {
   /// SRI-086. Of an invoice OR of a credit note, exactly one
   /// (`electronic_voucher_one_document`), with its type: `01` the invoice,
   /// `04` the credit note (`electronic_voucher_type_matches_its_document`).
+  /// A SUPERSEDED voucher (SRI-109) names neither: `voucher_renumbering` does.
   invoiceId    String?     @unique(map: "electronic_voucher_one_per_invoice") @map("invoice_id") @db.Uuid
   invoice      Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_invoice_fk")
   creditNoteId String?     @unique(map: "electronic_voucher_one_per_credit_note") @map("credit_note_id") @db.Uuid
@@ -5727,7 +5739,8 @@ model ElectronicVoucher {
   environment   String @db.Char(1)
   schemaVersion String @map("schema_version") @db.VarChar(8)
 
-  /// PREPARED, SIGNED, RECEIVED, AUTHORISED, RETURNED or NOT_AUTHORISED.
+  /// PREPARED, SIGNED, RECEIVED, AUTHORISED, RETURNED, NOT_AUTHORISED or
+  /// SUPERSEDED (SRI-109: returned with the 45 and renumbered).
   status        String  @default("PREPARED") @db.VarChar(16)
   blockedReason String? @map("blocked_reason") @db.VarChar(48)
 
@@ -5755,12 +5768,72 @@ model ElectronicVoucher {
   attempts ElectronicVoucherAttempt[]
   openings SigningCertificateOpening[]
   mailings ElectronicVoucherMailing[]
+  /// SRI-109. The renumbering that replaced it, when the SRI answered 45.
+  renumberings VoucherRenumbering[]
 
   @@unique([invoiceId, accessKey], map: "electronic_voucher_invoice_key_pair")
   @@unique([creditNoteId, accessKey], map: "electronic_voucher_credit_note_key_pair")
   @@unique([id, accessKey], map: "electronic_voucher_id_key_pair")
   @@index([siteId, status], map: "electronic_voucher_by_site_status")
   @@map("electronic_voucher")
+}
+
+/// BI-306, BI-307. The «próximo número» of an emission point for one voucher
+/// type, and the last number the clinic issued with its previous system. Never
+/// at or below the largest sequential used (`emission_point_numbering_not_below_used`,
+/// a trigger under the point's row lock); the previous row goes to
+/// `record_version`. Read by `next_voucher_sequential` (BI-308), which numbers
+/// every invoice, credit note and renumbering.
+model EmissionPointNumbering {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  emissionPointId String        @map("emission_point_id") @db.Uuid
+  emissionPoint   EmissionPoint @relation(fields: [emissionPointId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "emission_point_numbering_emission_point_fk")
+  /// `01` invoice, `04` credit note: the SRI numbers them apart.
+  documentType    String        @map("document_type") @db.Char(2)
+
+  nextSequential     Int?    @map("next_sequential")
+  previousSystemLast Int?    @map("previous_system_last")
+  reason             String  @db.VarChar(300)
+
+  changedById String   @map("changed_by") @db.Uuid
+  changedBy   User     @relation("EmissionPointNumberingChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "emission_point_numbering_changed_by_fk")
+  changedAt   DateTime @map("changed_at") @db.Timestamptz(6)
+
+  @@unique([emissionPointId, documentType], map: "emission_point_numbering_one_per_type")
+  @@map("emission_point_numbering")
+}
+
+/// SRI-109, SRI-111. A voucher the SRI returned with the 45 («secuencial
+/// registrado») and never authorised, given the next number. Append-only. It
+/// is what lets the number and the key of an invoice or credit note change,
+/// and a voucher become SUPERSEDED with no document.
+model VoucherRenumbering {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  supersededVoucherId String            @unique(map: "voucher_renumbering_once_per_voucher") @map("superseded_voucher_id") @db.Uuid
+  previousAccessKey   String            @map("previous_access_key") @db.VarChar(49)
+  supersededVoucher   ElectronicVoucher @relation(fields: [supersededVoucherId, previousAccessKey], references: [id, accessKey], onDelete: Restrict, onUpdate: NoAction, map: "voucher_renumbering_voucher_fk")
+
+  invoiceId    String?     @map("invoice_id") @db.Uuid
+  invoice      Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "voucher_renumbering_invoice_fk")
+  creditNoteId String?     @map("credit_note_id") @db.Uuid
+  creditNote   CreditNote? @relation(fields: [creditNoteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "voucher_renumbering_credit_note_fk")
+
+  emissionPointId    String        @map("emission_point_id") @db.Uuid
+  emissionPoint      EmissionPoint @relation(fields: [emissionPointId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "voucher_renumbering_emission_point_fk")
+  previousSequential String        @map("previous_sequential") @db.VarChar(9)
+  newSequential      String        @map("new_sequential") @db.VarChar(9)
+  /// What the SRI said, as it said it.
+  sriMessage         String        @map("sri_message") @db.VarChar(1000)
+
+  renumberedById String   @map("renumbered_by") @db.Uuid
+  renumberedBy   User     @relation("VoucherRenumberer", fields: [renumberedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "voucher_renumbering_renumbered_by_fk")
+  renumberedAt   DateTime @map("renumbered_at") @db.Timestamptz(6)
+
+  @@index([invoiceId], map: "voucher_renumbering_by_invoice")
+  @@index([creditNoteId], map: "voucher_renumbering_by_credit_note")
+  @@map("voucher_renumbering")
 }
 
 /// SRI-100 (D-213 §1). Each «Reenviar» that LEFT: to whom, by whom, when.
