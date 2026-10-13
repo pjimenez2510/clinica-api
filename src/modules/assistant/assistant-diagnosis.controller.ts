@@ -16,6 +16,10 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -30,8 +34,10 @@ import {
   DiagnosisReadingDto,
 } from './dto/diagnosis-proposal.dto';
 
-/** AS-026. Whether `ASSISTANT_ENABLED` is on, read once at boot. */
-export const ASSISTANT_ENABLED = Symbol('ASSISTANT_ENABLED');
+import { ASSISTANT_ENABLED } from '../../shared/config/assistant-enabled';
+
+/** AS-026. Re-exported: the tests override it from here. */
+export { ASSISTANT_ENABLED };
 
 /**
  * AS-026 to AS-044. The CIE-10 the assistant proposes in Diagnósticos.
@@ -53,6 +59,8 @@ export class AssistantDiagnosisController {
     private readonly proposals: DiagnosisProposalService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-027, AS-036. The baseline and the proposals of the latest reading. */
@@ -66,7 +74,7 @@ export class AssistantDiagnosisController {
   ): Promise<DiagnosisOverviewDto> {
     this.requireEnabled();
     return toResponse(
-      await this.proposals.overview(encounterId, this.requester(req)),
+      await this.proposals.overview(encounterId, await this.requester(req)),
     );
   }
 
@@ -84,7 +92,10 @@ export class AssistantDiagnosisController {
     @Req() req: Request,
   ): Promise<DiagnosisReadingDto> {
     this.requireEnabled();
-    const reading = await this.proposals.read(encounterId, this.requester(req));
+    const reading = await this.proposals.read(
+      encounterId,
+      await this.requester(req),
+    );
     return {
       ...toResponse(reading),
       found: reading.found,
@@ -108,7 +119,7 @@ export class AssistantDiagnosisController {
     return toResponse(
       await this.proposals.accept(
         { encounterId, suggestionId, diagnosisId: dto.diagnosisId },
-        this.requester(req),
+        await this.requester(req),
       ),
     );
   }
@@ -128,7 +139,7 @@ export class AssistantDiagnosisController {
     return toResponse(
       await this.proposals.discard(
         { encounterId, suggestionId },
-        this.requester(req),
+        await this.requester(req),
       ),
     );
   }
@@ -138,12 +149,13 @@ export class AssistantDiagnosisController {
     if (!this.enabled) throw new NotFoundException();
   }
 
-  private requester(req: Request): ProposalRequester {
+  private async requester(req: Request): Promise<ProposalRequester> {
     const principal = this.currentUser.requirePrincipal();
+    const enabled = await this.siteSwitch.enabledSites();
     return {
       userId: this.currentUser.requireUserId(),
-      readSites: withAssistant(principal, 'record:read'),
-      writeSites: withAssistant(principal, 'record:write'),
+      readSites: withAssistant(principal, 'record:read', enabled),
+      writeSites: withAssistant(principal, 'record:write', enabled),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };

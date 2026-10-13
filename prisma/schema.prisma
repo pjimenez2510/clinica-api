@@ -1504,6 +1504,11 @@ model SiteParameter {
   /// clave de acceso».
   requireCertifiedSignature Boolean @default(true) @map("require_certified_signature")
 
+  /// AS-160 (A3, D-254 §2). The assistant at this site. OFF for a new site
+  /// (P7: every function starts off); the sites that existed at the migration
+  /// were switched on, as they were. Read on every assistant request.
+  assistantEnabled Boolean @default(false) @map("assistant_enabled")
+
   /// D-A-011. Fifteen years from the last encounter: 5 active + 10 passive.
   /// NOT setting a period is what breaches the LOPDP — art. 10.i obliges the
   /// controller to «establecer plazos para su supresión o revisión periódica»
@@ -5871,6 +5876,8 @@ enum AuthorizationPurpose {
   PHOTOS
   RESEARCH
   THIRD_PARTY_SHARING
+  /// AS-164 (A3). Grabar la consulta para el asistente; sin canal.
+  ASSISTANT_RECORDING
 
   @@map("authorization_purpose")
 }

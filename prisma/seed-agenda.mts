@@ -109,6 +109,17 @@ async function main() {
       orderBy: { id: 'asc' },
     })) ?? (await ensureDevelopmentEstablishment(prisma));
 
+  // AS-160 (A3, D-254 §2). The assistant is born off at a new site; the
+  // development clinic's sites are switched on WHEN THIS SEED CREATES THEM, as
+  // the migration left the ones that existed — never again on a re-run, which
+  // would undo an administrator's choice.
+  const newSites = new Set<string>();
+  for (const mspUnicode of ['DEV-NORTE', 'DEV-SUR']) {
+    if (!(await prisma.site.findUnique({ where: { mspUnicode } }))) {
+      newSites.add(mspUnicode);
+    }
+  }
+
   const norte = await prisma.site.upsert({
     where: { mspUnicode: 'DEV-NORTE' },
     // También al actualizar: las sedes de una base ya sembrada existen sin
@@ -154,6 +165,15 @@ async function main() {
       parishConceptId: parish?.id ?? null,
     },
   });
+
+  for (const site of [norte, sur]) {
+    if (newSites.has(site.mspUnicode)) {
+      await prisma.siteParameter.update({
+        where: { siteId: site.id },
+        data: { assistantEnabled: true },
+      });
+    }
+  }
 
   for (const [site, name] of [
     [norte, 'Consultorio 1'],

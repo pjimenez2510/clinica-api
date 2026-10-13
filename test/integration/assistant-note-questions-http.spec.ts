@@ -33,7 +33,13 @@ import type { Env } from '../../src/shared/config/env.schema';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createEncounter, createPatient, createSite } from './setup/fixtures';
+import {
+  createEncounter,
+  createPatient,
+  createSite,
+  enableAssistant,
+  authorizeRecording,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 import { withReadRevision } from './setup/read-revision';
 
@@ -123,8 +129,11 @@ describe('las preguntas para completar la nota por HTTP (AS-119 a AS-125)', () =
     await syncAuthorisation(prisma);
     registry.invalidate();
     siteId = (await createSite(prisma)).id;
+    await enableAssistant(prisma, siteId);
     patientId = (await createPatient(prisma)).id;
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
+    // AS-169. The draft and the questions read the conversation: authorized.
+    await authorizeRecording(prisma, patientId, doctor.userId);
     secondDoctor = await signIn('MEDICO', 'medico2@clinica.ec', '0602910945');
     nurseToken = (await signIn('ENFERMERIA', 'enfermeria@clinica.ec', '1104637283')).token; // prettier-ignore
     ({ encounterId, noteId } = await attentionHeard(doctor.practitionerId));
@@ -285,6 +294,7 @@ describe('las preguntas para completar la nota por HTTP (AS-119 a AS-125)', () =
     expect(codeOf(await post(encounterId, '', secondDoctor.token).expect(403))).toBe('ASSISTANT_NOT_ENCOUNTER_OWNER'); // prettier-ignore
     expect(codeOf(await get(encounterId, secondDoctor.token).expect(403))).toBe('ASSISTANT_NOT_ENCOUNTER_OWNER'); // prettier-ignore
     const elsewhere = await createSite(prisma);
+    await enableAssistant(prisma, elsewhere.id);
     const far = await attentionHeard(doctor.practitionerId, elsewhere.id);
     expect(codeOf(await post(far.encounterId, '', doctor.token).expect(404))).toBe('ASSISTANT_ENCOUNTER_NOT_FOUND'); // prettier-ignore
     expect(await prisma.aiRun.count()).toBe(0);

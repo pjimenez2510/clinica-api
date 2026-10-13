@@ -1,3 +1,7 @@
+import {
+  RECORDING_AUTHORIZATION,
+  type RecordingAuthorization,
+} from '../../../shared/clinical/recording-authorization.port';
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -26,6 +30,7 @@ import {
   AssistantReadingInProgressError,
   AssistantTranscriptEmptyError,
   SuggestionNotFoundError,
+  AssistantRecordingNotAuthorizedError,
 } from '../domain/assistant.errors';
 import type { TranscriptLine } from '../domain/note-draft';
 import {
@@ -104,6 +109,8 @@ export class NoteQuestionService {
     @Inject(ACCESS_AUDIT_RECORDER) private readonly audit: AccessAuditRecorder,
     @Inject(NOTE_DRAFT_CLOCK) private readonly clock: () => Date,
     @Inject(ASSISTANT_DEMO) private readonly demo: boolean,
+    @Inject(RECORDING_AUTHORIZATION)
+    private readonly recording: RecordingAuthorization,
   ) {
     this.lexicon = new LexiconCache(notes, clock, this.logger, codeOf);
   }
@@ -125,6 +132,11 @@ export class NoteQuestionService {
     requester: QuestionRequester,
   ): Promise<QuestionsOverview> {
     const encounter = await this.ownLiveEncounter(encounterId, requester);
+    // AS-169 (revisión clínica G1). The questions read the conversation:
+    // without the authorization it does not leave for a provider.
+    if (!(await this.recording.isAuthorized(encounter.patientId))) {
+      throw new AssistantRecordingNotAuthorizedError();
+    }
     if (this.checking.has(encounter.id)) {
       throw new AssistantReadingInProgressError();
     }

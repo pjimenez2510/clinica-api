@@ -15,6 +15,10 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -41,6 +45,8 @@ export class AssistantNoteQuestionsController {
     private readonly questions: NoteQuestionService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-122. The questions of the latest review. */
@@ -53,7 +59,7 @@ export class AssistantNoteQuestionsController {
     @Req() req: Request,
   ): Promise<NoteQuestionsOverviewDto> {
     this.requireEnabled();
-    return toResponse(await this.questions.overview(encounterId, this.requester(req))); // prettier-ignore
+    return toResponse(await this.questions.overview(encounterId, await this.requester(req))); // prettier-ignore
   }
 
   /** AS-119, AS-123. Reviews the note against the conversation, now. */
@@ -70,7 +76,7 @@ export class AssistantNoteQuestionsController {
     @Req() req: Request,
   ): Promise<NoteQuestionsOverviewDto> {
     this.requireEnabled();
-    return toResponse(await this.questions.check(encounterId, this.requester(req))); // prettier-ignore
+    return toResponse(await this.questions.check(encounterId, await this.requester(req))); // prettier-ignore
   }
 
   /** AS-125. «No hace falta». */
@@ -86,7 +92,7 @@ export class AssistantNoteQuestionsController {
   ): Promise<NoteQuestionsOverviewDto> {
     this.requireEnabled();
     return toResponse(
-      await this.questions.discard({ encounterId, suggestionId }, this.requester(req)), // prettier-ignore
+      await this.questions.discard({ encounterId, suggestionId }, await this.requester(req)), // prettier-ignore
     );
   }
 
@@ -95,11 +101,12 @@ export class AssistantNoteQuestionsController {
     if (!this.enabled) throw new NotFoundException();
   }
 
-  private requester(req: Request): QuestionRequester {
+  private async requester(req: Request): Promise<QuestionRequester> {
     const principal = this.currentUser.requirePrincipal();
+    const enabled = await this.siteSwitch.enabledSites();
     return {
       userId: this.currentUser.requireUserId(),
-      writeSites: withAssistant(principal, 'record:write'),
+      writeSites: withAssistant(principal, 'record:write', enabled),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };

@@ -18,7 +18,12 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createEncounter, createPatient, createSite } from './setup/fixtures';
+import {
+  createEncounter,
+  createPatient,
+  createSite,
+  enableAssistant,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -90,6 +95,9 @@ describe('los signos dictados por HTTP (AS-180, AS-184 a AS-187, AS-196)', () =>
     registry.invalidate();
     siteId = (await createSite(prisma)).id;
     otherSiteId = (await createSite(prisma)).id;
+    // AS-160 (A3). A new site is born with the assistant off.
+    await enableAssistant(prisma, siteId);
+    await enableAssistant(prisma, otherSiteId);
     nurse = (await signIn('ENFERMERIA', 'enfermeria@clinica.ec', '1104637283')).token; // prettier-ignore
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
     colleague = (await signIn('MEDICO', 'medico2@clinica.ec', '0602910945')).token; // prettier-ignore
@@ -203,6 +211,21 @@ describe('los signos dictados por HTTP (AS-180, AS-184 a AS-187, AS-196)', () =>
     expect(clinicaAi).not.toHaveBeenCalled();
 
     // Control: in its own site the same request reads.
+    await dictate(encounterId, nurse).expect(200);
+  });
+
+  it('AS-161 a site with the assistant switched off takes no dictation, and nothing reaches clinica-ai', async () => {
+    await prisma.siteParameter.update({ where: { siteId }, data: { assistantEnabled: false } }); // prettier-ignore
+
+    const refused = await dictate(encounterId, nurse).expect(404);
+    expect((refused.body as Problem).code).toBe(
+      'ASSISTANT_ENCOUNTER_NOT_FOUND',
+    );
+    await limits(encounterId, nurse).expect(404);
+    expect(clinicaAi).not.toHaveBeenCalled();
+
+    // Control: switched on again, the same request reads.
+    await enableAssistant(prisma, siteId);
     await dictate(encounterId, nurse).expect(200);
   });
 

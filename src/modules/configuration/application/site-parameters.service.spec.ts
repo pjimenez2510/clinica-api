@@ -56,6 +56,7 @@ const CURRENT: SiteParameterView = {
   unmatchedResultDeadlineHours: 24,
   bpReferenceSystolic: 140,
   bpReferenceDiastolic: 90,
+  assistantEnabled: false,
 };
 
 interface Call {
@@ -476,6 +477,7 @@ describe('los parámetros de operación de una sede', () => {
       unmatchedResultDeadlineHours: 24,
       bpReferenceSystolic: 140,
       bpReferenceDiastolic: 90,
+      assistantEnabled: false,
     });
     expect(recorded[0]?.after).toMatchObject({ overbookingCap: 4 });
   });

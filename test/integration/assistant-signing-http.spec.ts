@@ -49,6 +49,8 @@ import {
   createEncounter,
   createPatient,
   createSite,
+  enableAssistant,
+  authorizeRecording,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 import { withReadRevision } from './setup/read-revision';
@@ -167,6 +169,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
     await syncAuthorisation(prisma);
     registry.invalidate();
     siteId = (await createSite(prisma)).id;
+    await enableAssistant(prisma, siteId);
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
     secondDoctor = await signIn('MEDICO', 'medico2@clinica.ec', '0602910945');
     ({ encounterId, noteId } = await attentionHeard(doctor.practitionerId));
@@ -184,6 +187,8 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
   /** An attention ready to be signed —diagnosis, block F, the 002 written— and heard. */
   async function attentionHeard(practitionerId: string) {
     const patient = await createPatient(prisma);
+    // AS-169. The draft reads the conversation: authorized.
+    await authorizeRecording(prisma, patient.id, doctor.userId);
     const encounter = await createEncounter(prisma, { siteId, practitionerId, patientId: patient.id }); // prettier-ignore
     const id = randomUUID();
     await prisma.clinicalNote.create({
@@ -413,6 +418,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
     pseudonymizer.current = held;
     await postDraft('').expect(202);
     const elsewhere = await createSite(prisma, 'Sede Sur');
+    await enableAssistant(prisma, elsewhere.id);
     const farDoctor = await signIn('MEDICO', 'medico3@clinica.ec', '1713175071', elsewhere.id); // prettier-ignore
 
     const refused = await withReadRevision(
