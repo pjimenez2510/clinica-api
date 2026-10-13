@@ -1,7 +1,7 @@
 {
   "label": "as284-falso",
-  "startedAt": "2026-10-13 11:29:13",
-  "commit": "269200f6+cambios",
+  "startedAt": "2026-10-13 11:31:18",
+  "commit": "3149c462+cambios",
   "provider": "demostración",
   "casesSha256": "ba6db0bcc29dd193432d80d2057c4de336f235b798304516460bebfdc8923bc5",
   "stopped": null,
@@ -166,7 +166,7 @@
         "high": 0.9266345767456822,
         "rate": 0.8333333333333334
       },
-      "p50Ms": 0.5,
+      "p50Ms": 0,
       "p90Ms": 1
     }
   },
@@ -208,7 +208,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 8,
+      "latencyMs": 7,
       "values": [
         {
           "field": "systolicBp",
@@ -269,7 +269,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 3,
+      "latencyMs": 2,
       "values": [
         {
           "field": "systolicBp",
@@ -392,7 +392,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "temperatureC",
@@ -429,7 +429,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [],
       "notLiteral": 0,
       "complaint": "correct",
@@ -447,7 +447,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "temperatureC",
@@ -484,7 +484,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "weightKg",
@@ -515,7 +515,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "heightCm",
@@ -564,7 +564,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -693,7 +693,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "heartRate",
@@ -724,7 +724,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "hemoglobinGDl",
@@ -939,7 +939,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "abdominalCircumferenceCm",
@@ -1001,7 +1001,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -1260,7 +1260,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "heartRate",
@@ -1291,7 +1291,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "headCircumferenceCm",
@@ -1439,7 +1439,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "heartRate",
@@ -1464,7 +1464,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "weightKg",
@@ -1514,7 +1514,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -1545,7 +1545,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "systolicBp",
@@ -1624,7 +1624,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "temperatureC",
@@ -1655,7 +1655,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "heightCm",
@@ -1821,7 +1821,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -2036,7 +2036,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "weightKg",
@@ -2067,7 +2067,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "heightCm",
@@ -2319,7 +2319,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -2356,7 +2356,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "systolicBp",
@@ -2553,7 +2553,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -2596,7 +2596,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "heightCm",
@@ -2664,7 +2664,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -2701,7 +2701,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "systolicBp",
@@ -2775,7 +2775,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "weightKg",
@@ -2812,7 +2812,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "heartRate",
@@ -2886,7 +2886,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "heightCm",
@@ -2929,7 +2929,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "weightKg",
@@ -2966,7 +2966,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "hemoglobinGDl",
@@ -3041,7 +3041,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "hemoglobinGDl",
@@ -3066,7 +3066,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -3244,7 +3244,7 @@
       "arm": "oido",
       "voice": "por persona",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "oxygenSaturation",
@@ -3312,7 +3312,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "weightKg",
@@ -3374,7 +3374,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -3442,7 +3442,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "systolicBp",
@@ -3479,7 +3479,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "respiratoryRate",
@@ -3547,7 +3547,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "temperatureC",
@@ -3578,7 +3578,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "heartRate",
@@ -3603,7 +3603,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "temperatureC",
@@ -3628,7 +3628,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -3684,7 +3684,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "values": [
         {
           "field": "heartRate",
@@ -3709,7 +3709,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "values": [
         {
           "field": "systolicBp",
@@ -3931,7 +3931,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -3982,7 +3982,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -3999,7 +3999,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4016,7 +4016,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4050,7 +4050,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4067,7 +4067,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4101,7 +4101,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4118,7 +4118,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4152,7 +4152,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4186,7 +4186,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4220,7 +4220,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4237,7 +4237,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4271,7 +4271,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4288,7 +4288,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 0,
+      "latencyMs": 1,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,
@@ -4322,7 +4322,7 @@
       "arm": "escrito",
       "voice": "—",
       "reader": "assistant",
-      "latencyMs": 1,
+      "latencyMs": 0,
       "notLiteral": 0,
       "complaint": "none",
       "complaintWorded": null,

@@ -1,6 +1,6 @@
 # B3 — La preparación escuchada: medición (as284-falso)
 
-- Corrida: 2026-10-13 11:29:13 (America/Guayaquil), commit `269200f6+cambios`, proveedor **demostración**.
+- Corrida: 2026-10-13 11:31:18 (America/Guayaquil), commit `3149c462+cambios`, proveedor **demostración**.
 - Lecturas: 132 de 132.
 - Casos inventados (`eval/casos/preparaciones.json`, `eval/casos/preparaciones-motivo.json` sólo escrito, el reservado de B2 sólo en cifras); sin seudonimizador (EV-2).
 
@@ -9,7 +9,7 @@
 | escrito | 42/42 | 117/126 (92,9 %; 87,0 % – 96,2 %) | **0** | **0** | 20/34 (58,8 %), inventados 1; redactados 9/21 (42,9 %; 24,5 % – 63,5 %), **redactados sin poder 0** | 108/136 (79,4 %) | 0 / 1 ms | ✓ ✗ ✗ |
 | oido | 42/42 | 98/126 (77,8 %; 69,8 % – 84,2 %) | **0** | **0** | 19/34 (55,9 %), inventados 1; redactados 8/21 (38,1 %; 20,8 % – 59,1 %), **redactados sin poder 0** | 102/136 (75,0 %) | 0 / 1 ms | ✓ ✗ ✗ |
 | motivo | 18/18 | 26/32 (81,3 %; 64,7 % – 91,1 %) | **0** | **0** | 10/13 (76,9 %), inventados 0; redactados 2/7 (28,6 %; 8,2 % – 64,1 %), **redactados sin poder 0** | 41/45 (91,1 %) | 0 / 1 ms | ✓ ✗ ✗ |
-| reservado-b2 | 30/30 | 90/92 (97,8 %; 92,4 % – 99,4 %) | **1** | **0** | 0/0 (0,0 %), inventados 0; redactados 0/0 (0,0 %; NaN % – NaN %), **redactados sin poder 0** | 25/30 (83,3 %) | 0.5 / 1 ms | ✓ ✗ ✗ |
+| reservado-b2 | 30/30 | 90/92 (97,8 %; 92,4 % – 99,4 %) | **1** | **0** | 0/0 (0,0 %), inventados 0; redactados 0/0 (0,0 %; NaN % – NaN %), **redactados sin poder 0** | 25/30 (83,3 %) | 0 / 1 ms | ✓ ✗ ✗ |
 
 ## Graves (valor distinto del dicho o propuesto sin decirse)
 

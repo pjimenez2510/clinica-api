@@ -24,7 +24,7 @@ const LINKING = new Set([
 const DROPPABLE = new Set([
   'ay', 'bueno', 'pues', 'mire', 'oiga', 'este', 'senorita', 'senora',
   'senor', 'doctor', 'doctora', 'doctorita', 'licenciada', 'enfermera',
-  'mijo', 'mija', 'yo', 'me', 'mi', 'mis', 'tengo', 'siento', 'estoy',
+  'mijo', 'mija', 'me', 'mi', 'mis', 'tengo', 'siento', 'estoy',
   'es', 'vengo',
   'vine', 'acudo', 'ando', 'da', 'dan', 'hay', 'ya', 'como', 'solo',
   'porque', 'pero', 'eso', 'algo',
@@ -39,11 +39,13 @@ const DENIAL = new Set(['no', 'sin', 'ni', 'nunca', 'niega', 'niegan', 'tampoco'
 const SOMEONE_ELSE = /(^| )((mi|mis|su|sus) (mam\w*|pap\w*|madre|padre|hij\w*|espos\w*|marido|senor\w*|mujer|pareja|novi\w*|herman\w*|abuel\w*|nin\w*|nen\w*|beb\w*|guagu\w*|wawa\w*|ti[oa]s?|prim\w*|niet\w*|suegr\w*|cunad\w*|vecin\w*|amig\w*)|(el|la|los|las) (nin\w*|guagu\w*|wawa\w*|beb\w*|nen\w*)|le (duele|duelen|dolia|pica|arde)|a (el|ella|ellos|ellas)|les? (da|dio|pasa|paso))( |$)/; // prettier-ignore
 
 /**
- * A verb of someone else said by the patient: «el niño tiene fiebre y yo tengo tos». Which
- * symptom is whose a word-by-word check cannot tell, and the names for someone else never end
- * («ñaño», «guambra», «taita»), so the phrase keeps its own words (third clinical review).
+ * Two people in one sentence: «el niño tiene fiebre y yo tengo tos». Which symptom is whose a
+ * word-by-word check cannot tell, and neither the names for someone else nor their verbs ever
+ * end («ñaño», «guambra», «taita»; «vomita», «tose»). What does end is how the patient sets
+ * themself apart —«yo», «a mí»— and a few verbs of someone else; then the phrase keeps its own
+ * words (third and fourth clinical review). Compared folded: «tenia», «esta».
  */
-const SOMEONE_ELSE_DOES = /(^|[^\p{L}])(tiene|tienen|está|están|siente|sienten|anda|andan|tenía|tenían)(?!\p{L})/iu; // prettier-ignore
+const TWO_PEOPLE = /(^| )(yo|a mi|tiene|tienen|esta|estan|siente|sienten|anda|andan|tenia|tenian)( |$)/; // prettier-ignore
 
 /** How much of a duration: «un día» is not «unos días» (second clinical review). */
 const QUANTITY = new Set(['unos', 'unas', 'varios', 'varias', 'algunos', 'algunas', 'pocos', 'pocas', 'muchos', 'muchas']); // prettier-ignore
@@ -116,7 +118,7 @@ export function groundedWording(written: string, source: string): boolean {
   // What a word-by-word check cannot tell: keep the patient's own words.
   if (said.some((word) => DENIAL.has(word))) return false;
   if (SOMEONE_ELSE.test(said.join(' '))) return false;
-  if (SOMEONE_ELSE_DOES.test(phrase)) return false;
+  if (TWO_PEOPLE.test(said.join(' '))) return false;
   if (said.some((w) => w.startsWith('derech')) && said.some((w) => w.startsWith('izquierd'))) return false; // prettier-ignore
   if (new Set(said.filter((word) => DURATION.test(word)).map(bare)).size > 1) return false; // prettier-ignore
   if (numbers.length > 1) return false;

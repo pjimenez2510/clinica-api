@@ -150,8 +150,21 @@ describe('AS-282 a reason worded only from what the patient said', () => {
           'Mi taita tiene dolor de pecho y yo mareo',
           'Taita con dolor de pecho y mareo',
         ],
+        ['Mi ñaño con fiebre y yo con tos', 'Ñaño con fiebre y tos'],
+        ['Mi ñaño vomita y yo tengo fiebre', 'Ñaño vomita con fiebre'],
+        ['Mi compañero tose y yo tengo fiebre', 'Compañero tose y fiebre'],
+        ['Mi guambra tuvo fiebre y yo tengo tos', 'Guambra tuvo fiebre y tos'],
+        [
+          'Mi taita presenta dolor de pecho y yo mareo',
+          'Taita presenta dolor de pecho y mareo',
+        ],
+        ['Mi ñaño tenia fiebre y yo tengo tos', 'Ñaño tenia fiebre y tos'],
+        [
+          'Mi ñaño esta con fiebre y yo tengo tos',
+          'Ñaño esta con fiebre y tos',
+        ],
       ]),
-    ).toEqual(Array(11).fill(false));
+    ).toEqual(Array(18).fill(false));
   });
 
   it('AS-282 a root, a cause, an amount or a tense the patient did not say is not believed', () => {
