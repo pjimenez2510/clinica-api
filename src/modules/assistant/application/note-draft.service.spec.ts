@@ -39,6 +39,7 @@ import type {
   LlmRequest,
   PseudonymizedText,
 } from './llm-client.port';
+import type { ChartProposalService } from './chart-proposal.service';
 import { NoteDraftService, type DraftRequester } from './note-draft.service';
 import type { NoteDraftStore, StoredNoteDraft } from './note-draft.store';
 import type { Pseudonymizer } from './pseudonymizer.port';
@@ -276,6 +277,16 @@ class World {
 
   bus = { publish: (event: LiveEvent) => this.events.push(event) } as unknown as LiveEventBus; // prettier-ignore
 
+  /** AS-260. The reading of the chart after a draft, played. */
+  chartReads: { lines: number; requestedBy: string }[] = [];
+  chartFails = false;
+  chart = {
+    readFrom: (input: { lines: readonly unknown[]; requestedBy: string }) => {
+      this.chartReads.push({ lines: input.lines.length, requestedBy: input.requestedBy }); // prettier-ignore
+      return this.chartFails ? Promise.reject(new Error('down')) : Promise.resolve(0); // prettier-ignore
+    },
+  } as unknown as ChartProposalService;
+
   /** AS-161, AS-169 (A3). The site switch and the authorization to record. */
   enabledSites = [SITE];
   authorized = true;
@@ -298,6 +309,7 @@ class World {
         isAuthorized: () => Promise.resolve(this.authorized),
         grant: () => Promise.resolve(),
       },
+      this.chart,
     );
   }
 }
@@ -326,6 +338,18 @@ describe('NoteDraftService — asking for it (AS-086)', () => {
       'motivoConsulta',
       'enfermedadActual',
     ]);
+  });
+
+  it('AS-260 a written draft has the chart read from the same stretch, for who asked; its failure costs the draft nothing', async () => {
+    const world = new World();
+    world.chartFails = true;
+    const service = world.service();
+
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+
+    expect(world.chartReads).toEqual([{ lines: 2, requestedBy: DOCTOR }]);
+    expect((await service.overview(ENCOUNTER, doctor)).draft).toMatchObject({ status: 'DONE' }); // prettier-ignore
   });
 
   it('AS-086 the same stretch is not asked for twice, done or in flight', async () => {

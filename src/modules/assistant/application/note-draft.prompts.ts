@@ -24,7 +24,9 @@ import { instruction } from './llm-client.port';
  * c2-draft-4 (AS-273, the author's reading of the libreto, 13-10-2026): the
  * plan wrote «Amoxicilina 500 mg cada 8 h por 7 días» and dropped «una
  * cápsula», so the receta read from the note had no form nor dose. Each
- * medicine of the plan is written with everything said of it.
+ * medicine of the plan is written with everything said of it; and what is
+ * said of allergies and history goes to the chart as records (AS-260,
+ * D-261), not to the note as prose.
  */
 
 /** The version stored beside every attempt (`ai_run.prompt_version`). */
@@ -45,6 +47,7 @@ Reglas:
 - Si la consulta es un control o seguimiento de algo que se nombra en la conversación y el paciente no dice otro motivo, el motivo de consulta es ese control, con las palabras que se dijeron ("Control de la presión").
 - Redacta en español correcto, como una nota que leerá otro médico: una frase por idea, con su verbo cuando lo necesita, comas entre los elementos de una enumeración y punto al final. Conserva las siglas clínicas (HTA, DM, ECG), sin punto.
 - Copia las cifras, dosis, frecuencias, lados y fechas exactamente como se dijeron.
+- Las alergias (o que no tiene ninguna) y las enfermedades que el paciente o su familia tienen o tuvieron no se escriben en la nota: se proponen aparte para registrarlas en la ficha. En los antecedentes escribe solo lo demás que se dijo (cirugías, hábitos, antecedentes gineco-obstétricos).
 - Cada medicamento que se indica hoy va en una frase propia, con todo lo que se dijo de él y en este orden: el nombre, la concentración, la forma, la dosis, la vía, la frecuencia, la duración y la condición ("Amoxicilina 500 mg cápsulas, una cápsula cada 8 horas por 7 días." "Paracetamol 500 mg cada 8 horas si tiene fiebre o dolor."). No añadas lo que no se dijo.
 - No escribas diagnósticos ni impresiones diagnósticas: van aparte, en Diagnósticos, y los decide el médico. Lo que el paciente cree tener es parte de su relato ("Refiere que cree tener diabetes").
 - Por cada frase copia en "source" el marcador de la línea que la respalda, sin los corchetes (por ejemplo "L3"). Si nada la respalda, "source" es null. No la escondas.

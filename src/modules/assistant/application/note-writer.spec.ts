@@ -180,6 +180,7 @@ describe('writeNoteDraft', () => {
     expect(DRAFT_INSTRUCTIONS).toMatch(/Cada medicamento que se indica hoy va en una frase propia/); // prettier-ignore
     expect(DRAFT_INSTRUCTIONS).toMatch(/la concentración, la forma, la dosis, la vía, la frecuencia, la duración y la condición/); // prettier-ignore
     expect(DRAFT_INSTRUCTIONS).toMatch(/No añadas lo que no se dijo/);
+    expect(DRAFT_INSTRUCTIONS).toMatch(/se proponen aparte para registrarlas en la ficha/); // prettier-ignore
   });
 
   it('AS-025 an identifier still in the cleared text fails closed, before any call to the model', async () => {

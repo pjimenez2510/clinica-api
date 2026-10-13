@@ -236,6 +236,21 @@ export class SuggestionDiagnosisMismatchError extends ValidationError {
 }
 
 /**
+ * AS-265. The record given to accept a proposal of the chart is not of the
+ * attention's patient, not of the proposal's class, not recorded by who
+ * accepts, or older than the proposal: it is not the proposal's doing.
+ */
+export class SuggestionChartMismatchError extends ValidationError {
+  readonly code = 'SUGGESTION_CHART_MISMATCH';
+  override readonly userTitle =
+    'Ese registro no es el que propuso el asistente para este paciente. Recargue la atención';
+
+  constructor() {
+    super('The chart record does not answer the suggestion');
+  }
+}
+
+/**
  * AS-036, AS-040. The model answered but its attempt could not be recorded,
  * so the proposal would have no provenance (P2): it is not kept, and asking
  * again may work.

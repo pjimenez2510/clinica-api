@@ -2421,7 +2421,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-273** — El borrador de la nota DEBERÁ escribir cada medicamento del
   plan con todo lo que se dijo de él: concentración, forma, dosis, vía,
   frecuencia, duración y la condición («si tiene fiebre o dolor»), para que la
-  receta lo lea (`c2-draft-4`).
+  receta lo lea; y NO DEBERÁ escribir en prosa las alergias, «sin alergias» ni
+  las enfermedades del paciente o de su familia, que van a la ficha (AS-260):
+  en antecedentes, sólo lo demás que se dijo (`c2-draft-4`).
 
 ### 58. Un ✓ por medicamento (D2, P1)
 

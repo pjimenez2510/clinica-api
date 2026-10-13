@@ -1,13 +1,19 @@
 {
-  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. Receta (D2): cada medicamento se lee si la nota contiene su nombre; la concentración, la dosis, la frecuencia y la duración se toman de la propia frase. «Jarabe de miel con limón» no está en el CNMB, para que se vea que la barrera no muestra ningún nombre fuera del cuadro. El borrador de la nota (AS-099): cada línea de la conversación que contiene una frase va a su sección con su marcador; la frase de «unsaid» no lleva marcador, para que se vea «Nadie lo dijo».",
+  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. Receta (D2): cada medicamento se lee si la nota contiene su nombre; la concentración, la dosis, la frecuencia y la duración se toman de la propia frase. «Jarabe de miel con limón» no está en el CNMB, para que se vea que la barrera no muestra ningún nombre fuera del cuadro. El borrador de la nota (AS-099): cada línea de la conversación que contiene una frase va a su sección con su marcador; la frase de «unsaid» no lleva marcador, para que se vea «Nadie lo dijo». Libreto de la amigdalitis (AS-278): «placas blancas» nombra la amigdalitis, que deja fuera la faringitis; el dolor de garganta y la fiebre traen sus códigos R para que se vea que la barrera de AS-267 los vuelve frases. La receta lee la cápsula y la dosis «una cápsula», y el paracetamol «de 500» sin unidad, que la presentación única del cuadro completa.",
   "problems": [
     {
+      "phrase": "placas blancas",
+      "problem": "AMIGDALITIS AGUDA"
+    },
+    {
       "phrase": "odinofagia",
-      "problem": "FARINGITIS AGUDA"
+      "problem": "FARINGITIS AGUDA",
+      "unless": "amígdala"
     },
     {
       "phrase": "dolor de garganta",
-      "problem": "FARINGITIS AGUDA"
+      "problem": "FARINGITIS AGUDA",
+      "unless": "amígdala"
     },
     {
       "phrase": "150/95",
@@ -32,6 +38,14 @@
     {
       "phrase": "glucosa",
       "problem": "HIPERGLUCEMIA"
+    },
+    {
+      "phrase": "odinofagia",
+      "problem": "DOLOR DE GARGANTA"
+    },
+    {
+      "phrase": "fiebre",
+      "problem": "FIEBRE"
     }
   ],
   "codes": {
@@ -39,7 +53,10 @@
     "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO": ["I10", "R03.0"],
     "INFECCIÓN DE VÍAS URINARIAS": ["N39.0", "N30.0"],
     "LUMBALGIA": ["M54.5"],
-    "HIPERGLUCEMIA": ["R73.9", "E11.9"]
+    "HIPERGLUCEMIA": ["R73.9", "E11.9"],
+    "AMIGDALITIS AGUDA": ["J03.9", "J02.9"],
+    "DOLOR DE GARGANTA": ["R07.0"],
+    "FIEBRE": ["R50.9"]
   },
   "aboutExams": "Exámenes (D3, AS-103): cada examen se pide si la nota o la conversación contiene su frase, citada hasta el final de su oración; sus candidatos son nombres del catálogo de la clínica, en este orden, y el guion contesta su número en la lista que recibió. «Perfil tiroideo» no está en el catálogo sembrado, para que se vea que sale sólo con su frase; la biometría pide además un número que no se ofreció (999), y la barrera no lo muestra.",
   "exams": [
@@ -147,6 +164,56 @@
         "phrase": "dolor lumbar",
         "section": "enfermedadActual",
         "text": "Dolor lumbar."
+      },
+      {
+        "phrase": "duele mucho la garganta",
+        "section": "motivoConsulta",
+        "text": "Dolor de garganta y fiebre."
+      },
+      {
+        "phrase": "anoche",
+        "section": "enfermedadActual",
+        "text": "Temperatura de 38,5 °C anoche."
+      },
+      {
+        "phrase": "cuesta tragar",
+        "section": "enfermedadActual",
+        "text": "Dificultad para tragar."
+      },
+      {
+        "phrase": "dolor de oído",
+        "section": "revisionOrganosSistemas",
+        "text": "Niega otalgia, dificultad respiratoria y lesiones en piel."
+      },
+      {
+        "phrase": "placas blancas",
+        "section": "examenFisico",
+        "text": "Faringe eritematosa con placas blancas en las amígdalas, adenopatías cervicales dolorosas y pulmones limpios."
+      },
+      {
+        "phrase": "amoxicilina",
+        "section": "planTratamiento",
+        "text": "Amoxicilina 500 mg cápsulas, una cápsula cada 8 horas por 7 días."
+      },
+      {
+        "phrase": "siga con el paracetamol",
+        "section": "planTratamiento",
+        "text": "Paracetamol de 500 cada 8 horas si tiene fiebre o dolor."
+      },
+      {
+        "phrase": "biometría",
+        "section": "planTratamiento",
+        "text": "Biometría hemática."
+      },
+      {
+        "phrase": "repose",
+        "section": "planTratamiento",
+        "text": "Reposo dos días y abundantes líquidos."
+      },
+      {
+        "phrase": "control en siete días",
+        "section": "planTratamiento",
+        "text": "Control en 7 días, o antes si no puede tragar, le cuesta respirar o la fiebre no baja en tres días."
       }
     ],
     "unsaid": {
@@ -178,6 +245,37 @@
       "text": "¿Fuma?",
       "section": null,
       "answeredBy": ["fuma", "tabaco"]
+    }
+  ],
+  "aboutChart": "Ficha (AS-260, AS-278): cada entrada se propone si una línea de la conversación contiene su frase, sin tildes ni mayúsculas, con el marcador de esa línea.",
+  "chart": [
+    {
+      "phrase": "que yo sepa",
+      "kind": "none"
+    },
+    {
+      "phrase": "no tengo alergias",
+      "kind": "none"
+    },
+    {
+      "phrase": "alergica a la amoxicilina",
+      "kind": "allergy",
+      "substance": "Amoxicilina",
+      "reaction": "ronchas"
+    },
+    {
+      "phrase": "es hipertensa",
+      "kind": "history",
+      "history": "FAMILY",
+      "description": "Hipertensión arterial",
+      "relative": "Madre"
+    },
+    {
+      "phrase": "soy diabetica",
+      "kind": "history",
+      "history": "PERSONAL",
+      "description": "Diabetes mellitus",
+      "relative": null
     }
   ]
 }

@@ -59,6 +59,7 @@ import {
 } from './note-draft.store';
 import { draftableSections, writeNoteDraft } from './note-writer';
 import { PSEUDONYMIZER, type Pseudonymizer } from './pseudonymizer.port';
+import { ChartProposalService } from './chart-proposal.service';
 import {
   type SuggestionRequester,
   SuggestionService,
@@ -169,6 +170,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     private readonly siteSwitch: AssistantSiteSwitch,
     @Inject(RECORDING_AUTHORIZATION)
     private readonly recording: RecordingAuthorization,
+    private readonly chart: ChartProposalService,
   ) {
     this.lexicon = new LexiconCache(notes, clock, this.logger, codeOf);
   }
@@ -531,6 +533,20 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
           { userId: draft.requestedBy, sites: 'all' },
         );
       }
+      // AS-260. What the same stretch says of the chart, read apart: its
+      // failure is logged and never costs the draft already kept.
+      const lexicon = await this.lexicon.get();
+      this.quietly(encounter.id, async () => {
+        const proposed = await this.chart.readFrom({
+          encounter,
+          lines,
+          requestedBy: draft.requestedBy,
+          lexicon,
+          signal: AbortSignal.timeout(DRAFT_LIMIT_MS),
+        });
+        // AS-097. The fact of a change, never its content.
+        if (proposed > 0) this.announce(encounter.siteId, draft.requestedBy);
+      });
       if (!(await this.drafts.succeed(draft.id, runId, this.clock()))) {
         // It was failed meanwhile (a restart elsewhere): its proposals are
         // not shown, because only finished drafts are (AS-090).

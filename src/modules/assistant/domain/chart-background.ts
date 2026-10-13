@@ -1,0 +1,281 @@
+/**
+ * AS-260 to AS-264. What the conversation said of the patient's chart —
+ * «sin alergias conocidas», each allergy, each personal or family history
+ * entry —, checked against the line the model cited, and what of it the
+ * screen shows against what the chart already has. No model, no database, no
+ * clock.
+ *
+ * D-261 (the author, 13-10-2026, changing D-249 §1): what is said of the
+ * chart goes to the chart as records, not to the note as prose. The chart
+ * itself still never goes to the model: what it already has is taken out
+ * here, afterwards.
+ */
+import {
+  chartRecordText,
+  NO_KNOWN_ALLERGIES,
+  type ChartHistoryEntry,
+} from '../../../shared/clinical/chart-background.port';
+
+import { lineOf, type TranscriptLine } from './note-draft';
+import { spokenIn } from './order-reading';
+import { foldText } from './problem-coding';
+
+/** AS-262. The relatives a family entry may name: the chart's own words. */
+export const RELATIVES = [
+  'Madre',
+  'Padre',
+  'Hermano',
+  'Hermana',
+  'Hijo',
+  'Hija',
+  'Abuelo',
+  'Abuela',
+  'Tío',
+  'Tía',
+] as const;
+export type Relative = (typeof RELATIVES)[number];
+
+/** AS-262. How each relative is said, folded: «mamá» says `Madre`. */
+const SAID_AS: Readonly<Record<Relative, RegExp>> = {
+  Madre: /\b(?:madre|mama|mami|mamita)s?\b/,
+  Padre: /\b(?:padre|papa|papi|papito)s?\b/,
+  Hermano: /\bhermanos?\b/,
+  Hermana: /\bhermanas?\b/,
+  Hijo: /\bhijos?\b/,
+  Hija: /\bhijas?\b/,
+  Abuelo: /\babuel(?:o|os|ito)\b/,
+  Abuela: /\babuel(?:a|as|ita)\b/,
+  Tío: /\btios?\b/,
+  Tía: /\btias?\b/,
+};
+
+/** AS-260. The answer of the model, every text still unchecked. */
+export interface ChartAnswer {
+  noKnownAllergies: { source: string | null } | null;
+  allergies: {
+    substance: string;
+    reaction: string | null;
+    source: string | null;
+  }[];
+  history: {
+    kind: 'PERSONAL' | 'FAMILY';
+    description: string;
+    relative: string | null;
+    source: string | null;
+  }[];
+}
+
+/** The stretch of the line a proposal comes from (P2): the line is read again, never kept. */
+interface Stretch {
+  fromMs: number;
+  toMs: number;
+}
+
+/** AS-260. A proposal of the chart, as `ai_suggestion.proposal` keeps it. */
+export type ChartProposal =
+  | ({ kind: 'chart-no-allergy'; text: string } & Stretch)
+  | ({
+      kind: 'chart-allergy';
+      text: string;
+      substance: string;
+      reaction: string | null;
+    } & Stretch)
+  | ({
+      kind: 'chart-history';
+      text: string;
+      history: 'PERSONAL' | 'FAMILY';
+      description: string;
+      relative: Relative | null;
+    } & Stretch);
+
+/** The limits of the chart's own columns: what does not fit is no proposal. */
+const SUBSTANCE_LIMIT = 240;
+const REACTION_LIMIT = 512;
+const DESCRIPTION_LIMIT = 500;
+
+/** A bidi or zero-width character shows one text and says another (security review of C3). */
+const plain = (text: string) =>
+  text
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** The longest word of a name: what its line has to say. */
+function headWord(name: string): string {
+  return (
+    foldText(name)
+      .split(/[^\p{L}]+/u)
+      .filter((word) => word.length >= 3)
+      .sort((a, b) => b.length - a.length)[0] ?? ''
+  );
+}
+
+const says = (line: string, word: string) =>
+  word !== '' && new RegExp(`(^|[^\\p{L}])${word}`, 'u').test(foldText(line));
+
+/**
+ * AS-260, AS-262. The proposals the answer backs: each with a line the
+ * model was given; an allergy whose substance that line names; a family
+ * entry whose relative is of the list and said in that line; and no «sin
+ * alergias» beside an allergy of the same reading. Restored (names, dates),
+ * each once. `dropped` counts what had nothing behind it.
+ */
+export function backedChart(input: {
+  answer: ChartAnswer;
+  markers: ReadonlyMap<string, TranscriptLine>;
+  restore: (text: string) => string;
+}): { kept: ChartProposal[]; dropped: number } {
+  const kept: ChartProposal[] = [];
+  let dropped = 0;
+  const seen = new Set<string>();
+  const keep = (proposal: ChartProposal) => {
+    // One allergy per substance, whatever reaction each mention gave it.
+    const said =
+      proposal.kind === 'chart-allergy' ? proposal.substance : proposal.text;
+    const key = `${proposal.kind}\u0000${foldText(said)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    kept.push(proposal);
+  };
+  const restored = (text: string | null) =>
+    text === null ? null : plain(input.restore(text)) || null;
+
+  const allergies: ChartProposal[] = [];
+  for (const each of input.answer.allergies) {
+    const line = lineOf(each.source, input.markers);
+    const substance = restored(each.substance);
+    const reaction = restored(each.reaction);
+    if (
+      !line ||
+      substance === null ||
+      substance.length > SUBSTANCE_LIMIT ||
+      (reaction?.length ?? 0) > REACTION_LIMIT ||
+      !says(line.text, headWord(substance))
+    ) {
+      dropped += 1;
+      continue;
+    }
+    allergies.push({
+      kind: 'chart-allergy',
+      text: chartRecordText({ kind: 'allergy', substance, reaction }),
+      substance,
+      reaction,
+      fromMs: line.startMs,
+      toMs: line.endMs,
+    });
+  }
+
+  const none = input.answer.noKnownAllergies;
+  if (none) {
+    const line = lineOf(none.source, input.markers);
+    // A reading that says both is contradicting itself: the allergy stays.
+    if (!line || allergies.length > 0) dropped += 1;
+    else {
+      keep({ kind: 'chart-no-allergy', text: NO_KNOWN_ALLERGIES, fromMs: line.startMs, toMs: line.endMs }); // prettier-ignore
+    }
+  }
+  allergies.forEach(keep);
+
+  for (const each of input.answer.history) {
+    const line = lineOf(each.source, input.markers);
+    const description = restored(each.description);
+    const relative =
+      each.kind === 'FAMILY'
+        ? (RELATIVES.find((known) => known === each.relative?.trim()) ?? null)
+        : null;
+    const backed =
+      line !== null &&
+      description !== null &&
+      description.length <= DESCRIPTION_LIMIT &&
+      (each.kind === 'PERSONAL' ||
+        (relative !== null && SAID_AS[relative].test(foldText(line.text))));
+    if (!backed) {
+      dropped += 1;
+      continue;
+    }
+    keep({
+      kind: 'chart-history',
+      text: chartRecordText({ kind: 'history', description, relative }),
+      history: each.kind,
+      description,
+      relative,
+      fromMs: line.startMs,
+      toMs: line.endMs,
+    });
+  }
+  return { kept, dropped };
+}
+
+/** A stored proposal of the chart, as this module reads it back. */
+export interface StoredChartProposal {
+  id: string;
+  status: 'PROPOSED' | 'ACCEPTED' | 'ACCEPTED_WITH_CHANGES' | 'DISCARDED';
+  proposal: Readonly<Record<string, unknown>>;
+}
+
+/** What the chart holds now, as the proposals are compared with it. */
+export interface ChartNow {
+  /** The substances of the active allergies, as recorded. */
+  allergies: readonly string[];
+  /** A standing «sin alergias conocidas» (EN-087). */
+  absence: boolean;
+  history: readonly ChartHistoryEntry[];
+}
+
+/** AS-263. A proposal of the chart on screen. */
+export type ChartProposalView = ChartProposal & {
+  id: string;
+  /** AS-263 (P2). Its line, read again from the transcript. */
+  quote: string;
+  /** AS-264. Why it cannot be recorded as it is. */
+  conflict: 'active-allergy' | null;
+};
+
+const sameText = (left: string, right: string) =>
+  foldText(left).replace(/\s+/g, ' ').trim() ===
+  foldText(right).replace(/\s+/g, ' ').trim();
+
+/**
+ * AS-263, AS-264. What Antecedentes shows of the current reading: the
+ * undecided proposals whose line the transcript still has, less what the
+ * chart already has and what was discarded in this attention; «sin
+ * alergias» against an active allergy carries its conflict.
+ */
+export function shownChart(
+  stored: readonly StoredChartProposal[],
+  discarded: readonly string[],
+  chart: ChartNow,
+  transcript: readonly TranscriptLine[],
+): ChartProposalView[] {
+  return stored.flatMap((each) => {
+    if (each.status !== 'PROPOSED') return [];
+    const proposal = each.proposal as unknown as ChartProposal;
+    if (typeof proposal.text !== 'string') return [];
+    if (discarded.some((text) => sameText(text, proposal.text))) return [];
+    let conflict: ChartProposalView['conflict'] = null;
+    if (proposal.kind === 'chart-no-allergy') {
+      if (chart.absence) return [];
+      if (chart.allergies.length > 0) conflict = 'active-allergy';
+    }
+    if (
+      proposal.kind === 'chart-allergy' &&
+      chart.allergies.some((substance) => sameText(substance, proposal.substance)) // prettier-ignore
+    ) {
+      return [];
+    }
+    if (
+      proposal.kind === 'chart-history' &&
+      chart.history.some(
+        (entry) =>
+          entry.kind === proposal.history &&
+          sameText(entry.description, proposal.description) &&
+          sameText(entry.relative ?? '', proposal.relative ?? ''),
+      )
+    ) {
+      return [];
+    }
+    const quote = spokenIn(proposal, transcript);
+    if (quote === '') return [];
+    return [{ ...proposal, id: each.id, quote, conflict }];
+  });
+}

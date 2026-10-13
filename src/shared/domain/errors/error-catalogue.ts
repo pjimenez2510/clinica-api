@@ -79,6 +79,8 @@ export const DOMAIN_ERROR_CODES = [
   'ASSISTANT_RECORDING_NOT_AUTHORIZED',
   'ASSISTANT_NOTE_EMPTY',
   'SUGGESTION_DIAGNOSIS_MISMATCH',
+  // AS-265: una propuesta de la ficha se acepta con su propio registro.
+  'SUGGESTION_CHART_MISMATCH',
   'ASSISTANT_PROPOSAL_NOT_KEPT',
   'ASSISTANT_READING_IN_PROGRESS',
   // AS-006, AS-007, AS-008, AS-017 (D-239): el asistente sin proveedor
