@@ -2385,11 +2385,17 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   número; SI no la hay, ENTONCES NO DEBERÁ proponerse ningún motivo.
   > En palabras del paciente, como pide el formulario 020: no se resume ni se
   > reescribe, así no puede inventarse (D-260 §5).
-- **AS-250** — Cada línea de la respuesta DEBERÁ llevar quién la dijo
+- **AS-250** — La lectura DEBERÁ hacerse **por frase**: cada línea de la
+  transcripción partida tras un punto, una interrogación o una exclamación
+  (no el punto entre cifras), cada frase con un inicio estimado dentro de su
+  línea; y cada frase de la respuesta DEBERÁ llevar quién la dijo
   —`nursing`, `patient` u `other`— deducido por el lector **por lo que
   dice** (quién pregunta, quién responde, quién cuenta su molestia); una
-  línea sin etiqueta del modelo DEBERÁ ir como `other`. Ninguna
+  frase sin etiqueta del modelo DEBERÁ ir como `other`. Ninguna
   característica de la voz DEBERÁ llegar al lector ni guardarse.
+  > El reconocedor corta por silencios, no por turnos: una línea de la
+  > escucha junta la pregunta de enfermería y la respuesta del paciente
+  > (visto en el recorrido de F-03, 13-10-2026).
   > La huella de voz es un dato biométrico (LOPDP art. 26) y midió 85,8 %
   > (`PLAN-ASISTENTE-IA.md` §3).
 - **AS-251** — SI el asistente no puede leer —`ASSISTANT_ALLOW_REMOTE`
