@@ -157,7 +157,14 @@ describe('the libreto in the demonstration (AS-278)', () => {
 
     const { value } = await new DemoLlmProvider().generate(ask(PROBLEMS_PURPOSE, note, problemsAnswer)); // prettier-ignore
 
-    expect(value.problems.map((each) => each.problem)).toEqual(['AMIGDALITIS AGUDA', 'DOLOR DE GARGANTA', 'FIEBRE']); // prettier-ignore
+    expect(value.problems).toEqual([
+      {
+        problem: 'AMIGDALITIS AGUDA',
+        quote: 'placas blancas en las amígdalas',
+      },
+      { problem: 'DOLOR DE GARGANTA', quote: 'Odinofagia de tres días de evolución, con fiebre desde ayer' }, // prettier-ignore
+      { problem: 'FIEBRE', quote: 'fiebre desde ayer' },
+    ]);
   });
 
   it('AS-278 the plan’s amoxicillin capsule and the paracetamol «de 500», not what the patient already took', async () => {

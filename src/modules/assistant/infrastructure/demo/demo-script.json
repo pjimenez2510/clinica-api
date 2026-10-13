@@ -146,12 +146,12 @@
         "text": "Ha tomado paracetamol 500 mg cada 8 horas para la fiebre."
       },
       {
-        "phrase": "temperatura",
+        "phrase": "tomarle la temperatura",
         "section": "examenFisico",
         "text": "Se revisa la garganta y se toma la temperatura."
       },
       {
-        "phrase": "control en",
+        "phrase": "control en 15",
         "section": "planTratamiento",
         "text": "Control en 15 días."
       },

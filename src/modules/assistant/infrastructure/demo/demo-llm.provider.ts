@@ -124,9 +124,16 @@ function problemsIn(text: string): { problem: string; quote: string }[] {
     if (at < 0 || named.has(problem)) continue;
     // AS-278. A diagnosis the text names more precisely is not named.
     if (unless !== undefined && lower.includes(unless.toLowerCase())) continue;
-    const rest = text.slice(at, at + QUOTE_REACH);
+    // To the end of its sentence, whole words only: a cut word, or a quote
+    // of one word, is no phrase of the note (AS-028), so the barrier drops it.
+    const rest = text.slice(at);
     const end = rest.search(/[.;\n]/);
-    named.set(problem, (end > 0 ? rest.slice(0, end) : rest).trim());
+    let quote = (end > 0 ? rest.slice(0, end) : rest).trim();
+    if (quote.split(/\s+/).length < 2) {
+      const start = text.slice(0, at).search(/[^.;\n]*$/);
+      quote = text.slice(start, at + quote.length).replace(/^#+\s*[^\n]*\n/, '').trim(); // prettier-ignore
+    }
+    named.set(problem, quote);
   }
   return [...named].map(([problem, quote]) => ({ problem, quote }));
 }

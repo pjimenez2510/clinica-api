@@ -203,7 +203,7 @@ describe('las alergias y los antecedentes dichos, por HTTP (AS-260 a AS-265)', (
     ).toEqual([
       // prettier-ignore
       ['chart-no-allergy', 'Sin alergias conocidas', 'No, que yo sepa, a ninguno.', 9_500], // prettier-ignore
-      ['chart-history', 'Hipertensión arterial · Madre', 'Yo no. Mi mamá es hipertensa.', 15_500], // prettier-ignore
+      ['chart-history', 'Hipertensión arterial · Madre', 'Mi mamá es hipertensa.', 15_500], // prettier-ignore
     ]);
     expect(await prisma.aiSuggestion.count({ where: { encounterId, kind: { startsWith: 'chart-' } } })).toBe(2); // prettier-ignore
   });

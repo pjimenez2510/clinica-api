@@ -279,8 +279,32 @@ export function shownChart(
     ) {
       return [];
     }
-    const quote = spokenIn(proposal, transcript);
-    if (quote === '') return [];
-    return [{ ...proposal, id: each.id, quote, conflict }];
+    const said = spokenIn(proposal, transcript);
+    if (said === '') return [];
+    return [{ ...proposal, id: each.id, quote: sentenceOf(proposal, said), conflict }]; // prettier-ignore
   });
+}
+
+/** AS-261. What, in a sentence, says the proposal: the words it is checked by. */
+function saysIt(proposal: ChartProposal, folded: string): boolean {
+  if (proposal.kind === 'chart-no-allergy') {
+    return /\b(?:ningun[ao]?|que yo sepa|no tengo alergi|no soy alergic)/.test(folded); // prettier-ignore
+  }
+  if (proposal.kind === 'chart-allergy') return says(folded, headWord(proposal.substance)); // prettier-ignore
+  if (proposal.relative !== null)
+    return SAID_AS[proposal.relative].test(folded);
+  return says(folded, headWord(proposal.description));
+}
+
+/**
+ * AS-261 (P2). The sentence of the line that says it: the recogniser cuts
+ * the conversation in stretches of up to 20 s, and the whole stretch under a
+ * proposal reads as noise. Without a sentence that says it, the stretch.
+ */
+export function sentenceOf(proposal: ChartProposal, said: string): string {
+  const sentences = said
+    .split(/(?<=[.!?¿])\s+|(?=¿)/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence !== '');
+  return sentences.find((sentence) => saysIt(proposal, foldText(sentence))) ?? said; // prettier-ignore
 }

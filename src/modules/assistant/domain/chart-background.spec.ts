@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   backedChart,
+  sentenceOf,
   shownChart,
   type ChartAnswer,
   type StoredChartProposal,
@@ -128,7 +129,7 @@ describe('what Antecedentes shows (AS-263, AS-264)', () => {
     expect(shown.map((each) => [each.id, each.quote, each.conflict])).toEqual([
       ['s-1', 'No, que yo sepa, a ninguno.', null],
       ['s-2', 'Soy alérgica a la amoxicilina, me da ronchas.', null],
-      ['s-3', 'Yo no. Mi mamá es hipertensa.', null],
+      ['s-3', 'Mi mamá es hipertensa.', null],
     ]);
   });
 
@@ -155,5 +156,21 @@ describe('what Antecedentes shows (AS-263, AS-264)', () => {
     const decided = [stored('s-9', { kind: 'chart-history', text: 'Asma', history: 'PERSONAL', description: 'Asma', relative: null, fromMs: 7_500, toMs: 11_000 }, 'ACCEPTED')]; // prettier-ignore
     expect(shownChart(decided, [], empty, LINES)).toEqual([]);
     expect(shownChart(proposals, [], empty, [])).toEqual([]);
+  });
+});
+
+describe('the sentence that says it (AS-261)', () => {
+  const stretch =
+    'algo para el dolor? Paracetamol de 500, cada 8 horas. ¿Es alérgica a algún medicamento? No, que yo sepa, a ninguno. ¿Alguna enfermedad que te';
+
+  it('AS-261 a stretch of 20 s is cut to the sentence that says the proposal', () => {
+    expect(sentenceOf({ kind: 'chart-no-allergy', text: 'Sin alergias conocidas', fromMs: 0, toMs: 1 }, stretch)).toBe('No, que yo sepa, a ninguno.'); // prettier-ignore
+    expect(sentenceOf({ kind: 'chart-history', text: 'x', history: 'FAMILY', description: 'Hipertensión arterial', relative: 'Madre', fromMs: 0, toMs: 1 }, 'usted o su familia. Yo no. Mi mamá es hipertensa. Vamos a revisarla.')).toBe('Mi mamá es hipertensa.'); // prettier-ignore
+  });
+
+  it('AS-261 without a sentence that says it, the whole stretch', () => {
+    const plain =
+      'usted o su familia yo no mi mama es hipertensa vamos a revisarla';
+    expect(sentenceOf({ kind: 'chart-history', text: 'x', history: 'FAMILY', description: 'Hipertensión arterial', relative: 'Madre', fromMs: 0, toMs: 1 }, plain)).toBe(plain); // prettier-ignore
   });
 });

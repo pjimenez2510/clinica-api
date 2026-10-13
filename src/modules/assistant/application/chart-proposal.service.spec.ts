@@ -263,7 +263,7 @@ describe('ChartProposalService — on screen, accepted and discarded (AS-263 to 
       [
         'sug-2',
         'Hipertensión arterial · Madre',
-        'Yo no. Mi mamá es hipertensa.',
+        'Mi mamá es hipertensa.',
       ],
     ]);
     expect(audits).toEqual([expect.objectContaining({ resourceType: 'assistant_chart', action: 'READ' })]); // prettier-ignore
