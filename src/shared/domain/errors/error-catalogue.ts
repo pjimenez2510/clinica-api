@@ -436,6 +436,10 @@ export const DOMAIN_ERROR_CODES = [
   // SRI-110 (D-262). Sólo se renumera lo devuelto únicamente con el 45 y
   // nunca autorizado (409).
   'SRI_VOUCHER_NOT_RENUMBERABLE',
+  // SRI-116. Antes de renumerar se pregunta al SRI por la clave devuelta: si
+  // la autorizó, queda autorizada (409); si no contesta, no se renumera (503).
+  'SRI_VOUCHER_AUTHORISED_AFTER_ALL',
+  'SRI_RENUMBER_UNCHECKED',
   'SITE_IN_USE',
   // OR-032. La sede nace con su establecimiento: sin él, no hay sede.
   'SITE_ESTABLISHMENT_REQUIRED',

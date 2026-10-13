@@ -21,7 +21,10 @@ export const fixNumberingSchema = z.object({
   nextSequential: sequentialNumber('Próximo número'),
   previousSystemLast: sequentialNumber('Último del sistema anterior'),
   // BI-306. Required, but said by the service with its own code.
-  reason: z.string().max(300, 'El motivo tiene como máximo 300 caracteres'),
+  reason: z
+    .string()
+    .max(300, 'El motivo tiene como máximo 300 caracteres')
+    .default(''),
 });
 /** Body of PUT /billing/sites/:siteId/numbering/:emissionPointId/:documentType. */
 export class FixNumberingDto extends createZodDto(fixNumberingSchema) {}

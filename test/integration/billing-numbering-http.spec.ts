@@ -325,6 +325,30 @@ describe('B23 el próximo número de cada punto de emisión', () => {
     expect(above.body).toMatchObject({ belowPreviousSystem: false });
   });
 
+  it('BI-306 sin motivo en el cuerpo, el mismo NUMBERING_REASON_REQUIRED', async () => {
+    const refused = await request(app.getHttpServer())
+      .put(`${path()}/${pointId}/01`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ nextSequential: 100, previousSystemLast: null });
+    expect(refused.status).toBe(422);
+    expect((refused.body as Problem).code).toBe('NUMBERING_REASON_REQUIRED');
+  });
+
+  it('BI-307 un próximo número ya superado no impide anotar el último del sistema anterior', async () => {
+    await fix({ nextSequential: 10 }).expect(200);
+    await usedUpTo(18); // the floor 10 is overtaken
+
+    const kept = await fix({ nextSequential: 10, previousSystemLast: 15 });
+    expect(kept.status).toBe(200);
+    expect(kept.body).toMatchObject({
+      nextSequential: 10,
+      previousSystemLast: 15,
+      nextToIssue: 19,
+    });
+    // Control: MOVING it to another overtaken number is refused.
+    expect((await fix({ nextSequential: 12 })).status).toBe(409);
+  });
+
   it('BI-306 guarda en record_version la numeración anterior', async () => {
     await fix({ nextSequential: 100 }).expect(200);
     await fix({ nextSequential: 200, reason: 'Más holgura' }).expect(200);

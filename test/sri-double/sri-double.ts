@@ -58,7 +58,12 @@ export type DoubleScenario =
    * DEVUELTA 45 — the SRI already holds a voucher with this RUC, type,
    * establishment, point and sequential (SRI-108, SRI-115).
    */
-  | 'SEQUENTIAL_REGISTERED_45';
+  | 'SEQUENTIAL_REGISTERED_45'
+  /**
+   * DEVUELTA 45 to a key the SRI DID receive and authorises: a send that
+   * timed out reached it, and the retry was answered 45 (SRI-109).
+   */
+  | 'OWN_SEQUENTIAL_REGISTERED_45';
 
 /**
  * SRI-115. A number the SRI already holds — issued from another database or
@@ -440,8 +445,12 @@ export async function startSriDouble(
           return reply(200, '<html>mantenimiento</html>', 'text/html');
         // SRI-115. The number is somebody else's: another key carries it.
         const holder = holderOf(accessKey);
+        if (scenario === 'OWN_SEQUENTIAL_REGISTERED_45') {
+          received.set(accessKey, voucher);
+        }
         if (
           scenario === 'SEQUENTIAL_REGISTERED_45' ||
+          scenario === 'OWN_SEQUENTIAL_REGISTERED_45' ||
           (holder !== null && holder !== accessKey)
         ) {
           return reply(

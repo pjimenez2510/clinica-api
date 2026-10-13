@@ -52,6 +52,31 @@ export class ElectronicVoucherNotRenumberableError extends ConflictError {
   }
 }
 
+/** SRI-116. The SRI turned out to have authorised the returned key. */
+export class ElectronicVoucherAuthorisedAfterAllError extends ConflictError {
+  readonly code = 'SRI_VOUCHER_AUTHORISED_AFTER_ALL';
+  override readonly userTitle =
+    'El SRI sí había autorizado este comprobante: queda autorizado con su número y no se renumera';
+
+  constructor() {
+    super('The SRI authorised the returned key; it is not renumbered');
+  }
+}
+
+/** SRI-116. The SRI could not be asked about the returned key. */
+export class ElectronicVoucherRenumberUncheckedError extends ExternalServiceError {
+  readonly code = 'SRI_RENUMBER_UNCHECKED';
+  readonly service = 'sri';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo confirmar con el SRI que este comprobante no esté autorizado. Inténtelo en unos minutos';
+  override readonly retryAfterSeconds = 60;
+
+  constructor() {
+    super('The SRI could not confirm the returned key is not authorised');
+  }
+}
+
 /** SRI-096. Only what the SRI authorised is e-mailed: there is no RIDE to send. */
 export class ElectronicVoucherNotAuthorisedError extends ConflictError {
   readonly code = 'SRI_VOUCHER_NOT_AUTHORISED';

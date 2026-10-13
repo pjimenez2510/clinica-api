@@ -70,10 +70,10 @@ DECLARE
   used INTEGER;
 BEGIN
   IF p_type = '01' THEN
-    SELECT coalesce(max("sequential")::INTEGER, 0) INTO used
+    SELECT coalesce(max("sequential"::INTEGER), 0) INTO used
       FROM "invoice" WHERE "emission_point_id" = p_point;
   ELSIF p_type = '04' THEN
-    SELECT coalesce(max("sequential")::INTEGER, 0) INTO used
+    SELECT coalesce(max("sequential"::INTEGER), 0) INTO used
       FROM "credit_note" WHERE "emission_point_id" = p_point;
   ELSE
     RAISE EXCEPTION 'emission_point_numbering_type_is_known: % is not a voucher type', p_type
@@ -108,7 +108,12 @@ BEGIN
 
   PERFORM 1 FROM "emission_point" WHERE "id" = NEW."emission_point_id" FOR UPDATE;
   used := emission_point_used_sequential(NEW."emission_point_id", NEW."document_type");
-  IF NEW."next_sequential" IS NOT NULL AND NEW."next_sequential" <= used THEN
+  -- Only a floor that is being SET: one fixed long ago and since overtaken
+  -- by the issuances stays as it is, and does not stop changing the rest of
+  -- the row (the previous system's last number, the reason).
+  IF NEW."next_sequential" IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW."next_sequential" IS DISTINCT FROM OLD."next_sequential")
+     AND NEW."next_sequential" <= used THEN
     RAISE EXCEPTION 'emission_point_numbering_not_below_used: % is not above %', NEW."next_sequential", used
       USING ERRCODE = 'check_violation',
             CONSTRAINT = 'emission_point_numbering_not_below_used',
@@ -128,6 +133,16 @@ CREATE TRIGGER "trg_emission_point_numbering_record_version"
   BEFORE UPDATE ON "emission_point_numbering"
   FOR EACH ROW
   EXECUTE FUNCTION record_version_archive('changed_by', 'changed_at', 'id');
+
+-- The text maximum is the numeric maximum only while every sequential has its
+-- nine digits; an unpadded «20» would sort above «000000100» and be numbered
+-- again. The width is the SRI's, and now the database's (BI-085).
+ALTER TABLE "invoice"
+  ADD CONSTRAINT "invoice_sequential_has_nine_digits"
+    CHECK ("sequential" ~ '^[0-9]{9}$');
+ALTER TABLE "credit_note"
+  ADD CONSTRAINT "credit_note_sequential_has_nine_digits"
+    CHECK ("sequential" ~ '^[0-9]{9}$');
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2. Una función numera todo (BI-308)
@@ -202,8 +217,11 @@ CREATE TABLE "voucher_renumbering" (
   CONSTRAINT "voucher_renumbering_once_per_voucher" UNIQUE ("superseded_voucher_id"),
   CONSTRAINT "voucher_renumbering_one_document"
     CHECK (num_nonnulls("invoice_id", "credit_note_id") = 1),
-  CONSTRAINT "voucher_renumbering_number_changes"
-    CHECK ("new_sequential" <> "previous_sequential"),
+  -- The new number is always the next free one, so it is above the old.
+  CONSTRAINT "voucher_renumbering_number_moves_up"
+    CHECK ("new_sequential" > "previous_sequential"),
+  CONSTRAINT "voucher_renumbering_sequentials_have_nine_digits"
+    CHECK ("previous_sequential" ~ '^[0-9]{9}$' AND "new_sequential" ~ '^[0-9]{9}$'),
   CONSTRAINT "voucher_renumbering_message_given"
     CHECK (length(btrim("sri_message")) > 0)
 );
@@ -229,6 +247,73 @@ CREATE TRIGGER "trg_voucher_renumbering_append_only"
   BEFORE UPDATE OR DELETE ON "voucher_renumbering"
   FOR EACH ROW EXECUTE FUNCTION voucher_renumbering_append_only();
 
+-- SRI-111. A renumbering is only written for what the application would
+-- renumber: the voucher RETURNED and never authorised, of the document it
+-- names; the document REJECTED and still carrying the old number on that
+-- point; and the new number not below the next free one (the floor of
+-- `next_voucher_sequential`). Whether the SRI's answer was the 45 is the
+-- application's to read — the database keeps the rest, so a hand-written row
+-- cannot move a number into a hole the SRI already holds.
+CREATE OR REPLACE FUNCTION voucher_renumbering_is_due()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  voucher RECORD;
+  document RECORD;
+  voucher_type CHAR(2);
+  floor INTEGER;
+BEGIN
+  SELECT "status", "authorisation_number", "invoice_id", "credit_note_id"
+    INTO voucher
+    FROM "electronic_voucher" WHERE "id" = NEW."superseded_voucher_id" FOR UPDATE;
+  IF NOT FOUND
+     OR voucher."status" <> 'RETURNED'
+     OR voucher."authorisation_number" IS NOT NULL
+     OR voucher."invoice_id" IS DISTINCT FROM NEW."invoice_id"
+     OR voucher."credit_note_id" IS DISTINCT FROM NEW."credit_note_id" THEN
+    RAISE EXCEPTION 'voucher_renumbering_is_due: only a returned, never authorised voucher of that document is renumbered'
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'voucher_renumbering_is_due';
+  END IF;
+
+  IF NEW."invoice_id" IS NOT NULL THEN
+    voucher_type := '01';
+    SELECT "status", "sequential", "emission_point_id" INTO document
+      FROM "invoice" WHERE "id" = NEW."invoice_id" FOR UPDATE;
+  ELSE
+    voucher_type := '04';
+    SELECT "status", "sequential", "emission_point_id" INTO document
+      FROM "credit_note" WHERE "id" = NEW."credit_note_id" FOR UPDATE;
+  END IF;
+  IF document."status" <> 'REJECTED'
+     OR document."sequential" <> NEW."previous_sequential"
+     OR document."emission_point_id" <> NEW."emission_point_id" THEN
+    RAISE EXCEPTION 'voucher_renumbering_is_due: the document is not returned with that number on that point'
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'voucher_renumbering_is_due';
+  END IF;
+
+  PERFORM 1 FROM "emission_point" WHERE "id" = NEW."emission_point_id" FOR UPDATE;
+  SELECT greatest(
+           emission_point_used_sequential(NEW."emission_point_id", voucher_type) + 1,
+           coalesce((SELECT "next_sequential" FROM "emission_point_numbering"
+                      WHERE "emission_point_id" = NEW."emission_point_id"
+                        AND "document_type" = voucher_type), 0))
+    INTO floor;
+  IF NEW."new_sequential"::INTEGER < floor THEN
+    RAISE EXCEPTION 'voucher_renumbering_is_due: % is below the next free number %', NEW."new_sequential", floor
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'voucher_renumbering_is_due';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "trg_voucher_renumbering_is_due"
+  BEFORE INSERT ON "voucher_renumbering"
+  FOR EACH ROW EXECUTE FUNCTION voucher_renumbering_is_due();
+
 -- ── 3.1 El comprobante reemplazado ─────────────────────────────────────────
 
 ALTER TABLE "electronic_voucher"
@@ -247,6 +332,23 @@ ALTER TABLE "electronic_voucher"
   ADD CONSTRAINT "electronic_voucher_type_matches_its_document"
     CHECK ("status" = 'SUPERSEDED'
            OR (("document_type" = '01') = ("invoice_id" IS NOT NULL)));
+
+-- SRI-111. SUPERSEDED is reached, never written at birth.
+CREATE OR REPLACE FUNCTION electronic_voucher_not_born_superseded()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'electronic_voucher_superseded_only_renumbered: a voucher is not created replaced'
+    USING ERRCODE = 'check_violation',
+          CONSTRAINT = 'electronic_voucher_superseded_only_renumbered';
+END;
+$$;
+
+CREATE TRIGGER "trg_electronic_voucher_not_born_superseded"
+  BEFORE INSERT ON "electronic_voucher"
+  FOR EACH ROW WHEN (NEW."status" = 'SUPERSEDED')
+  EXECUTE FUNCTION electronic_voucher_not_born_superseded();
 
 CREATE OR REPLACE FUNCTION trg_electronic_voucher_is_permanent()
 RETURNS TRIGGER AS $$

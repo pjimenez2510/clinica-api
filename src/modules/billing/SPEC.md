@@ -3320,7 +3320,11 @@ lo ve._
   rechazarlo con `NUMBERING_BELOW_USED` diciendo el mayor usado; y la base
   DEBERÁ rechazarlo también (`emission_point_numbering_not_below_used`),
   leyendo el mayor usado bajo el bloqueo de fila del punto de emisión con que
-  se numera (BI-085).
+  se numera (BI-085); un «próximo número» que no cambia —uno ya superado por
+  las emisiones— NO DEBERÁ impedir cambiar el resto de la fila. La base
+  DEBERÁ rechazar un secuencial de factura o de nota de crédito que no tenga
+  sus nueve dígitos (`invoice_sequential_has_nine_digits`,
+  `credit_note_sequential_has_nine_digits`).
   > D-262 §3. Por encima se puede, siempre con motivo; bajar hasta el mayor
   > usado más uno también. Que la base lo garantice cierra la carrera entre
   > fijarlo y una emisión que se cuela entre la lectura y la escritura.

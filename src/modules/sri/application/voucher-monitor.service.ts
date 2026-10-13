@@ -357,7 +357,9 @@ function summaries(
           lastMessage: last
             ? { identifier: last.identifier, message: last.message }
             : null,
-          renumberable: isRenumberable(view),
+          // SRI-110. The same rule the renumbering applies under lock.
+          renumberable:
+            view.documentStatus === 'REJECTED' && isRenumberable(view),
           renumberedFrom: renumberings
             .filter((renumbering) => renumbering.documentId === view.documentId)
             .map((renumbering) => ({

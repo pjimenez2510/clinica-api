@@ -183,6 +183,9 @@ const STATUS_SELECT = {
   deliveryStatus: true,
   lastMessages: true,
   ...EVER_AUTHORISED_SELECT,
+  // SRI-110. Only a REJECTED document is renumbered: a withdrawn note is not.
+  invoice: { select: { status: true } },
+  creditNote: { select: { status: true } },
 } satisfies Prisma.ElectronicVoucherSelect;
 
 function toStatusView(
@@ -200,6 +203,7 @@ function toStatusView(
     lastMessages: messagesOf(row.lastMessages),
     authorisationNumber: row.authorisationNumber,
     everAuthorised: row._count.attempts > 0,
+    documentStatus: row.invoice?.status ?? row.creditNote?.status ?? '',
   };
 }
 
@@ -542,12 +546,29 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     return this.prisma.$transaction(async (tx) => {
       // SRI-104. The document first, locked and still returned: a credit
       // note given up a moment ago (BI-304) is not reopened and sent.
-      const row = await tx.electronicVoucher.findUnique({
-        where: { id },
-        select: { id: true, invoiceId: true, creditNoteId: true },
+      // The voucher's row first, as `recordAttempt` and `renumber` take it:
+      // in another order «Reintentar» and «Renumerar» at once deadlock.
+      const [locked] = await tx.$queryRaw<
+        {
+          id: string;
+          invoice_id: string | null;
+          credit_note_id: string | null;
+        }[]
+      >`
+        SELECT "id", "invoice_id", "credit_note_id" FROM "electronic_voucher"
+         WHERE "id" = ${id}::uuid FOR UPDATE`;
+      // SRI-112. Renumbered a moment ago: it has no document to re-send.
+      if (
+        !locked ||
+        (locked.invoice_id === null && locked.credit_note_id === null)
+      ) {
+        return false;
+      }
+      const document = documentOf({
+        id: locked.id,
+        invoiceId: locked.invoice_id,
+        creditNoteId: locked.credit_note_id,
       });
-      if (!row) return false;
-      const document = documentOf(row);
       const [returned] =
         document.kind === 'INVOICE'
           ? await tx.$queryRaw<{ id: string }[]>`
@@ -589,6 +610,27 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       }
       return true;
     });
+  }
+
+  async renumberCandidate(id: string): Promise<RenumberCandidate | null> {
+    const row = await this.prisma.electronicVoucher.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        lastMessages: true,
+        ...EVER_AUTHORISED_SELECT,
+        invoice: { select: { status: true } },
+        creditNote: { select: { status: true } },
+      },
+    });
+    if (!row) return null;
+    return {
+      status: row.status as VoucherStatus,
+      authorisationNumber: row.authorisationNumber,
+      everAuthorised: row._count.attempts > 0,
+      lastMessages: messagesOf(row.lastMessages),
+      documentStatus: row.invoice?.status ?? row.creditNote?.status ?? '',
+    };
   }
 
   async renumber(
@@ -667,14 +709,18 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
                  ${current.emission_point_id}::uuid,
                  ${documentTypeOf(document)}::char(2)) AS "sequential"`;
       // What the SRI said, as it said it: the reason the number is a hole.
-      const sriMessage = lastMessages
-        .map((m) =>
-          [m.identifier, m.message, m.additionalInformation]
-            .filter(Boolean)
-            .join(' · '),
-        )
-        .join(' | ')
-        .slice(0, 1000);
+      const sriMessage = Array.from(
+        lastMessages
+          .map((m) =>
+            [m.identifier, m.message, m.additionalInformation]
+              .filter(Boolean)
+              .join(' · '),
+          )
+          .join(' | '),
+      )
+        // By characters, not UTF-16 units: a cut never splits one.
+        .slice(0, 1000)
+        .join('');
 
       await tx.voucherRenumbering.create({
         data: {

@@ -29,8 +29,10 @@ import { VoucherMonitorService } from '../../src/modules/sri/application/voucher
 import { VoucherPreparationService } from '../../src/modules/sri/application/voucher-preparation.service';
 import { VoucherRenumberingService } from '../../src/modules/sri/application/voucher-renumbering.service';
 import {
+  ElectronicVoucherAuthorisedAfterAllError,
   ElectronicVoucherNotFoundError,
   ElectronicVoucherNotRenumberableError,
+  ElectronicVoucherRenumberUncheckedError,
 } from '../../src/modules/sri/domain/sri.errors';
 import type { SriSettings } from '../../src/modules/sri/domain/sri-web-service';
 import { AesGcmCertificateCipher } from '../../src/modules/sri/infrastructure/aes-gcm-certificate.cipher';
@@ -1328,6 +1330,7 @@ describe('SRI-108 a SRI-114 renumerar lo devuelto con «secuencial registrado»'
       { record: () => Promise.resolve() },
       preparation,
       NOW,
+      dispatch,
     );
   }
 
@@ -1527,6 +1530,53 @@ describe('SRI-108 a SRI-114 renumerar lo devuelto con «secuencial registrado»'
     expect(await prisma.voucherRenumbering.count()).toBe(1);
   });
 
+  it('SRI-109 si el SRI sí autorizó la clave devuelta, queda autorizada con su número y no se renumera', async () => {
+    // A send that timed out reached the SRI; the retry was answered 45.
+    const { invoice, voucher } = await aSignedVoucher();
+    double.setScenario(voucher.accessKey, 'OWN_SEQUENTIAL_REGISTERED_45');
+    await dispatch.run('SEND', voucher.id);
+    expect((await voucherOf(invoice.id)).status).toBe('RETURNED');
+
+    await expect(
+      renumbering().renumber(voucher.id, requester()),
+    ).rejects.toBeInstanceOf(ElectronicVoucherAuthorisedAfterAllError);
+
+    // The SRI's authorisation, applied: same number, same key, no hole.
+    expect(await voucherOf(invoice.id)).toMatchObject({
+      id: voucher.id,
+      status: 'AUTHORISED',
+      authorisationNumber: voucher.accessKey,
+    });
+    expect(await invoiceRow(invoice.id)).toMatchObject({
+      sequential: invoice.sequential,
+      accessKey: voucher.accessKey,
+      status: 'AUTHORISED',
+    });
+    expect(await prisma.voucherRenumbering.count()).toBe(0);
+    // And the question left its attempt (SRI-051).
+    expect(
+      await prisma.electronicVoucherAttempt.count({
+        where: { voucherId: voucher.id, operation: 'AUTHORISATION' },
+      }),
+    ).toBe(1);
+  });
+
+  it('SRI-109 si el SRI no contesta a la pregunta, no se renumera', async () => {
+    const { invoice, voucher } = await aReturned45();
+    double.setDown(true);
+
+    await expect(
+      renumbering().renumber(voucher.id, requester()),
+    ).rejects.toBeInstanceOf(ElectronicVoucherRenumberUncheckedError);
+    expect((await invoiceRow(invoice.id)).sequential).toBe(invoice.sequential);
+    expect(await prisma.voucherRenumbering.count()).toBe(0);
+
+    // Positive control: back up, the same request renumbers.
+    double.setDown(false);
+    await renumbering().renumber(voucher.id, requester());
+    expect(await prisma.voucherRenumbering.count()).toBe(1);
+  });
+
   it('SRI-110 fuera de las sedes de quien pide, no existe', async () => {
     const { voucher } = await aReturned45();
     await expect(
@@ -1595,6 +1645,17 @@ describe('SRI-108 a SRI-114 renumerar lo devuelto con «secuencial registrado»'
       sequential: '1',
     });
     await dispatch.run('SEND', note.id);
+
+    // SRI-111. By SQL, without its renumbering, the note keeps its number.
+    expect(
+      await prisma.$executeRaw`
+        UPDATE "credit_note"
+           SET "sequential" = '000000002', "access_key" = NULL, "status" = 'ISSUED'
+         WHERE "id" = ${creditNoteId}::uuid`.then(
+        () => null,
+        (error: unknown) => String((error as Error).message),
+      ),
+    ).toMatch(/credit_note_immutable/);
 
     const renumbered = await renumbering().renumber(note.id, requester());
     expect(renumbered).toMatchObject({

@@ -185,6 +185,7 @@ function fakes() {
     statusOfCreditNotes: vi.fn().mockResolvedValue([]),
     renumberingsOf: vi.fn().mockResolvedValue([]),
     renumber: vi.fn().mockResolvedValue(null),
+    renumberCandidate: vi.fn().mockResolvedValue(null),
     siteOf: vi.fn().mockResolvedValue(null),
     deliveryContext: vi.fn(),
     recordMailing: vi.fn().mockResolvedValue(undefined),

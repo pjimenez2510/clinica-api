@@ -952,7 +952,13 @@ clave.
   > D-262 §1. «Todos el 45»: con otro error al lado, renumerar no basta y
   > ocultaría ese otro. **Confirmar con:** contador.
 - **SRI-109** — CUANDO quien tenga `billing:write` en la sede del comprobante
-  pida renumerar uno renumerable, el sistema DEBERÁ, en una transacción, tomar
+  pida renumerar uno renumerable, el sistema DEBERÁ preguntar antes al SRI
+  por la autorización de la clave devuelta, dejando el intento; SI el SRI la
+  autorizó ENTONCES DEBERÁ registrarla como en SRI-047, encolar su entrega y
+  responder `SRI_VOUCHER_AUTHORISED_AFTER_ALL` sin renumerar; SI no se le
+  puede preguntar o no contesta ENTONCES DEBERÁ responder
+  `SRI_RENUMBER_UNCHECKED` sin renumerar. Si no la autorizó, DEBERÁ, en una
+  transacción, tomar
   el siguiente secuencial de su punto y tipo (`billing` BI-308), registrar en
   `voucher_renumbering` el secuencial y la clave anteriores, el nuevo, el
   mensaje del SRI, quién y cuándo, dejar el comprobante anterior `SUPERSEDED`
@@ -963,7 +969,10 @@ clave.
   renumeraciones de un documento DEBERÁN servirse en el monitor y en su
   resumen (anterior, nuevo, quién y cuándo).
   > La cuenta, los cargos, los cobros y el correo del comprador no se tocan: son
-  > de la factura, no de su número.
+  > de la factura, no de su número. La pregunta previa es de la revisión
+  > clínica de la rama: un envío que agotó su espera pudo llegar al SRI, y el
+  > reintento con la misma clave recibir el 45 por la copia del propio SRI;
+  > renumerar entonces dejaría dos facturas autorizadas por una venta.
 - **SRI-110** — SI el comprobante no es renumerable (otro estado, otro código,
   autorizado alguna vez, de un documento desistido, o renumerado ya por otra
   persona) ENTONCES el sistema DEBERÁ rechazarlo con
@@ -974,8 +983,11 @@ clave.
   documento y que pase a `SUPERSEDED`, salvo cuando una fila de
   `voucher_renumbering` nombre ese cambio (comprobante, número y clave
   anteriores y número nuevo) y el comprobante estuviera `RETURNED` sin
-  autorización; y `voucher_renumbering` NO DEBERÁ admitir `UPDATE` ni
-  `DELETE`.
+  autorización; `voucher_renumbering` NO DEBERÁ admitir `UPDATE` ni `DELETE`,
+  ni una fila cuyo comprobante no esté `RETURNED` sin autorización y de ese
+  documento, cuyo documento no esté `REJECTED` con ese número en ese punto, o
+  cuyo número nuevo quede por debajo del siguiente libre; y ningún
+  comprobante DEBERÁ nacer `SUPERSEDED`.
 - **SRI-112** — Un comprobante `SUPERSEDED` NO DEBERÁ enviarse, consultarse,
   reintentarse, barrerse ni aparecer en el monitor como pendiente; un trabajo
   de la cola que lo encuentre DEBERÁ terminar sin llamar al SRI.
@@ -1005,6 +1017,8 @@ clave.
 | `SRI_RESEND_DAILY_LIMIT`     | 429       | SRI-101. Quien pide ya hizo hoy los reenvíos del tope diario                                 |
 | `SRI_RESEND_DELIVERY_NOT_FAILED` | 409   | SRI-099. Sin `billing:write`, sólo se reenvía un correo que no salió                         |
 | `SRI_VOUCHER_NOT_RENUMBERABLE` | 409 | SRI-110. Sólo se renumera lo devuelto únicamente con el 45 y nunca autorizado |
+| `SRI_VOUCHER_AUTHORISED_AFTER_ALL` | 409 | SRI-109. El SRI sí autorizó la clave devuelta: queda autorizada y no se renumera |
+| `SRI_RENUMBER_UNCHECKED` | 503 | SRI-109. No se pudo preguntar al SRI por la clave devuelta; `Retry-After` |
 
 ## 9. La conexión real, que hace el autor
 

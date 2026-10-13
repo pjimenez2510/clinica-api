@@ -270,6 +270,8 @@ export interface VoucherStatusView {
   /** SRI-108. Whether the SRI ever authorised it, by number or by attempt. */
   authorisationNumber: string | null;
   everAuthorised: boolean;
+  /** SRI-110. The invoice's or the credit note's status. */
+  documentStatus: string;
 }
 
 export interface ElectronicVoucherRepository {
@@ -333,6 +335,12 @@ export interface ElectronicVoucherRepository {
    * SUPERSEDED with no document — in one transaction. `null` when it does not
    * admit it, or the voucher is not there.
    */
+  /**
+   * SRI-108. What decides a renumbering, read WITHOUT locks: only to know
+   * whether the SRI is worth asking before `renumber` decides under lock.
+   */
+  renumberCandidate(id: string): Promise<RenumberCandidate | null>;
+
   renumber(
     id: string,
     by: { userId: string; at: Date },

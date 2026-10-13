@@ -78,19 +78,28 @@ export class PrismaEmissionPointNumberingRepository implements EmissionPointNumb
 
   async fix(change: NumberingFix): Promise<void> {
     try {
-      await this.prisma.$executeRaw`
-        INSERT INTO "emission_point_numbering"
-          ("emission_point_id", "document_type", "next_sequential",
-           "previous_system_last", "reason", "changed_by", "changed_at")
-        VALUES (${change.emissionPointId}::uuid, ${change.documentType},
-                ${change.nextSequential}, ${change.previousSystemLast},
-                ${change.reason}, ${change.changedById}::uuid, ${new Date()})
-        ON CONFLICT ("emission_point_id", "document_type") DO UPDATE
-           SET "next_sequential" = EXCLUDED."next_sequential",
-               "previous_system_last" = EXCLUDED."previous_system_last",
-               "reason" = EXCLUDED."reason",
-               "changed_by" = EXCLUDED."changed_by",
-               "changed_at" = EXCLUDED."changed_at"`;
+      // UPDATE first and INSERT only for a new row: with `ON CONFLICT` the
+      // INSERT trigger would judge the row as proposed, an old floor already
+      // overtaken included, before the UPDATE that keeps it (BI-307).
+      const changedAt = new Date();
+      const updated = await this.prisma.$executeRaw`
+        UPDATE "emission_point_numbering"
+           SET "next_sequential" = ${change.nextSequential},
+               "previous_system_last" = ${change.previousSystemLast},
+               "reason" = ${change.reason},
+               "changed_by" = ${change.changedById}::uuid,
+               "changed_at" = ${changedAt}
+         WHERE "emission_point_id" = ${change.emissionPointId}::uuid
+           AND "document_type" = ${change.documentType}`;
+      if (updated === 0) {
+        await this.prisma.$executeRaw`
+          INSERT INTO "emission_point_numbering"
+            ("emission_point_id", "document_type", "next_sequential",
+             "previous_system_last", "reason", "changed_by", "changed_at")
+          VALUES (${change.emissionPointId}::uuid, ${change.documentType},
+                  ${change.nextSequential}, ${change.previousSystemLast},
+                  ${change.reason}, ${change.changedById}::uuid, ${changedAt})`;
+      }
     } catch (error) {
       // BI-307. The trigger decided under the point's lock; what it saw is
       // read again only to say it.

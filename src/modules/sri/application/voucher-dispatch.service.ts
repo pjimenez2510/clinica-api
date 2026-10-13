@@ -172,6 +172,58 @@ export class VoucherDispatchService {
   }
 
   /**
+   * SRI-116. Before a renumbering, the SRI is asked about the RETURNED key:
+   * a send that timed out may have reached it, and a retry answered 45 for
+   * the SRI's own copy. Authorised there, it is authorised here —the
+   * authorisation is applied and the e-mail queued, as SRI-047 does— and it
+   * is not renumbered. Every call leaves its attempt (SRI-051).
+   *
+   * `unknown` when the SRI cannot be asked or did not answer: nothing is
+   * renumbered on a guess.
+   */
+  async authorisationOfReturned(
+    voucher: VoucherRecord,
+  ): Promise<'none' | 'authorised' | 'unknown'> {
+    if (
+      !this.sri.isConfigured() ||
+      voucher.environment !== this.settings.environment
+    ) {
+      return 'unknown';
+    }
+    const startedAt = this.clock();
+    const answer = await this.sri.authorise(voucher.accessKey);
+    const attempt = authorisationAttempt(answer, startedAt, this.clock());
+    if (answer.kind === 'AUTORIZADO') {
+      await this.apply(
+        voucher,
+        attempt,
+        {
+          status: 'AUTHORISED',
+          documentStatus: 'AUTHORISED',
+          lastMessages: answer.messages,
+          next: { step: 'DELIVER', delaySeconds: 0 },
+        },
+        {
+          number: answer.authorisationNumber,
+          authorisedAt: answer.authorisedAt,
+          authorisedXml: authorisationDocument(answer),
+        },
+      );
+      return 'authorised';
+    }
+    // Nothing moves: the attempt is the record that it was asked.
+    await this.vouchers.recordAttempt(voucher.id, attempt, {
+      expectedStatus: voucher.status,
+      status: voucher.status,
+      documentStatus: null,
+      lastMessages: null,
+      nextAttemptAt: null,
+      authorisation: null,
+    });
+    return answer.kind === 'TRANSPORT_FAILURE' ? 'unknown' : 'none';
+  }
+
+  /**
    * SRI-072 to SRI-076, SRI-089. The RIDE and the authorised XML to the
    * buyer, of an invoice or of a credit note. Only the delivery columns move:
    * the authorisation is a fact an e-mail cannot undo.

@@ -149,6 +149,7 @@ export class SriVouchersController {
 
   /** SRI-109, SRI-110. «Renumerar con el siguiente libre». */
   @Post(':voucherId/renumber')
+  @HttpCode(HttpStatus.OK)
   @AnnouncesChange('billing')
   @RequirePermission('billing:write', 'query')
   @ApiOperation({

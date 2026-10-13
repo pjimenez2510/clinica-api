@@ -6,13 +6,14 @@ import { seedBilling } from '../../prisma/seed-billing.mts';
 import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
+import { PrismaCreditNoteRepository } from '../../src/modules/billing/infrastructure/prisma-credit-note.repository';
 import { Quantity } from '../../src/modules/billing/domain/money';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
-import { insertVoucher } from './setup/sri-fixtures';
+import { authoriseVoucher, insertVoucher } from './setup/sri-fixtures';
 
 /**
  * BI-306 to BI-308, SRI-111. The «próximo número» and the renumbering, AS THE
@@ -146,6 +147,17 @@ function fixNext(next: number | null, documentType = '01') {
            "changed_at" = EXCLUDED."changed_at"`;
 }
 
+/** An issued invoice the SRI authorised, and the charges it billed. */
+async function anAuthorisedInvoice() {
+  const invoice = await issue();
+  await authoriseVoucher(context.prisma, invoice.id);
+  const charges = await context.prisma.chargeItem.findMany({
+    where: { invoiceId: invoice.id },
+    select: { id: true },
+  });
+  return { invoiceId: invoice.id, chargeIds: charges.map((c) => c.id) };
+}
+
 async function rejectionOf(promise: Promise<unknown>): Promise<string | null> {
   return promise.then(
     () => null,
@@ -181,6 +193,42 @@ describe('BI-307 el próximo número nunca queda por debajo del usado', () => {
     expect(await rejectionOf(fixNext(1, '01'))).toMatch(
       /emission_point_numbering_not_below_used/,
     );
+  });
+
+  it('BI-307 un próximo número ya superado no impide cambiar el resto de la fila, y moverlo sí se vuelve a juzgar', async () => {
+    await fixNext(2);
+    await issue();
+    await issue(); // 2 and 3 used: the floor 2 is overtaken
+
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "emission_point_numbering"
+             SET "previous_system_last" = 150, "reason" = 'Lo del sistema anterior',
+                 "changed_at" = ${new Date()}
+           WHERE "emission_point_id" = ${context.emissionPointId}::uuid`,
+      ),
+    ).toBeNull();
+    // Control: moving it to another number at or below the used is judged.
+    expect(await rejectionOf(fixNext(3))).toMatch(
+      /emission_point_numbering_not_below_used/,
+    );
+  });
+
+  it('BI-085 la base rechaza un secuencial que no tiene sus nueve dígitos', async () => {
+    const invoice = await issue();
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          INSERT INTO "invoice" ("account_id", "site_id", "emission_point_id",
+            "sequential", "buyer_identification_type", "buyer_identification",
+            "buyer_name", "subtotal_taxed", "subtotal_untaxed", "tax_total",
+            "total", "issued_by_id", "updated_at")
+          VALUES (${invoice.accountId}::uuid, ${context.siteId}::uuid,
+            ${context.emissionPointId}::uuid, '20', '05', '1710034065', 'Otro',
+            0, 0, 0, 0, ${context.userId}::uuid, ${new Date()})`,
+      ),
+    ).toMatch(/invoice_sequential_has_nine_digits/);
   });
 
   it('BI-306 guarda la fila anterior en record_version al cambiar el próximo número', async () => {
@@ -258,9 +306,11 @@ describe('BI-308 la factura sale con el próximo número', () => {
     }
   });
 
-  it('BI-308 la función de la base numera notas de crédito por separado y bajo el mismo bloqueo', async () => {
-    await issue();
+  it('BI-308 dos notas de crédito a la vez en el mismo punto toman su propia serie, desde el número fijado, sin compartirlo', async () => {
+    await issue(); // invoices do not move the credit notes' series
     await fixNext(7, '04');
+    const one = await anAuthorisedInvoice();
+    const other = await anAuthorisedInvoice();
 
     const url = inject('databaseUrl');
     const clients = [
@@ -268,24 +318,31 @@ describe('BI-308 la factura sale con el próximo número', () => {
       new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) }),
     ];
     try {
-      // Each takes the number and keeps the lock until its transaction
-      // commits, as the credit note's issuance does: the second waits.
-      const taken = await Promise.all(
-        clients.map((client) =>
-          client.$transaction(async (tx) => {
-            const [row] = await tx.$queryRaw<{ next: string }[]>`
-              SELECT next_voucher_sequential(${context.emissionPointId}::uuid, '04') AS "next"`;
-            await tx.$executeRaw`
-              UPDATE "emission_point_numbering"
-                 SET "next_sequential" = ${Number(row!.next) + 1},
-                     "changed_at" = CURRENT_TIMESTAMP
-               WHERE "emission_point_id" = ${context.emissionPointId}::uuid
-                 AND "document_type" = '04'`;
-            return row!.next;
+      const notes = await Promise.all(
+        clients.map((client, index) =>
+          new PrismaCreditNoteRepository(
+            client as unknown as PrismaService,
+          ).issue({
+            invoiceId: (index === 0 ? one : other).invoiceId,
+            siteId: context.siteId,
+            chargeIds: (index === 0 ? one : other).chargeIds,
+            reasonCode: 'RECEIVER_DATA',
+            reason: 'Error en los datos del receptor',
+            rebill: false,
+            issuedById: context.userId,
+            now: new Date(),
+            trail: { userId: context.userId },
           }),
         ),
       );
-      expect(taken.sort()).toEqual(['000000007', '000000008']);
+      const sequentials = await context.prisma.creditNote.findMany({
+        where: { id: { in: notes.map((note) => note.creditNote.id) } },
+        select: { sequential: true },
+      });
+      expect(sequentials.map((note) => note.sequential).sort()).toEqual([
+        '000000007',
+        '000000008',
+      ]);
     } finally {
       await Promise.all(clients.map((client) => client.$disconnect()));
     }
@@ -415,6 +472,45 @@ describe('SRI-111 el número y la clave cambian sólo con su renumeración', () 
         context.prisma.$executeRaw`DELETE FROM "voucher_renumbering"`,
       ),
     ).toMatch(/voucher_renumbering_append_only/);
+  });
+
+  it('SRI-111 la base no admite una renumeración de un comprobante no devuelto, ni hacia un número por debajo del siguiente libre', async () => {
+    const returned = await aReturnedInvoice();
+    await fixNext(10);
+
+    // Below the next free number: into a hole the SRI may already hold.
+    expect(await rejectionOf(recordRenumbering(returned, '000000005'))).toMatch(
+      /voucher_renumbering_is_due/,
+    );
+
+    const refused = await aReturnedInvoice();
+    await context.prisma.$executeRaw`
+      UPDATE "electronic_voucher" SET "status" = 'NOT_AUTHORISED'
+       WHERE "id" = ${refused.voucher.id}::uuid`;
+    expect(await rejectionOf(recordRenumbering(refused, '000000010'))).toMatch(
+      /voucher_renumbering_is_due/,
+    );
+
+    // Positive control: the next free number, for the returned one.
+    expect(
+      await rejectionOf(recordRenumbering(returned, '000000010')),
+    ).toBeNull();
+  });
+
+  it('SRI-111 un comprobante no nace reemplazado', async () => {
+    const invoice = await issue();
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          INSERT INTO "electronic_voucher" ("site_id", "access_key",
+            "numeric_code", "environment", "schema_version", "status",
+            "unsigned_xml", "document_type")
+          VALUES (${context.siteId}::uuid, ${'1'.repeat(49)}, '00000001', '1',
+            '1.1.0', 'SUPERSEDED', '<factura/>', '01')`,
+      ),
+    ).toMatch(/electronic_voucher_superseded_only_renumbered/);
+    // Control: the invoice's own voucher is born as always.
+    await insertVoucher(context.prisma, invoice.id);
   });
 
   it('SRI-111 una factura emitida tampoco cambia de número por SQL', async () => {
