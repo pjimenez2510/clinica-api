@@ -23,6 +23,7 @@ import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
+import { Timeout } from '../../shared/http/interceptors/timeout.interceptor';
 
 import {
   VitalsDictationService,
@@ -77,6 +78,9 @@ export class AssistantVitalsDictationController {
   @RequirePermission('assistant:dictate-vitals', 'query')
   // AS-185. Each one holds the recogniser of this machine for seconds.
   @Throttle({ long: { ttl: 60_000, limit: 30 } })
+  // AS-186. Above the transcriber's 60 s, so its 503 is what arrives, not the
+  // global 15 s of every other route.
+  @Timeout(65_000)
   @HttpCode(HttpStatus.OK)
   @ApiConsumes('application/octet-stream')
   @ApiBody({ schema: { type: 'string', format: 'binary' } })
@@ -90,7 +94,17 @@ export class AssistantVitalsDictationController {
     const body: unknown = req.body;
     // No body at all leaves no Buffer: the same answer as an empty one.
     const recording = Buffer.isBuffer(body) ? body : Buffer.alloc(0);
-    return this.dictation.dictate(encounterId, recording, this.requester());
+    // The screen gave up (closed, navigated away): the recogniser is freed.
+    const gone = new AbortController();
+    req.res?.once('close', () => {
+      if (!req.res?.writableFinished) gone.abort();
+    });
+    return this.dictation.dictate(
+      encounterId,
+      recording,
+      this.requester(),
+      gone.signal,
+    );
   }
 
   /** AS-026. Off: the answer of a route that does not exist. */

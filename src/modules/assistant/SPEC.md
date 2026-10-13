@@ -364,11 +364,11 @@ casilla vacía la ve quien guarda; el 170 leído por 117, no.
 saturación, peso y talla con su marca de propuesta, la frecuencia respiratoria
 dicha «trescientos» queda marcada sin valor, y la toma no existe en la base
 hasta «Guardar»; el arnés da ≥ 93 % y 0 graves sobre el set inventado.
-**Cubre:** AS-180 a AS-196.
+**Cubre:** AS-180 a AS-196 y AS-198 (AS-197 quedó muerto).
 **Solo servidor:** AS-184 (lo que no se guarda ni llega al log), AS-187 (el
 catálogo y los roles) y AS-188 (el arnés, fuera del verify). La pantalla los ve
 como AS-191.
-**Solo interfaz:** AS-189 a AS-195. Son el botón, la grabación, las marcas de
+**Solo interfaz:** AS-189 a AS-195 y AS-198. Son el botón, la grabación, las marcas de
 propuesta y los fallos en la pestaña Signos; su mitad del servidor es AS-180,
 AS-182, AS-185 y AS-186, que ya se prueban con esos números.
 
@@ -1837,11 +1837,15 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   dos con valores distintos, ENTONCES `temperatureC` DEBERÁ ir en `unclear`.
   > El formulario 020 no distingue el sitio (D-255 §3).
 - **AS-184** — Ni la grabación, ni lo que se oyó, ni la propuesta DEBERÁN
-  guardarse en la base, en disco ni en el log; la grabación DEBERÁ pasar a
-  `clinica-ai` en memoria y olvidarse al terminar la petición; la respuesta
-  DEBERÁ llevar `Cache-Control: no-store`; y un fallo DEBERÁ registrarse sólo
-  con su motivo y sus cifras (bytes, segundos), sin texto.
+  guardarse en la base, en disco del servidor ni en el log; la grabación
+  DEBERÁ pasar a `clinica-ai` en memoria y olvidarse al terminar la petición;
+  la respuesta DEBERÁ llevar `Cache-Control: no-store`; y un fallo DEBERÁ
+  registrarse sólo con su motivo, sus cifras (bytes, segundos) y la atención
+  (`encounter_id`), sin texto.
   > SigmAI RF-E09, P3. No se audita como lectura: no lee nada de la historia.
+  > En el navegador, los valores propuestos siguen el borrador local de la
+  > toma como lo tecleado —con su marca, y se borran al guardar o descartar—;
+  > lo oído no se guarda allí (D-255 §8).
 - **AS-185** — Quién: sin `assistant:dictate-vitals` en ninguna sede la ruta
   DEBERÁ responder 403; SI la atención no existe o es de una sede donde quien
   pide no tiene a la vez `vitals:write` y `assistant:dictate-vitals`,
@@ -1850,7 +1854,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   `ASSISTANT_ENCOUNTER_CLOSED` (409); y con `ASSISTANT_ENABLED` apagado,
   404 antes de todo (AS-026). NO DEBERÁ exigir `assistant:use` ni ser el
   profesional de la atención: la toma la hace enfermería (D-255 §1). Admite
-  hasta **30 dictados por minuto** por cuenta.
+  hasta **30 dictados por minuto** por dirección, como las demás rutas con
+  límite (D-251).
 - **AS-186** — Fallos, sin llenar nada: una grabación vacía, o que
   `clinica-ai` no pudo leer o en la que no oyó ninguna voz →
   `ASSISTANT_DICTATION_NOT_HEARD` (422), con un título que dice qué hacer y,
@@ -1858,7 +1863,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   413 `PAYLOAD_TOO_LARGE` del propio lector del cuerpo, antes de que llegue a
   este módulo ni a `clinica-ai` (como DOC-052); y
   `clinica-ai` sin reconocedor, sin secreto, caído o sin responder en
-  **60 s** → `ASSISTANT_DICTATION_UNAVAILABLE` (503).
+  **60 s** → `ASSISTANT_DICTATION_UNAVAILABLE` (503), también con más de
+  **2 dictados en curso** en la API (el reconocedor es el mismo de la
+  escucha). La ruta espera 65 s, no los 15 s de las demás; y SI la pantalla
+  abandona la petición, ENTONCES la transcripción DEBERÁ cancelarse.
 - **AS-187** — El catálogo DEBERÁ tener el permiso `assistant:dictate-vitals`,
   y los roles de fábrica `ENFERMERIA` y `MEDICO` DEBERÁN traerlo (D-255 §1).
 - **AS-196** — CUANDO la pantalla pregunte por el dictado de una atención
@@ -1884,7 +1892,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > inventado y el audio se borra. Se probó además no leer los números a los
   > que whisper dio poca confianza (CAI-016): ningún umbral dejó a la vez
   > ≥ 93 % y 0 graves en los dos sets —whisper duda también de muchos números
-  > correctos y escribió uno mal con seguridad—, así que no entró (D-255 §7).
+  > correctos y escribió uno mal con seguridad—, así que no entró y su
+  > requisito, AS-197, queda muerto (D-255 §7).
 
 ### 50. En la pestaña Signos (solo interfaz)
 
@@ -1893,26 +1902,43 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   ofrecer **«Dictar»**; con el asistente apagado o la atención fuera del
   alcance (AS-196 responde 404) NO DEBERÁ mostrarlo.
 - **AS-190** — CUANDO se pulse «Dictar», la pantalla DEBERÁ abrir el
-  micrófono —o, en desarrollo, el audio de prueba, y decirlo— y mostrar
-  «Dictando…» con el tiempo, «Terminar» y «Cancelar»; al llegar a
-  `maxSeconds` DEBERÁ terminar sola. «Cancelar» DEBERÁ soltar el micrófono
-  sin mandar nada. El audio vive sólo en la memoria de la pestaña hasta
-  mandarlo.
+  micrófono —o, en desarrollo, el audio de prueba, y decirlo—, con sólo
+  «Cancelar» mientras se abre, y mostrar «Dictando…» con el tiempo,
+  «Terminar» y «Cancelar»; al llegar a `maxSeconds` DEBERÁ terminar sola, sin
+  mandar más de `maxSeconds` de audio. «Cancelar» —también mientras el
+  navegador abre el micrófono—, cerrar la tarjeta o que el formulario deje de
+  poder escribirse DEBERÁN soltar el micrófono sin mandar nada, y una
+  respuesta que llegue después NO DEBERÁ llenar nada. El audio vive sólo en
+  la memoria de la pestaña hasta mandarlo.
 - **AS-191** — CUANDO llegue la propuesta, cada signo leído DEBERÁ escribirse
   en su casilla con el borde punteado y «Propuesta» (ESTANDAR-UI §6 bis);
-  cada signo de `unclear` DEBERÁ marcar su casilla con «No se entendió:
-  escríbalo» sin poner valor; las casillas no dichas DEBERÁN quedar como
-  estaban; y DEBERÁ verse «Se oyó: «…»». Nada DEBERÁ enviarse a la toma hasta
-  «Guardar»; la marca de una casilla DEBERÁ irse al cambiarla, y todas al
-  guardar.
-- **AS-192** — SI el dictado cambia una casilla que ya tenía un valor,
-  ENTONCES la marca DEBERÁ decir el anterior («Propuesta · antes 118»).
-- **AS-193** — SI el dictado falla —micrófono denegado o ausente, sin voz,
-  demasiado largo, reconocedor no disponible—, ENTONCES la pestaña DEBERÁ
+  cada signo de `unclear` DEBERÁ vaciar su casilla y marcarla en ámbar con
+  «No se entendió: escríbalo»; las casillas no dichas DEBERÁN quedar como
+  estaban, con sus marcas de un dictado anterior; y DEBERÁ verse «Se oyó:
+  «…»» con todo lo oído en esa toma. Nada DEBERÁ enviarse a la toma hasta
+  «Guardar», ni abrir la preparación (AG-122) lo que sólo propuso el
+  dictado. La marca de una casilla DEBERÁ irse al cambiarla o al confirmar
+  (AS-198), y todas al guardar o al cancelar la corrección; y DEBERÁ
+  conservarse con el borrador del navegador, de modo que cambiar de pestaña
+  o recargar no convierta un valor dictado en uno tecleado.
+- **AS-192** — SI el dictado cambia una casilla que ya tenía un valor
+  tecleado, ENTONCES la marca DEBERÁ decir ese valor («Propuesta · antes
+  118», «No se entendió: escríbalo · antes 18»), también tras varios
+  dictados.
+- **AS-193** — SI el dictado falla —micrófono denegado, ausente o perdido a
+  mitad, sin voz, demasiado largo, reconocedor no disponible u ocupado—, ENTONCES la pestaña DEBERÁ
   decir en el formulario qué pasó y qué hacer, sin llenar nada ni perder lo
   tecleado.
 - **AS-194** — SI la propuesta no trae ningún signo ni ninguno sin entender,
   ENTONCES DEBERÁ decir «No se reconoció ningún signo» con lo que se oyó.
+- **AS-198** — MIENTRAS quede alguna casilla con «Propuesta», «Guardar
+  signos» NO DEBERÁ poder pulsarse, y junto a él DEBERÁ decirse «Compare lo
+  dictado con lo que midió antes de guardar.» con **«Confirmar lo
+  dictado»**, que quita las marcas de propuesta (no las de duda); cambiar una
+  casilla a mano también la confirma. Tampoco mientras se lee un dictado.
+  > Un número mal oído es plausible (SC-096 en rojo, D-255 §7): sólo quien
+  > lo compara con lo que midió lo ve. Es la opción (b) de §7, con un solo
+  > clic para todas; el autor decide si queda así.
 - **AS-195** — A 375 px de ancho, «Dictar», «Terminar» y «Cancelar» DEBERÁN
   medir al menos 44 px de alto y la pestaña no DEBERÁ desbordar.
 
@@ -2006,7 +2032,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-180, AS-184, AS-186 | Unitario del servicio y del adaptador con `fetch` y reconocedor falsos |
 | AS-180, AS-185, AS-186, AS-187, AS-196 | Integración HTTP contra PostgreSQL, con control positivo |
 | AS-188 | Arnés (`eval/`), fuera del verify |
-| AS-189 a AS-195 | Componente y composable; recorrido F-03 con el audio de prueba y `clinica-ai` |
+| AS-189 a AS-195, AS-198 | Componente y composable; recorrido F-03 con el audio de prueba y `clinica-ai` |
 
 ## Preguntas abiertas
 

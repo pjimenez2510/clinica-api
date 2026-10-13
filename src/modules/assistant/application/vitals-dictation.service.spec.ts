@@ -9,9 +9,11 @@ import {
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   DictationNotHeardError,
+  DictationUnavailableError,
 } from '../domain/assistant.errors';
 
 import {
+  MAX_DICTATIONS_IN_FLIGHT,
   MAX_DICTATION_SECONDS,
   VitalsDictationService,
 } from './vitals-dictation.service';
@@ -66,7 +68,7 @@ describe('AS-180 AS-185 AS-186 AS-196 VitalsDictationService', () => {
       unclear: ['respiratoryRate'],
     });
     expect(reader.encounter).toHaveBeenCalledWith(ENCOUNTER_ID, ['site-1']);
-    expect(transcriber.transcribe).toHaveBeenCalledWith(RECORDING);
+    expect(transcriber.transcribe).toHaveBeenCalledWith(RECORDING, undefined);
   });
 
   it('AS-185 an attention that does not exist or is out of the sites is not found, and nothing is transcribed', async () => {
@@ -121,6 +123,41 @@ describe('AS-180 AS-185 AS-186 AS-196 VitalsDictationService', () => {
       kind: 'silent',
       seconds: 4.4,
     });
+  });
+
+  it('AS-186 lets no more dictations reach the recogniser at once than its limit, and frees the place after', async () => {
+    const { service: dictation, transcriber } = service(encounter());
+    const answers: ((heard: { text: string; seconds: number }) => void)[] = [];
+    transcriber.transcribe.mockImplementation(
+      () => new Promise((resolve) => answers.push(resolve)),
+    );
+
+    const running = Array.from({ length: MAX_DICTATIONS_IN_FLIGHT }, () =>
+      dictation.dictate(ENCOUNTER_ID, RECORDING, { sites: 'all' }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    const extra = await dictation
+      .dictate(ENCOUNTER_ID, RECORDING, { sites: 'all' })
+      .catch((caught: unknown) => caught);
+
+    expect(extra).toBeInstanceOf(DictationUnavailableError);
+    expect((extra as DictationUnavailableError).reason).toBe('busy');
+    answers.forEach((answer) => answer({ text: 'pulso 70', seconds: 2 }));
+    await Promise.all(running);
+    // Control: once they are done, a new one goes through.
+    transcriber.transcribe.mockResolvedValue({ text: 'pulso 70', seconds: 2 });
+    await expect(
+      dictation.dictate(ENCOUNTER_ID, RECORDING, { sites: 'all' }),
+    ).resolves.toMatchObject({ signs: { heartRate: 70 } });
+  });
+
+  it('AS-186 hands the screen\u2019s abort on to the transcriber', async () => {
+    const { service: dictation, transcriber } = service(encounter(), { text: 'pulso 70', seconds: 2 }); // prettier-ignore
+    const gone = new AbortController();
+
+    await dictation.dictate(ENCOUNTER_ID, RECORDING, { sites: 'all' }, gone.signal); // prettier-ignore
+
+    expect(transcriber.transcribe).toHaveBeenCalledWith(RECORDING, gone.signal);
   });
 
   it('AS-196 tells the screen how long a dictation may last, for a live attention in scope', async () => {

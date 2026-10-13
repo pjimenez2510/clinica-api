@@ -9,6 +9,7 @@ import {
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   DictationNotHeardError,
+  DictationUnavailableError,
 } from '../domain/assistant.errors';
 import {
   readDictatedVitals,
@@ -17,11 +18,19 @@ import {
 
 import {
   DICTATION_TRANSCRIBER,
+  type DictationHeard,
   type DictationTranscriber,
 } from './dictation-transcriber.port';
 
 /** AS-196. Two minutes of speech: the longest dictation the screen records (SigmAI). */
 export const MAX_DICTATION_SECONDS = 120;
+
+/**
+ * AS-186. Dictations this API sends to the recogniser at once. `clinica-ai`
+ * queues every recognition behind one, the consultation's listening
+ * included: more than this and a busy morning would starve the listening.
+ */
+export const MAX_DICTATIONS_IN_FLIGHT = 2;
 
 /** AS-185. Where the requester may take vitals AND dictate them. */
 export interface DictationRequester {
@@ -46,6 +55,7 @@ export interface VitalsDictation extends DictatedVitals {
 @Injectable()
 export class VitalsDictationService {
   private readonly logger = new Logger(VitalsDictationService.name);
+  private inFlight = 0;
 
   constructor(
     @Inject(CODING_CONTEXT_READER)
@@ -68,9 +78,20 @@ export class VitalsDictationService {
     encounterId: string,
     recording: Buffer,
     requester: DictationRequester,
+    /** Aborted when the screen gave up: the recogniser is freed at once. */
+    signal?: AbortSignal,
   ): Promise<VitalsDictation> {
     await this.liveEncounter(encounterId, requester);
-    const heard = await this.transcriber.transcribe(recording);
+    if (this.inFlight >= MAX_DICTATIONS_IN_FLIGHT) {
+      throw new DictationUnavailableError('busy');
+    }
+    this.inFlight += 1;
+    let heard: DictationHeard;
+    try {
+      heard = await this.transcriber.transcribe(recording, signal);
+    } finally {
+      this.inFlight -= 1;
+    }
     const text = heard.text.trim();
     if (text === '') {
       // AS-184. How long it was, never what was in it.

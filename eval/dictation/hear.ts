@@ -67,7 +67,7 @@ export async function hearAll(
             if ((error as { code?: string }).code === 'ASSISTANT_DICTATION_NOT_HEARD') return { text: '' }; // prettier-ignore
             throw error;
           });
-        heard.push({ id: item.id, voice, rate, text: text.replace(/\s+/g, ' ').trim() }); // prettier-ignore
+        heard.push({ id: item.id, voice, rate, text }); // prettier-ignore
         progress(heard.length, total);
       }
     }

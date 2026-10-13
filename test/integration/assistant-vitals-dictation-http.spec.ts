@@ -264,4 +264,50 @@ describe('los signos dictados por HTTP (AS-180, AS-184 a AS-187, AS-196)', () =>
     expect(response.headers['cache-control']).toBe('no-store');
     expect(clinicaAi).not.toHaveBeenCalled();
   });
+
+  it('AS-185 dictating needs both permissions AT THE SAME site: one here and the other elsewhere is not found', async () => {
+    const role = async (code: string, permissionCode: string) =>
+      prisma.role.create({
+        data: {
+          code,
+          name: code,
+          permissions: { create: [{ permissionCode }] },
+        },
+      });
+    const dictates = await role('SOLO_DICTA', 'assistant:dictate-vitals');
+    const takes = await role('SOLO_TOMA', 'vitals:write');
+    const user = await prisma.user.create({
+      data: {
+        email: 'cruce@clinica.ec',
+        firstName: 'Ana',
+        lastName: 'Cruz',
+        cedula: '1710034057',
+        passwordHash: await argon2.hash(PASSWORD, {
+          type: argon2.argon2id,
+          memoryCost: PASSWORD_HASHING.memoryCost,
+          timeCost: PASSWORD_HASHING.timeCost,
+          parallelism: PASSWORD_HASHING.parallelism,
+        }),
+      },
+    });
+    await prisma.userRoleGrant.create({ data: { userId: user.id, roleId: dictates.id, siteId } }); // prettier-ignore
+    await prisma.userRoleGrant.create({ data: { userId: user.id, roleId: takes.id, siteId: otherSiteId } }); // prettier-ignore
+    registry.invalidate();
+    const login = async () =>
+      (
+        (await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email: 'cruce@clinica.ec', password: PASSWORD }).expect(200)) // prettier-ignore
+        .body as { accessToken: string }
+      ).accessToken;
+
+    const refused = await dictate(encounterId, await login()).expect(404);
+    expect((refused.body as Problem).code).toBe(
+      'ASSISTANT_ENCOUNTER_NOT_FOUND',
+    );
+    expect(clinicaAi).not.toHaveBeenCalled();
+
+    // Control: the taking's permission at this site too, and the same request reads.
+    await prisma.userRoleGrant.create({ data: { userId: user.id, roleId: takes.id, siteId } }); // prettier-ignore
+    registry.invalidate();
+    await dictate(encounterId, await login()).expect(200);
+  });
 });

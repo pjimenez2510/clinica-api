@@ -140,9 +140,14 @@ async function main(): Promise<void> {
   for (let n = 2; existsSync(folder); n += 1) folder = `${base}-${n}`;
   mkdirSync(folder, { recursive: true });
   const serious = cells.filter((cell) => cell.outcome === 'wrong' || cell.outcome === 'invented'); // prettier-ignore
+  // The reserved set is reported in figures only: its phrases are not copied.
+  const reported =
+    set === 'reservado'
+      ? serious.map((cell) => ({ ...cell, text: '' }))
+      : serious;
   writeFileSync(
     join(folder, 'resultado.json'),
-    `${JSON.stringify({ ...meta, verdict, texto: textTally, oido: heardTally, serious }, null, 2)}\n`, // prettier-ignore
+    `${JSON.stringify({ ...meta, verdict, texto: textTally, oido: heardTally, serious: reported }, null, 2)}\n`, // prettier-ignore
   );
   writeFileSync(join(folder, 'informe.md'), renderDictationReport(meta, cells, verdict)); // prettier-ignore
 

@@ -101,7 +101,7 @@ ${table(text, 'category')}
 
 ## Graves
 
-${serious.length === 0 ? 'Ninguno.' : serious.map((cell) => `- **${cell.id}** · ${cell.arm} · ${cell.voice} · ${LABELS[cell.field]}: esperado ${cell.expected ?? '(no dicho)'}, leído ${cell.got} — «${cell.text}»`).join('\n')}
+${serious.length === 0 ? 'Ninguno.' : serious.map((cell) => `- **${cell.id}** · ${cell.arm} · ${cell.voice} · ${LABELS[cell.field]}: esperado ${cell.expected ?? '(no dicho)'}, leído ${cell.got}${meta.set === 'reservado' ? '' : ` — «${cell.text}»`}`).join('\n')}${meta.set === 'reservado' ? '\n\nDel set reservado no se copian frases: sólo cifras.' : ''}
 
 ## Lo que no mide
 

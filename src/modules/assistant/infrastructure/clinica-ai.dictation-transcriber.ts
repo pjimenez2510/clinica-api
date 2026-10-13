@@ -62,7 +62,12 @@ export class ClinicaAiDictationTranscriber implements DictationTranscriber {
             authorization: `Bearer ${this.#secret}`,
             'content-type': 'application/octet-stream',
           },
-          body: new Uint8Array(recording),
+          // A view over the same bytes: the recording is not copied a second time.
+          body: new Uint8Array(
+            recording.buffer as ArrayBuffer,
+            recording.byteOffset,
+            recording.byteLength,
+          ),
           signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
         },
       );
@@ -88,10 +93,13 @@ export class ClinicaAiDictationTranscriber implements DictationTranscriber {
   }
 }
 
-/** AS-186. Without the shared secret nothing is sent: it fails closed. */
+/**
+ * AS-186. Without the shared secret nothing is sent: it fails closed, as a
+ * recogniser that is not installed (retrying will not configure it).
+ */
 class MissingDictationTranscriber implements DictationTranscriber {
   transcribe(): Promise<DictationHeard> {
-    return Promise.reject(new DictationUnavailableError('unreachable'));
+    return Promise.reject(new DictationUnavailableError('no-recognizer'));
   }
 }
 

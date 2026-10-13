@@ -57,6 +57,8 @@ describe('AS-180 AS-184 AS-186 ClinicaAiDictationTranscriber', () => {
       'content-type': 'application/octet-stream',
     });
     expect(Buffer.from(init?.body as Uint8Array).equals(RECORDING)).toBe(true);
+    // The same memory, not a copy.
+    expect((init?.body as Uint8Array).buffer).toBe(RECORDING.buffer);
   });
 
   it('AS-186 an empty recording is not heard, and clinica-ai is not asked', async () => {
@@ -125,7 +127,7 @@ describe('AS-180 AS-184 AS-186 ClinicaAiDictationTranscriber', () => {
     expect((error as DictationUnavailableError).reason).toBe('unreachable');
   });
 
-  it('AS-186 without a shared secret there is no transcriber: unavailable, and nothing is sent', async () => {
+  it('AS-186 without a shared secret there is no transcriber: not installed, and nothing is sent', async () => {
     const fetcher = answering(200, { text: SAID, seconds: 1 });
     const transcriber = dictationTranscriberFor(
       { url: URL_, secret: undefined, timeoutMs: 1000 },
@@ -134,7 +136,7 @@ describe('AS-180 AS-184 AS-186 ClinicaAiDictationTranscriber', () => {
 
     const error = await failure(transcriber.transcribe(RECORDING));
 
-    expect((error as DictationUnavailableError).reason).toBe('unreachable');
+    expect((error as DictationUnavailableError).reason).toBe('no-recognizer');
     expect(fetcher).not.toHaveBeenCalled();
   });
 

@@ -557,7 +557,8 @@ export class DictationNotHeardError extends ValidationError {
   }
 }
 
-export type DictationUnavailableReason = 'no-recognizer' | 'unreachable';
+export type DictationUnavailableReason =
+  'no-recognizer' | 'unreachable' | 'busy';
 
 const DICTATION_UNAVAILABLE_TITLES: Record<DictationUnavailableReason, string> =
   {
@@ -565,11 +566,13 @@ const DICTATION_UNAVAILABLE_TITLES: Record<DictationUnavailableReason, string> =
       'El reconocimiento de voz no está instalado en este equipo: escriba los signos',
     unreachable:
       'El reconocimiento de voz no responde. Vuelva a intentarlo en unos minutos o escriba los signos',
+    busy: 'El reconocimiento de voz está ocupado con otros dictados. Vuelva a intentarlo en unos segundos o escriba los signos',
   };
 
 /**
  * AS-186. `clinica-ai` cannot transcribe: no recogniser, no secret, down, or
- * too slow. Retryable either way: the taking goes on by hand meanwhile.
+ * too slow; or this API already has as many dictations in flight as it lets
+ * through (the recogniser is shared with the consultation's listening). Retryable either way: the taking goes on by hand meanwhile.
  */
 export class DictationUnavailableError extends ExternalServiceError {
   readonly code = 'ASSISTANT_DICTATION_UNAVAILABLE';
