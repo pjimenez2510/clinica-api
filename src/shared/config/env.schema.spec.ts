@@ -447,6 +447,31 @@ describe('validateEnv', () => {
     ).toBe(1);
   });
 
+  it('RATE_LIMIT_SCALE defaults to 1 and is refused in production with any other value', () => {
+    // The walks raise the general rate limits of THEIR API (every request of a
+    // run comes from 127.0.0.1); a production API never boots with them raised.
+    expect(validateEnv(base).RATE_LIMIT_SCALE).toBe(1);
+    expect(
+      validateEnv({ ...base, RATE_LIMIT_SCALE: '10' }).RATE_LIMIT_SCALE,
+    ).toBe(10);
+    expect(() => validateEnv({ ...base, RATE_LIMIT_SCALE: '0' })).toThrow(
+      /RATE_LIMIT_SCALE/,
+    );
+
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      TRUST_PROXY_HOPS: '1',
+      WEB_BASE_URL: 'https://clinica.example',
+    };
+    expect(() =>
+      validateEnv({ ...production, RATE_LIMIT_SCALE: '10' }),
+    ).toThrow(/RATE_LIMIT_SCALE/);
+    expect(
+      validateEnv({ ...production, RATE_LIMIT_SCALE: '1' }).RATE_LIMIT_SCALE,
+    ).toBe(1);
+  });
+
   it('DOC-083 en producción exige WEB_BASE_URL con https: va impresa en el QR de documentos inmutables', () => {
     const production = {
       ...base,
