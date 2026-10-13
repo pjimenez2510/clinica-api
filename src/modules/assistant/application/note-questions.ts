@@ -46,6 +46,8 @@ export interface QuestionsInput {
   written: Readonly<Record<string, string>>;
   /** AS-120. The text of the questions discarded in this attention. */
   discarded: readonly string[];
+  /** AS-276. The questions proposed earlier in this attention, oldest first. */
+  earlier?: readonly string[];
   encounterId?: string;
   signal?: AbortSignal;
 }
@@ -101,6 +103,7 @@ export async function askNoteQuestions(
     markers,
     textSections: sections.map((section) => section.key),
     discarded: input.discarded,
+    earlier: input.earlier,
     restore: (text) =>
       unshiftDates(
         restorePlaceholders(text, cleared.replacements),

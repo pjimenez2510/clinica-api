@@ -9,6 +9,7 @@ import {
   noteDigestInput,
   questionKey,
   questionsConversation,
+  sameQuestion,
   type StoredQuestion,
 } from './note-questions';
 import { decisionOf, type SuggestionView } from './suggestion';
@@ -234,5 +235,46 @@ describe('a question is not accepted (AS-121)', () => {
       () =>
       decisionOf(question, { outcome: 'accept', recordId: 'n1', saved: '¿Tiene tos?' }), // prettier-ignore
     ).toThrow(SuggestionInvalidError);
+  });
+});
+
+describe('the same question in other words (AS-276)', () => {
+  it('AS-276 the pairs the principal saw are one question; a different one is not', () => {
+    expect(sameQuestion('¿Presenta tos, congestión nasal o mocos?', '¿Presenta tos, mocos o congestión nasal?')).toBe(true); // prettier-ignore
+    expect(sameQuestion('¿Presenta náuseas, vómitos o dolor de estómago?', '¿Ha tenido náuseas, vómitos o dolor de estómago?')).toBe(true); // prettier-ignore
+    expect(sameQuestion('¿Tiene tos?', '¿Desde cuándo tiene tos?')).toBe(false);
+    expect(sameQuestion('¿Tiene tos?', '¿Tiene fiebre?')).toBe(false);
+    expect(sameQuestion('¿Está embarazada o podría estarlo?', '¿Ha tenido contacto con alguien enfermo?')).toBe(false); // prettier-ignore
+  });
+
+  it('AS-276 asked before in other words, shown as first asked; never two alike in a review; discarded in any wording, gone', () => {
+    const { kept } = backedQuestions({
+      answered: [
+        asked('¿Presenta tos, mocos o congestión nasal?', 'L1'),
+        asked('¿Tiene tos, congestión nasal o mocos?', 'L1'),
+        asked('¿Ha tenido náuseas, vómitos o dolor de estómago?', 'L1'),
+        asked('¿Hasta qué temperatura llegó la fiebre?', 'L1'),
+      ],
+      markers,
+      textSections: SECTIONS,
+      discarded: ['¿Presenta náuseas, vómitos o dolor de estómago?'],
+      earlier: ['¿Presenta tos, congestión nasal o mocos?'],
+      restore: same,
+    });
+
+    expect(kept.map((each) => each.text)).toEqual([
+      '¿Presenta tos, congestión nasal o mocos?',
+      '¿Hasta qué temperatura llegó la fiebre?',
+    ]);
+  });
+
+  it('AS-276 a question discarded in one wording is not shown in another', () => {
+    const stored: StoredQuestion[] = [
+      { id: 'q-1', aiRunId: 'run-1', status: 'DISCARDED', proposedAt: new Date(0), proposal: { text: '¿Presenta tos, congestión nasal o mocos?', fromMs: 0, toMs: 12_000 } }, // prettier-ignore
+      { id: 'q-2', aiRunId: 'run-2', status: 'PROPOSED', proposedAt: new Date(1), proposal: { text: '¿Tiene tos, mocos o congestión nasal?', fromMs: 0, toMs: 12_000 } }, // prettier-ignore
+      { id: 'q-3', aiRunId: 'run-2', status: 'PROPOSED', proposedAt: new Date(1), proposal: { text: '¿Hasta qué temperatura llegó la fiebre?', fromMs: 0, toMs: 12_000 } }, // prettier-ignore
+    ];
+
+    expect(currentQuestions('run-2', stored, LINES).map((each) => each.id)).toEqual(['q-3']); // prettier-ignore
   });
 });
