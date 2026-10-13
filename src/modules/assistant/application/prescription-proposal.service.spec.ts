@@ -39,7 +39,12 @@ import type {
   LlmRequest,
   PseudonymizedText,
 } from './llm-client.port';
-import { LINES_PURPOSE, MAPPING_PURPOSE } from './prescription-reading.prompts';
+import {
+  LINES_INSTRUCTIONS,
+  LINES_PROMPT_VERSION,
+  LINES_PURPOSE,
+  MAPPING_PURPOSE,
+} from './prescription-reading.prompts';
 import { PrescriptionProposalService } from './prescription-proposal.service';
 import type { Pseudonymizer } from './pseudonymizer.port';
 import type { NewSuggestion } from './suggestion.store';
@@ -618,5 +623,14 @@ describe('PrescriptionProposalService — allergies, confirm and link', () => {
     // Control: the line of its own medicine links.
     await link([{ suggestionId: 'sug-1', line: 1 }]);
     expect(store.raw.accept).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the instructions of the receta reading (AS-272)', () => {
+  it('AS-272 a medicine the physician says to keep taking («siga con») is a line of today (d2-lines-2)', () => {
+    expect(LINES_PROMPT_VERSION).toBe('d2-lines-2');
+    expect(LINES_INSTRUCTIONS).toMatch(
+      /«siga con», «continúe con».*sí es una línea/,
+    );
   });
 });

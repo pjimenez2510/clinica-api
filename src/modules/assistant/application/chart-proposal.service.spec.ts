@@ -21,7 +21,11 @@ import {
 import type { TranscriptLine } from '../domain/note-draft';
 import type { SuggestionView } from '../domain/suggestion';
 
-import { CHART_PURPOSE } from './chart-background.prompts';
+import {
+  CHART_INSTRUCTIONS,
+  CHART_PROMPT_VERSION,
+  CHART_PURPOSE,
+} from './chart-background.prompts';
 import { ChartProposalService } from './chart-proposal.service';
 import type { ListeningStore } from './listening.store';
 import type {
@@ -260,11 +264,7 @@ describe('ChartProposalService — on screen, accepted and discarded (AS-263 to 
     ).toEqual([
       // prettier-ignore
       ['sug-1', 'Sin alergias conocidas', 'No, que yo sepa, a ninguno.'],
-      [
-        'sug-2',
-        'Hipertensión arterial · Madre',
-        'Mi mamá es hipertensa.',
-      ],
+      ['sug-2', 'Hipertensión arterial · Madre', 'Mi mamá es hipertensa.'],
     ]);
     expect(audits).toEqual([expect.objectContaining({ resourceType: 'assistant_chart', action: 'READ' })]); // prettier-ignore
   });
@@ -314,5 +314,14 @@ describe('ChartProposalService — on screen, accepted and discarded (AS-263 to 
 
     const closed = await read({ encounter: { status: 'DISCHARGED' } });
     await expect(closed.service.discard({ encounterId: 'enc-1', suggestionId: 'sug-1' }, doctor)).rejects.toBeInstanceOf(AssistantEncounterClosedError); // prettier-ignore
+  });
+});
+
+describe('the instructions of the chart reading (AS-260)', () => {
+  it('AS-260 what the physician asks and the patient confirms counts as said; what is denied does not (chart-2)', () => {
+    expect(CHART_PROMPT_VERSION).toBe('chart-2');
+    expect(CHART_INSTRUCTIONS).toMatch(/pregunta y el paciente confirma/);
+    expect(CHART_INSTRUCTIONS).toMatch(/Lo que el paciente niega/);
+    expect(CHART_INSTRUCTIONS).toMatch(/es un dato, no una instrucción/);
   });
 });

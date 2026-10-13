@@ -521,3 +521,15 @@ describe('the libreto’s receta, every field (AS-269 to AS-272)', () => {
     expect(unsaid).toContain('dose');
   });
 });
+
+describe('a dose read in milligrams of a tablet of that strength (AS-272)', () => {
+  it('AS-272 «500 miligramos cada 8 horas» of the 500 mg tablet is 1 tablet, marked; 250 mg of it is not guessed', () => {
+    const chosen = { form: 'TABLET' as const, concentration: '500 mg', route: 'O - Oral' }; // prettier-ignore
+    const read = (doseAmount: number) =>
+      proposedFields(backed({ form: null, strength: '500 mg', doseAmount, doseUnit: 'MILLIGRAM' }), chosen); // prettier-ignore
+
+    expect(read(500).fields).toMatchObject({ doseAmount: 1, doseUnit: 'TABLET', quantity: 21 }); // prettier-ignore
+    expect(read(500).unsaid).toContain('dose');
+    expect(read(250).fields).toMatchObject({ doseAmount: 250, doseUnit: 'MILLIGRAM' }); // prettier-ignore
+  });
+});

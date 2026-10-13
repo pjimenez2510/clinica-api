@@ -13,7 +13,7 @@ import { instruction } from './llm-client.port';
  * line by line with its marker; the chart itself never goes (D-261 §1): what
  * it already has is taken out afterwards, without a model.
  */
-export const CHART_PROMPT_VERSION = 'chart-1';
+export const CHART_PROMPT_VERSION = 'chart-2';
 export const CHART_PURPOSE = 'chart-background';
 /** A few entries and their markers: room for the answer and the reasoning before it. */
 export const CHART_MAX_TOKENS = 1_500;
@@ -29,6 +29,7 @@ Reglas:
 - "description" es la enfermedad en el español de una historia clínica, con su nombre médico y sin abreviaturas: "es hipertensa" es "Hipertensión arterial", "tiene azúcar" es "Diabetes mellitus tipo 2" solo si se dijo el tipo, si no "Diabetes mellitus".
 - "relative" es el parentesco de un antecedente familiar, uno de: Madre, Padre, Hermano, Hermana, Hijo, Hija, Abuelo, Abuela, Tío, Tía. Para uno personal es null. Si el familiar no es ninguno de esos, no escribas el antecedente.
 - Lo que el paciente niega ("yo no", "nadie en mi familia") no es un antecedente: no lo escribas.
+- Lo que el médico pregunta y el paciente confirma también lo dijo el paciente ("Su papá tenía diabetes, ¿verdad?" "Sí"): escríbelo con el marcador de la línea que nombra la enfermedad.
 - Los medicamentos que toma, los síntomas de hoy y los diagnósticos de esta consulta no son antecedentes.
 - Por cada entrada copia en "source" el marcador de la línea que la dice, sin los corchetes (por ejemplo "L3"). Si ninguna línea la dice, no la escribas.
 - Si la conversación no dice nada de esto, responde las listas vacías y "noKnownAllergies" null. Es una respuesta válida.

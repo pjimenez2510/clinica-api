@@ -30,7 +30,7 @@ import { instruction } from './llm-client.port';
  * text: they travel with `withContext`.
  */
 
-export const LINES_PROMPT_VERSION = 'd2-lines-1';
+export const LINES_PROMPT_VERSION = 'd2-lines-2';
 export const MAPPING_PROMPT_VERSION = 'd2-mapping-1';
 
 export const LINES_PURPOSE = 'prescription-lines';
@@ -50,7 +50,7 @@ export const LINES_INSTRUCTIONS = instruction`Eres un asistente clínico de una 
 Devuelve las líneas de receta que la nota indica, tal como están escritas.
 
 Reglas:
-- Solo lo que la nota indica como tratamiento para hoy. Un medicamento que solo se menciona (lo que el paciente ya toma, una alergia, algo que se suspende o se descarta) no es una línea.
+- Solo lo que la nota indica como tratamiento para hoy. Un medicamento que solo se menciona (lo que el paciente ya toma, una alergia, algo que se suspende o se descarta) no es una línea. Lo que se le indica seguir tomando («siga con», «continúe con») sí es una línea.
 - "drug" es solo el nombre del medicamento, sin concentración ni forma: «amoxicilina», no «amoxicilina 500 mg».
 - "strength" es la concentración escrita, en texto, como «500 mg» o «250 mg/5 mL». Sirve para elegir la presentación. No es una dosis.
 - "form", "doseUnit", "route" y "frequency" son códigos de las listas que se te dan. Si lo escrito no corresponde a ninguno, déjalo en null. Una frecuencia escrita que no está en la lista va en "frequencyText".

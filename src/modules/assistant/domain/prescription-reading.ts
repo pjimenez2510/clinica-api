@@ -559,6 +559,14 @@ const MASS_UNITS: ReadonlySet<DoseUnit> = new Set<DoseUnit>([
   'MILLILITRE',
 ]);
 
+/** How the cuadro writes the mass units a dose may be read in. */
+const DOSE_UNIT_SYMBOLS: Readonly<Partial<Record<DoseUnit, string>>> = {
+  MILLIGRAM: 'mg',
+  GRAM: 'g',
+  MICROGRAM: 'mcg',
+  INTERNATIONAL_UNIT: 'UI',
+};
+
 /** AS-067. The fields the system filled in and nobody wrote. */
 export type UnsaidField = 'presentation' | 'route' | 'dose' | 'quantity';
 
@@ -618,6 +626,26 @@ export function proposedFields(
   if (doseAmount !== null && doseUnit === null && unit !== null) {
     doseUnit = unit;
     if (line.form === null) unsaid.push('dose');
+  }
+  // AS-272 (measured 13-10-2026): «500 miligramos cada 8 horas» read as a
+  // dose of 500 MILLIGRAM. Of a 500 mg tablet that is one tablet: the
+  // counted unit, marked. Exact equality only, as below.
+  if (
+    !doseByWeight &&
+    doseAmount !== null &&
+    doseUnit !== null &&
+    MASS_UNITS.has(doseUnit) &&
+    doseUnit !== 'MILLILITRE' &&
+    unit !== null &&
+    chosen?.concentration != null &&
+    sameStrength(
+      `${doseAmount} ${DOSE_UNIT_SYMBOLS[doseUnit] ?? ''}`,
+      chosen.concentration,
+    )
+  ) {
+    doseAmount = 1;
+    doseUnit = unit;
+    unsaid.push('dose');
   }
   // SigmAI `per-dose.ts`: «500 mg» of a 500 mg tablet is one tablet. Exact
   // equality only: 5 mg of a 10 mg tablet is half, and is not guessed.
