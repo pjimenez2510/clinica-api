@@ -89,17 +89,22 @@ export class PrismaSuggestionStore implements SuggestionStore {
       const created: SuggestionRow[] = [];
       for (const suggestion of suggestions) {
         created.push(
-          await tx.aiSuggestion.create({
-            data: {
-              encounterId: suggestion.encounterId,
-              aiRunId: suggestion.aiRunId,
-              kind: suggestion.kind,
-              proposal: suggestion.proposal as Prisma.InputJsonObject,
-              sources: suggestion.sources,
-              proposedAt,
-            },
-            select: SUGGESTION_SELECT,
-          }),
+          await tx.aiSuggestion
+            .create({
+              data: {
+                encounterId: suggestion.encounterId,
+                aiRunId: suggestion.aiRunId,
+                kind: suggestion.kind,
+                proposal: suggestion.proposal as Prisma.InputJsonObject,
+                sources: suggestion.sources,
+                proposedAt,
+              },
+              select: SUGGESTION_SELECT,
+            })
+            .catch((error: unknown) => {
+              // AS-124. A question once its 002 is signed.
+              throw suggestionErrorFrom(error) ?? error;
+            }),
         );
       }
       return created;

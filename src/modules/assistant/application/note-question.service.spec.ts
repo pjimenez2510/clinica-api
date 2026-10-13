@@ -370,6 +370,30 @@ describe('NoteQuestionService — the review on screen (AS-122, AS-123, AS-125)'
     expect(world.suggestions).toEqual([]);
   });
 
+  it('AS-124 a note signed while the model answered keeps nothing, and the same review unsigned keeps it (positive control)', async () => {
+    const unsigned = new World();
+    let releaseUnsigned!: () => void;
+    unsigned.gate = new Promise((resolve) => (releaseUnsigned = resolve));
+    const kept = unsigned.service().check(ENCOUNTER, doctor);
+    await vi.waitFor(() => expect(unsigned.prompts).toHaveLength(1));
+    releaseUnsigned();
+    await kept;
+    expect(unsigned.checks).toHaveLength(1);
+
+    const world = new World();
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+    const checking = world.service().check(ENCOUNTER, doctor);
+    await vi.waitFor(() => expect(world.prompts).toHaveLength(1));
+    // Signed: the 002 is no longer the attention's draft.
+    world.note = null;
+    release();
+
+    await expect(checking).rejects.toBeInstanceOf(AssistantNoteNotOpenError);
+    expect(world.checks).toEqual([]);
+    expect(world.suggestions).toEqual([]);
+  });
+
   it('AS-125 refuses discarding a question that is not on screen', async () => {
     const world = new World();
     const service = world.service();

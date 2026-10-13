@@ -211,8 +211,12 @@ export class NoteQuestionService {
     if (asked.runId === null) throw new AssistantProposalNotKeptError();
     const runId = asked.runId;
 
-    // Up to 45 s went by: nothing is kept on an attention closed since.
+    // Up to 45 s went by: nothing is kept on an attention closed since, nor
+    // on a note signed since (AS-124; the database refuses it too).
     await this.ownLiveEncounter(encounter.id, requester);
+    if (!(await this.notes.consultationDraft(encounter.id))) {
+      throw new AssistantNoteNotOpenError();
+    }
     if (asked.kept.length > 0) {
       await this.suggestions.propose(
         asked.kept.map((question) => ({
