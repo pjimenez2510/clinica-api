@@ -69,3 +69,22 @@ describe('AS-026 quién trae el asistente de fábrica', () => {
     }
   });
 });
+
+/**
+ * AS-187, D-255 §1. Dictating the vital signs is the taking's, not the
+ * consultation's: nursing and medicine carry it, and nursing does NOT get
+ * `assistant:use` with it (the listening, the drafts, the proposals).
+ */
+describe('AS-187 quién dicta los signos de fábrica', () => {
+  it('AS-187 enfermería y el médico traen assistant:dictate-vitals', () => {
+    expect(permissionsOf('ENFERMERIA')).toContain('assistant:dictate-vitals');
+    expect(permissionsOf('MEDICO')).toContain('assistant:dictate-vitals');
+  });
+
+  it('AS-187 control: recepción y caja no lo traen, y enfermería sigue sin assistant:use', () => {
+    for (const code of ['RECEPCION', 'CAJA']) {
+      expect(permissionsOf(code)).not.toContain('assistant:dictate-vitals');
+    }
+    expect(permissionsOf('ENFERMERIA')).not.toContain('assistant:use');
+  });
+});

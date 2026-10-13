@@ -302,6 +302,17 @@ export const PERMISSION_CATALOGUE = [
     description:
       'Usar el asistente de IA en la atención: pedir propuestas y aceptarlas o descartarlas. No registra ni firma nada por sí mismo',
   },
+  // AS-187, D-255 §1. The vital signs said aloud, read into a proposal for the
+  // taking's form (B2). Its own code and not `assistant:use`: nursing takes
+  // the vitals and must not get the listening, the drafts and the proposals
+  // of the consultation with it. Crossed with `vitals:write` on every route;
+  // the taking is still written by «Guardar», never by the dictation.
+  {
+    code: 'assistant:dictate-vitals',
+    resource: 'record',
+    description:
+      'Dictar los signos vitales en voz alta para que el asistente llene la toma como propuesta. No guarda nada por sí mismo',
+  },
   // EN-072, REQ-115. The second key of the record: block F of form 002, the
   // violence screening. `record:read` opens the attention; this opens what the
   // attention says about violence, and is ALSO what lets somebody record it.
