@@ -359,7 +359,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
       await ch.next('listening');
 
       expect(await ch.closing).toBe(4401);
-      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId } }))?.reason).toBe('device-lost'); // prettier-ignore
+      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } }))?.reason).toBe('device-lost'); // prettier-ignore
     });
 
     it('AS-045 asks again on start: an attention signed after the ticket is not listened to', async () => {
@@ -380,13 +380,13 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
     it('AS-045 discharging the attention stops the listening, tells the channel and keeps nothing more in it', async () => {
       const ch = await listening();
       ch.speak(0, SENTENCES[1]!);
-      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId } }))?.state).toBe('LISTENING'); // prettier-ignore
+      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } }))?.state).toBe('LISTENING'); // prettier-ignore
 
       await discharge(encounterId);
 
       expect(await ch.next('stopped')).toMatchObject({ type: 'stopped', reason: 'ASSISTANT_ENCOUNTER_CLOSED' }); // prettier-ignore
       expect(await ch.closing).toBe(4409);
-      const session = await prisma.listeningSession.findUnique({ where: { encounterId } }); // prettier-ignore
+      const session = await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } }); // prettier-ignore
       expect(session?.state).toBe('STOPPED');
       // What was said before the discharge was kept, and nothing after it.
       const kept = await prisma.transcriptSegment.findMany({ where: { encounterId } }); // prettier-ignore
@@ -411,9 +411,9 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
       await first.next('listening');
       first.speak(SENTENCES[2]!, lengthOf(2) + lengthOf(3));
       // The fourth sentence is inside the recogniser when the channel dies.
-      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId } }))?.offsetMs).toBeGreaterThanOrEqual(20_000); // prettier-ignore
+      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } }))?.offsetMs).toBeGreaterThanOrEqual(20_000); // prettier-ignore
       first.socket.terminate();
-      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId } }))?.state).toBe('PAUSED'); // prettier-ignore
+      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } }))?.state).toBe('PAUSED'); // prettier-ignore
 
       const second = await listening();
       expect(second.offsetMs).toBe(SENTENCES[4]);
@@ -428,7 +428,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
       const kept = await prisma.transcriptSegment.findMany({ where: { encounterId }, orderBy: { startMs: 'asc' } }); // prettier-ignore
       expect(kept.map((s) => s.startMs)).toEqual(SENTENCES);
       expect(kept.at(-1)?.endMs).toBe(END_MS);
-      expect(await prisma.listeningSession.findUnique({ where: { encounterId } })).toMatchObject({ state: 'STOPPED', offsetMs: END_MS, reason: null }); // prettier-ignore
+      expect(await prisma.listeningSession.findUnique({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } })).toMatchObject({ state: 'STOPPED', offsetMs: END_MS, reason: null }); // prettier-ignore
     });
 
     it('AS-053 closes with 1009 a frame of more than one second', async () => {
@@ -513,7 +513,10 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
         ],
       });
 
-      const purged = await new PrismaListeningStore(prisma as never).purge(now);
+      const purged = await new PrismaListeningStore(
+        prisma as never,
+        'CONSULTATION',
+      ).purge(now);
 
       expect(purged).toBe(2);
       const left = await prisma.transcriptSegment.findMany({ select: { encounterId: true, startMs: true } }); // prettier-ignore

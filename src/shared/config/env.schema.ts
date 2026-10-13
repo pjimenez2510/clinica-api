@@ -261,6 +261,16 @@ export const envSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   /**
+   * AS-251 (B3, P7). Whether the preparation listened to is read by the
+   * provider — besides `ASSISTANT_ALLOW_REMOTE`. Off by default: until it is
+   * measured and switched on, the preparation is read by the rules, in this
+   * machine, even where the consultation's assistant already goes out.
+   */
+  ASSISTANT_PREPARATION_REMOTE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
    * AS-006. One key per provider of the chain (D-239 §5). A provider without
    * its key is left out of the chain. Never committed: they live in the
    * `.env` of the installation only.

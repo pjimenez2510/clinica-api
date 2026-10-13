@@ -135,7 +135,9 @@ describe('listening_session (AS-049, AS-051)', () => {
     });
 
     const kept = await prisma.listeningSession.findUniqueOrThrow({
-      where: { encounterId: encounter.id },
+      where: {
+        encounterId_scope: { encounterId: encounter.id, scope: 'CONSULTATION' },
+      },
     });
     expect(kept).toMatchObject({ offsetMs: 22_230, reason: 'device-lost' });
   });
@@ -190,5 +192,93 @@ describe('the audio is stored nowhere (AS-053)', () => {
       new Set(['listening_session', 'transcript_segment']),
     );
     expect(columns.filter((c) => c.data_type === 'bytea')).toEqual([]);
+  });
+});
+
+describe('the scope of a listening (AS-241, B3)', () => {
+  function session(encounterId: string, userId: string, scope?: string) {
+    const now = new Date();
+    return {
+      encounterId,
+      ...(scope ? { scope } : {}),
+      state: 'LISTENING',
+      offsetMs: 0,
+      device: 'computador',
+      startedBy: userId,
+      startedAt: now,
+      updatedAt: now,
+    };
+  }
+
+  it('AS-241: keeps the preparation and the consultation of one attention apart, and a listening older than the scope as the consultation', async () => {
+    const prisma = db();
+    const { encounter, userId } = await anAttention(prisma);
+
+    await prisma.listeningSession.create({
+      data: session(encounter.id, userId),
+    });
+    await prisma.listeningSession.create({
+      data: session(encounter.id, userId, 'PREPARATION'),
+    });
+
+    const scopes = await prisma.listeningSession.findMany({
+      where: { encounterId: encounter.id },
+      select: { scope: true },
+      orderBy: { scope: 'asc' },
+    });
+    expect(scopes.map((each) => each.scope)).toEqual([
+      'CONSULTATION',
+      'PREPARATION',
+    ]);
+  });
+
+  it('AS-241: refuses a second listening of the same attention in the same scope', async () => {
+    const prisma = db();
+    const { encounter, userId } = await anAttention(prisma);
+    await prisma.listeningSession.create({
+      data: session(encounter.id, userId, 'PREPARATION'),
+    });
+
+    await expect(
+      prisma.listeningSession.create({
+        data: session(encounter.id, userId, 'PREPARATION'),
+      }),
+    ).rejects.toThrow(/listening_session_pkey|Unique constraint/);
+  });
+
+  it('AS-241: refuses a scope it does not know, on a listening and on a segment', async () => {
+    const prisma = db();
+    const { encounter, userId } = await anAttention(prisma);
+
+    await expect(
+      prisma.listeningSession.create({
+        data: session(encounter.id, userId, 'WAITING_ROOM'),
+      }),
+    ).rejects.toThrow(/listening_session_scope_known/);
+    await expect(
+      prisma.transcriptSegment.create({
+        data: { ...segment(encounter.id), scope: 'WAITING_ROOM' },
+      }),
+    ).rejects.toThrow(/transcript_segment_scope_known/);
+  });
+
+  it('AS-241: takes the same start in the other scope, and refuses it twice in the same one', async () => {
+    const prisma = db();
+    const { encounter } = await anAttention(prisma);
+    await prisma.transcriptSegment.create({ data: segment(encounter.id) });
+
+    // Positive control: the preparation starts its own clock at zero.
+    await prisma.transcriptSegment.create({
+      data: { ...segment(encounter.id), scope: 'PREPARATION' },
+    });
+
+    await expect(
+      prisma.transcriptSegment.create({
+        data: {
+          ...segment(encounter.id, { text: 'Otra frase en el mismo inicio.' }),
+          scope: 'PREPARATION',
+        },
+      }),
+    ).rejects.toThrow(/transcript_segment_once|Unique constraint/);
   });
 });

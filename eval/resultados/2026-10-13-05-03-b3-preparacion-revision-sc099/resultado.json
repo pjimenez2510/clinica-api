@@ -1,0 +1,140 @@
+{
+  "label": "b3-preparacion-revision-sc099",
+  "startedAt": "2026-10-13 05:03:55",
+  "commit": "98ff382f+cambios",
+  "provider": "gemini",
+  "casesSha256": "ba6db0bcc29dd193432d80d2057c4de336f235b798304516460bebfdc8923bc5",
+  "stopped": null,
+  "failures": {},
+  "cases": 2,
+  "planned": 2,
+  "summaries": {
+    "oido": {
+      "cases": 1,
+      "answered": 1,
+      "expected": 3,
+      "correct": 3,
+      "correctRate": {
+        "low": 0.4385029643606803,
+        "high": 1,
+        "rate": 1
+      },
+      "wrong": 0,
+      "invented": 0,
+      "serious": 0,
+      "notLiteral": 0,
+      "complaintSaid": 1,
+      "complaintRight": 1,
+      "complaintRate": {
+        "low": 0.20654931179180275,
+        "high": 1,
+        "rate": 1
+      },
+      "complaintInvented": 0,
+      "lines": 3,
+      "speakersRight": 3,
+      "speakerRate": {
+        "low": 0.4385029643606803,
+        "high": 1,
+        "rate": 1
+      },
+      "p50Ms": 5387,
+      "p90Ms": 5387
+    },
+    "reservado-b2": {
+      "cases": 1,
+      "answered": 1,
+      "expected": 6,
+      "correct": 6,
+      "correctRate": {
+        "low": 0.6096657083436264,
+        "high": 1,
+        "rate": 1
+      },
+      "wrong": 0,
+      "invented": 0,
+      "serious": 0,
+      "notLiteral": 0,
+      "complaintSaid": 0,
+      "complaintRight": 0,
+      "complaintRate": {
+        "low": null,
+        "high": null,
+        "rate": 0
+      },
+      "complaintInvented": 0,
+      "lines": 1,
+      "speakersRight": 1,
+      "speakerRate": {
+        "low": 0.20654931179180275,
+        "high": 1,
+        "rate": 1
+      },
+      "p50Ms": 3034,
+      "p90Ms": 3034
+    }
+  },
+  "verdicts": {
+    "oido": {
+      "sc099": true,
+      "sc100": false,
+      "sc101": true
+    },
+    "reservado-b2": {
+      "sc099": true,
+      "sc100": true,
+      "sc101": true
+    }
+  },
+  "serious": [],
+  "scored": [
+    {
+      "id": "P10",
+      "style": "correccion",
+      "arm": "oido",
+      "voice": "por persona",
+      "reader": "assistant",
+      "latencyMs": 5387,
+      "values": [
+        {
+          "field": "systolicBp",
+          "expected": 130,
+          "got": 130,
+          "outcome": "correct"
+        },
+        {
+          "field": "diastolicBp",
+          "expected": 80,
+          "got": 80,
+          "outcome": "correct"
+        },
+        {
+          "field": "heartRate",
+          "expected": 70,
+          "got": 70,
+          "outcome": "correct"
+        }
+      ],
+      "notLiteral": 0,
+      "complaint": "correct",
+      "speakers": {
+        "right": 3,
+        "lines": 3
+      }
+    },
+    {
+      "id": "B2-V06",
+      "style": "b2-completa-cifras",
+      "arm": "escrito",
+      "voice": "—",
+      "reader": "assistant",
+      "latencyMs": 3034,
+      "notLiteral": 0,
+      "complaint": "none",
+      "speakers": {
+        "right": 1,
+        "lines": 1
+      }
+    }
+  ]
+}

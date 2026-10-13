@@ -1,6 +1,11 @@
 /**
  * B2 (AS-181, AS-182). Copied as is from SigmAI (`sigmai-api` `modules/vitals/dictation.ts`,
  * E-055: 93,9 % of the values without noise, 0 serious errors, no model).
+ *
+ * B3 (AS-253) widens it with what failed when the author dictated his own way (13-10-2026): the
+ * systolic and the diastolic said apart, the circumferences, the haemoglobin, how the height was
+ * taken, and an unknown word after a number ending that reading instead of gluing the next numbers
+ * to it. SigmAI's own tests still pass untouched.
  */
 
 import { PLAUSIBLE, type VitalSigns } from './vitals-plausibility';
@@ -12,10 +17,29 @@ export interface DictatedSigns {
   signs: Partial<Record<VitalField, number>>;
   /** Named aloud but not understood well enough to fill: the screen asks for them by hand. */
   unclear: VitalField[];
+  /** AS-253. How the height was measured, only when a height was named and one way was said. */
+  heightPosition?: HeightPosition;
+}
+
+export type HeightPosition = 'STANDING' | 'LYING';
+
+export interface DictationOptions {
+  /**
+   * AS-253. A conversation, not a dictation: an unknown word after a number ends that reading, so
+   * «pesa 70 kilos… desde hace 3 días» does not glue the 3 to the weight. Off for «Dictar»: there it
+   * turned a misheard field name into a wrong value (D-260 §8).
+   */
+  endAtUnknownWord?: boolean;
 }
 
 type Topic =
   | 'pressure'
+  | 'systolic'
+  | 'diastolic'
+  | 'headCircumferenceCm'
+  | 'abdominalCircumferenceCm'
+  | 'hemoglobinGDl'
+  | 'hemoglobinCorrectedGDl'
   | 'heartRate'
   | 'respiratoryRate'
   | 'oxygenSaturation'
@@ -92,6 +116,77 @@ const HUNDREDS: Record<string, number> = {
 };
 
 const CORRECTIONS = new Set(['perdon', 'perdone', 'no', 'digo', 'corrijo']);
+
+/**
+ * AS-253. What may follow a number inside its reading: units, links, corrections and doubts. Any
+ * other word after the number ends the reading («hemoglobina 22.5, se lo midió de pie…»).
+ */
+const STAYS_IN_READING = new Set([
+  ...CORRECTIONS,
+  'mejor',
+  'dicho',
+  'nose',
+  'espera',
+  'recuerdo',
+  'creo',
+  'y',
+  'con',
+  'sobre',
+  '/',
+  'de',
+  'en',
+  'a',
+  'el',
+  'la',
+  'es',
+  'esta',
+  'son',
+  'medio',
+  'punto',
+  'coma',
+  'arterial',
+  'cardiaca',
+  'cardiaco',
+  'respiratoria',
+  'oxigeno',
+  'axilar',
+  'bucal',
+  'oral',
+  'kilos',
+  'kilo',
+  'kg',
+  'kilogramos',
+  'libras',
+  'libra',
+  'lb',
+  'lbs',
+  'metros',
+  'metro',
+  'm',
+  'cm',
+  'centimetros',
+  'grados',
+  'centigrados',
+  'celsius',
+  'por',
+  'minuto',
+  'latidos',
+  'lpm',
+  'rpm',
+  'respiraciones',
+  'mmhg',
+  'milimetros',
+  'mercurio',
+  'gramos',
+  'decilitro',
+  'g',
+  'dl',
+  'gdl',
+]);
+
+/** AS-253. How the height was taken: «de pie», «parado», «acostado». */
+const STANDING = new Set(['parado', 'parada']);
+const LYING = new Set(['acostado', 'acostada', 'echado', 'echada', 'decubito']);
 const HESITATIONS = [['nose'], ['espera'], ['no', 'recuerdo'], ['creo']];
 
 /**
@@ -102,14 +197,17 @@ const HESITATIONS = [['nose'], ['espera'], ['no', 'recuerdo'], ['creo']];
  * A field it is not sure about stays empty and is named in `unclear`; it never guesses. A value
  * outside what a person can physically measure is not sure.
  */
-export function interpretDictation(text: string): DictatedSigns {
+export function interpretDictation(
+  text: string,
+  options: DictationOptions = {},
+): DictatedSigns {
   const tokens = tokenize(text);
-  const spans = topicsIn(tokens);
+  const spans = topicsIn(tokens, options.endAtUnknownWord ?? false);
   const found = new Map<VitalField, number[]>();
   const unclear = new Set<VitalField>();
 
-  for (const { topic, body } of spans) {
-    const read = readTopic(topic, body);
+  for (const { topic, body, doubt } of spans) {
+    const read = doubt ? null : readTopic(topic, body);
     const fields = fieldsOf(topic);
 
     if (read === null) {
@@ -132,7 +230,138 @@ export function interpretDictation(text: string): DictatedSigns {
     }
   }
 
-  return { signs, unclear: [...unclear] };
+  // AS-253. Said apart, the pair still obeys the rule a pressure said at once does.
+  if (
+    signs.systolic !== undefined &&
+    signs.diastolic !== undefined &&
+    signs.diastolic >= signs.systolic
+  ) {
+    delete signs.systolic;
+    delete signs.diastolic;
+    unclear.add('systolic');
+    unclear.add('diastolic');
+  }
+  // AS-248. A correction for altitude lowers the haemoglobin, never raises it.
+  if (
+    signs.hemoglobinGDl !== undefined &&
+    signs.hemoglobinCorrectedGDl !== undefined &&
+    signs.hemoglobinCorrectedGDl > signs.hemoglobinGDl
+  ) {
+    delete signs.hemoglobinCorrectedGDl;
+    unclear.add('hemoglobinCorrectedGDl');
+  }
+
+  const read: DictatedSigns = { signs, unclear: [...unclear] };
+  const position = spans.some((span) => span.topic === 'heightCm')
+    ? positionIn(tokens)
+    : null;
+  if (position) read.heightPosition = position;
+  return read;
+}
+
+/** AS-253. One way of measuring the height said, or none: both said is no answer. */
+function positionIn(tokens: Token[]): HeightPosition | null {
+  const said = new Set<HeightPosition>();
+  tokens.forEach((_, at) => {
+    const word = wordAt(tokens, at);
+    if (word === null) return;
+    if (STANDING.has(word)) said.add('STANDING');
+    if (word === 'pie' && wordAt(tokens, at - 1) === 'de') said.add('STANDING');
+    if (LYING.has(word)) said.add('LYING');
+  });
+  return said.size === 1 ? [...said][0]! : null;
+}
+
+/**
+ * AS-247 (B3). The numbers a phrase says, as this reader understands them —in figures, in words
+ * («ciento veinte»), with «y medio», «punto» or «coma»— in runs of numbers said one right after the
+ * other, with nothing between them. Two numbers are only ever read as one when they are in a run.
+ */
+export function spokenNumberRuns(
+  text: string,
+): { value: number; raw: string }[][] {
+  const runs: { value: number; raw: string }[][] = [];
+  let run: { value: number; raw: string }[] = [];
+  for (const token of tokenize(text)) {
+    if (token.kind === 'number') {
+      run.push({ value: token.value, raw: token.raw });
+      continue;
+    }
+    if (run.length > 0) runs.push(run);
+    run = [];
+  }
+  if (run.length > 0) runs.push(run);
+  return runs;
+}
+
+/** AS-247. Two numbers said together, read as one: «uno sesenta» is 1.60, «treinta y seis ocho» 36.8. */
+export function joinedNumbers(first: number, second: number): number[] {
+  const joined: number[] = [];
+  if (
+    (first === 1 || first === 2) &&
+    Number.isInteger(second) &&
+    second < 100
+  ) {
+    joined.push(first + second / 100);
+  }
+  if (
+    Number.isInteger(first) &&
+    first >= 10 &&
+    Number.isInteger(second) &&
+    second <= 9
+  ) {
+    joined.push(first + second / 10);
+  }
+  return joined;
+}
+
+/** AS-247. Where a number was said: the field that owns it, and whether a correction came after. */
+export interface SaidOwner {
+  fields: VitalField[];
+  /** «150 con 95, perdón, 130 con 85»: the 150 was taken back. */
+  superseded: boolean;
+}
+
+/**
+ * AS-247 (B3). The readings that own a number in a conversation: each field named aloud owns what
+ * is said until the next field is named or an unknown word ends it (AS-253), so «saturación noventa
+ * y ocho, pulso ochenta y ocho» gives the 88 to the pulse, never to the saturation.
+ */
+export function ownersOf(text: string, said: number): SaidOwner[] {
+  const near = (value: number) => Math.abs(value - said) < 1e-9;
+  const tokens = tokenize(text);
+  const owned = topicsIn(tokens, true).flatMap((span) => {
+    const body = span.body;
+    let last = -1;
+    body.forEach((token, at) => {
+      if (token.kind !== 'number') return;
+      const next = body[at + 1];
+      const values = [token.value];
+      if (next?.kind === 'number') values.push(...joinedNumbers(token.value, next.value)); // prettier-ignore
+      const pair = /^(\d{2,3})[.,](\d{2,3})$/.exec(token.raw);
+      if (pair && span.topic === 'pressure') values.push(Number(pair[1]), Number(pair[2])); // prettier-ignore
+      if (values.some(near)) last = at;
+    });
+    if (last < 0) return [];
+    const after = body.slice(last + 1);
+    const superseded = after.some(
+      (token, at) =>
+        token.kind === 'word' &&
+        (CORRECTIONS.has(token.text) ||
+          (token.text === 'dicho' && wordAt(after, at - 1) === 'mejor')) &&
+        after.slice(at + 1).some((later) => later.kind === 'number'),
+    );
+    return [{ fields: fieldsOf(span.topic), superseded }];
+  });
+  if (owned.length > 0) return owned;
+  // «treinta y seis y medio de temperatura», «setenta y ocho de pulso»: the
+  // field named right after its number, joined by «de».
+  return tokens.flatMap((token, at) => {
+    if (token.kind !== 'number' || !near(token.value)) return [];
+    if (wordAt(tokens, at + 1) !== 'de') return [];
+    const topic = topicAt(tokens, at + 2);
+    return topic ? [{ fields: fieldsOf(topic.topic), superseded: false }] : [];
+  });
 }
 
 /**
@@ -308,23 +537,78 @@ function withDecimals(tokens: Token[]): Token[] {
 interface TopicSpan {
   topic: Topic;
   body: Token[];
+  /** AS-253. A number came right after its end: it may have been part of it. */
+  doubt?: boolean;
 }
 
-/** Each field named aloud owns what is said until the next field is named. */
-function topicsIn(tokens: Token[]): TopicSpan[] {
+/**
+ * AS-253. How many words after the end of a reading a number still casts doubt on it: «talla uno
+ * sesenta y os, hueso sesenta y cinco» is a misheard «peso», not the end of the talk about height.
+ */
+const CLOSE_AFTER_END = 3;
+
+/**
+ * Each field named aloud owns what is said until the next field is named — or, since B3 (AS-253),
+ * until a word that is not part of a reading follows its number.
+ */
+function topicsIn(tokens: Token[], endAtUnknownWord: boolean): TopicSpan[] {
   const spans: TopicSpan[] = [];
+  let open: TopicSpan | null = null;
+  let ended: { span: TopicSpan; words: number } | null = null;
 
   for (let at = 0; at < tokens.length; at++) {
     const match = topicAt(tokens, at);
     if (match === null) {
-      spans.at(-1)?.body.push(tokens[at]!);
+      const token = tokens[at]!;
+      if (open === null && ended !== null) {
+        if (token.kind === 'number') {
+          ended.span.doubt = true;
+          ended = null;
+        } else if (token.kind === 'word' && ++ended.words > CLOSE_AFTER_END) {
+          ended = null;
+        }
+      }
+      if (
+        endAtUnknownWord &&
+        open !== null &&
+        token.kind === 'word' &&
+        !STAYS_IN_READING.has(token.text) &&
+        open.body.some((said) => said.kind === 'number') &&
+        !correctionAhead(tokens, at)
+      ) {
+        ended = { span: open, words: 1 };
+        open = null;
+      }
+      open?.body.push(token);
       continue;
     }
-    spans.push({ topic: match.topic, body: [] });
+    ended = null;
+    open = { topic: match.topic, body: [] };
+    spans.push(open);
     at += match.length - 1;
   }
 
   return spans;
+}
+
+/**
+ * AS-253. «130 con 85, o mejor dicho, 130 con 80»: words before a correction still belong to the
+ * reading they correct, so the cut never hides the value said last.
+ */
+function correctionAhead(tokens: Token[], from: number): boolean {
+  for (let at = from; at < tokens.length; at++) {
+    if (tokens[at]!.kind === 'number' || topicAt(tokens, at) !== null) {
+      return false;
+    }
+    const word = wordAt(tokens, at);
+    if (
+      (word !== null && CORRECTIONS.has(word)) ||
+      (word === 'dicho' && wordAt(tokens, at - 1) === 'mejor')
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function topicAt(
@@ -336,8 +620,32 @@ function topicAt(
 
   switch (word) {
     case 'presion':
-    case 'tension':
-      return { topic: 'pressure', length: next === 'arterial' ? 2 : 1 };
+    case 'tension': {
+      // AS-253. «presión sistólica 120», «presión arterial diastólica 80».
+      const arterial = next === 'arterial' ? 1 : 0;
+      const which = wordAt(tokens, at + 1 + arterial);
+      if (which === 'sistolica') return { topic: 'systolic', length: 2 + arterial }; // prettier-ignore
+      if (which === 'diastolica') return { topic: 'diastolic', length: 2 + arterial }; // prettier-ignore
+      return { topic: 'pressure', length: arterial ? 2 : 1 };
+    }
+    case 'sistolica':
+      return { topic: 'systolic', length: 1 };
+    case 'diastolica':
+      return { topic: 'diastolic', length: 1 };
+    case 'perimetro':
+    case 'circunferencia':
+      if (next === 'cefalico' || next === 'cefalica' || next === 'craneal') {
+        return { topic: 'headCircumferenceCm', length: 2 };
+      }
+      if (next === 'abdominal') {
+        return { topic: 'abdominalCircumferenceCm', length: 2 };
+      }
+      return null;
+    case 'hemoglobina':
+    case 'hb':
+      return next === 'corregida'
+        ? { topic: 'hemoglobinCorrectedGDl', length: 2 }
+        : { topic: 'hemoglobinGDl', length: 1 };
     case 'pa':
       return { topic: 'pressure', length: 1 };
     case 'frecuencia':
@@ -469,9 +777,16 @@ function valuesOf(
     case 'heartRate':
     case 'respiratoryRate':
     case 'oxygenSaturation':
+    case 'systolic':
+    case 'diastolic':
       return numbers.length === 1 && Number.isInteger(numbers[0]!.value)
         ? [numbers[0]!.value]
         : null;
+    case 'headCircumferenceCm':
+    case 'abdominalCircumferenceCm':
+    case 'hemoglobinGDl':
+    case 'hemoglobinCorrectedGDl':
+      return temperatureOf(numbers);
     case 'temperatureC':
     case 'temperatureAxillaryC':
       return temperatureOf(numbers);
