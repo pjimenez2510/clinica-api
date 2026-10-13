@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Inject,
@@ -45,6 +46,8 @@ export class AssistantNoteQuestionsController {
 
   /** AS-122. The questions of the latest review. */
   @Get()
+  // Its lines are the consultation: no cache on the way keeps them (as the transcript, AS-056).
+  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   @ApiOperation({ summary: 'Preguntas del asistente para completar la nota' })
   @ApiOkResponse({ type: NoteQuestionsOverviewDto })
@@ -58,6 +61,8 @@ export class AssistantNoteQuestionsController {
 
   /** AS-119, AS-123. Reviews the note against the conversation, now. */
   @Post()
+  // Its lines are the consultation: no cache on the way keeps them (as the transcript, AS-056).
+  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   // A review pays a call unless nothing changed (AS-123): twelve a minute is
   // a physician writing, not a loop draining the month's ceiling.
@@ -75,6 +80,8 @@ export class AssistantNoteQuestionsController {
 
   /** AS-125. «No hace falta». */
   @Post(':suggestionId/discard')
+  // Its lines are the consultation: no cache on the way keeps them (as the transcript, AS-056).
+  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Descartar una pregunta del asistente' })

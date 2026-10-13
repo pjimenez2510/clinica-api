@@ -224,7 +224,11 @@ describe('las preguntas para completar la nota por HTTP (AS-119 a AS-125)', () =
   }
 
   it('AS-119 AS-121 AS-127 reviews now and keeps the review and each question with its stretch, its line read again and never kept', async () => {
-    const reviewed = (await post(encounterId, '', doctor.token).expect(200)).body as Overview; // prettier-ignore
+    const response = await post(encounterId, '', doctor.token).expect(200);
+    const reviewed = response.body as Overview;
+    // Its lines are the consultation: no cache on the way keeps them.
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect((await get(encounterId, doctor.token).expect(200)).headers['cache-control']).toBe('no-store'); // prettier-ignore
 
     expect(reviewed.questions.map((each) => each.text)).toEqual([
       '¿Hasta qué temperatura llegó la fiebre?',

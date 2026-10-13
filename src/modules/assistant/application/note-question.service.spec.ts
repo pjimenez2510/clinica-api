@@ -264,7 +264,6 @@ describe('NoteQuestionService — asking (AS-119, AS-121)', () => {
     world.lines.push({ startMs: 11_000, endMs: 14_000, text: 'Y me duele el oído.' }); // prettier-ignore
     await service.check(ENCOUNTER, doctor);
     expect(world.prompts).toHaveLength(2);
-    expect(world.prompts).not.toHaveLength(0);
     expect(world.audits.filter((each) => each.action === 'EXPORT')).toHaveLength(2); // prettier-ignore
   });
 
@@ -334,6 +333,41 @@ describe('NoteQuestionService — the review on screen (AS-122, AS-123, AS-125)'
     world.note!.written.enfermedadActual = 'Algo más.';
     const next = await service.check(ENCOUNTER, doctor);
     expect(next.questions).toEqual([]);
+  });
+
+  it('AS-125 a question discarded while the next review is on its way does not come back with it', async () => {
+    const world = new World();
+    const service = world.service();
+    const first = await service.check(ENCOUNTER, doctor);
+    world.note!.written = { ...world.note!.written, enfermedadActual: 'Fiebre.' }; // prettier-ignore
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+
+    const second = service.check(ENCOUNTER, doctor);
+    await vi.waitFor(() => expect(world.prompts).toHaveLength(2));
+    await service.discard({ encounterId: ENCOUNTER, suggestionId: first.questions[0]!.id }, doctor); // prettier-ignore
+    release();
+    const after = await second;
+
+    expect(after.questions.map((each) => each.text)).toEqual(['¿Toma otro medicamento?']); // prettier-ignore
+  });
+
+  it('AS-124 an attention closed while the model answered keeps nothing', async () => {
+    const world = new World();
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+    const service = world.service();
+
+    const checking = service.check(ENCOUNTER, doctor);
+    await vi.waitFor(() => expect(world.prompts).toHaveLength(1));
+    world.encounter = { ...world.encounter, status: 'DISCONTINUED' };
+    release();
+
+    await expect(checking).rejects.toBeInstanceOf(
+      AssistantEncounterClosedError,
+    );
+    expect(world.checks).toEqual([]);
+    expect(world.suggestions).toEqual([]);
   });
 
   it('AS-125 refuses discarding a question that is not on screen', async () => {

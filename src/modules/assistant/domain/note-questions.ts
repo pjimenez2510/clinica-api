@@ -66,7 +66,8 @@ export function backedQuestions(input: {
   let dropped = 0;
 
   for (const answered of input.answered) {
-    const text = input.restore(answered.text).replace(/\s+/g, ' ').trim();
+    // Security review: a bidi or zero-width character shows one question and says another.
+    const text = input.restore(answered.text).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim(); // prettier-ignore
     const line = lineOf(answered.source, input.markers);
     if (text === '' || !line) {
       dropped += 1;
@@ -126,15 +127,18 @@ export function noteBlock(sections: readonly WrittenSection[]): string {
 
 /**
  * AS-123. What the digest of the note is taken over: each section's text,
- * trimmed, in the template's order. The same writing gives the same digest;
- * a new word, another.
+ * trimmed, in the template's order, and the prompt that reads it. The same
+ * writing gives the same digest; a new word, another.
  */
 export function noteDigestInput(
   sections: readonly { key: string; text: string }[],
+  /** A new prompt reads the same note again (code review, nit 14). */
+  promptVersion: string,
 ): string {
-  return sections
-    .map((section) => `${section.key}\u0000${section.text.trim()}`)
-    .join('\u0001');
+  return [
+    promptVersion,
+    ...sections.map((section) => `${section.key}\u0000${section.text.trim()}`),
+  ].join('\u0001');
 }
 
 /**
@@ -143,9 +147,14 @@ export function noteDigestInput(
  */
 function withoutMarks(text: string): string {
   const mark = /<\s*(\/?)\s*(nota|conversaci[oó]n)\s*>/giu;
+  // Invisible format characters first: «</no\u200Bta>» is a mark too
+  // (security review of 12-10-2026).
+  const visible = text.replace(/\p{Cf}/gu, '');
   // Only a text that says a mark is folded: «m²» or «½» stay as written.
-  const folded = text.normalize('NFKC');
-  return mark.test(folded) ? folded.replace(mark, '‹$1$2›') : text;
+  const folded = visible.normalize('NFKC');
+  const unmarked = mark.test(folded) ? folded.replace(mark, '‹$1$2›') : visible;
+  // The heading of the template that follows the data (AS-095, C2's rule).
+  return unmarked.replace(/secciones de la nota/giu, 'secciones');
 }
 
 /** A question as `ai_suggestion` keeps it. */
@@ -170,8 +179,9 @@ export interface QuestionView {
 }
 
 /**
- * AS-122, AS-123. The questions on screen: those of the latest review
- * (`runId`, null when there is none), less the discarded, each with its line
+ * AS-122, AS-123, AS-125. The questions on screen: those of the latest
+ * review (`runId`, null when there is none), less any the professional put
+ * away in this attention, each with its line
  * read again — and not one whose line the purge already took.
  */
 export function currentQuestions(
@@ -180,9 +190,19 @@ export function currentQuestions(
   transcript: readonly TranscriptLine[],
 ): QuestionView[] {
   if (runId === null) return [];
+  // AS-125. Put away once, put away in this attention: also when the review
+  // that brings it again was already on its way when it was discarded.
+  const discarded = new Set(
+    stored.flatMap((each) =>
+      each.status === 'DISCARDED' && typeof each.proposal.text === 'string'
+        ? [questionKey(each.proposal.text)]
+        : [],
+    ),
+  );
   return stored.flatMap((each) => {
     if (each.aiRunId !== runId || each.status === 'DISCARDED') return [];
     const { text, section, fromMs, toMs, demo } = each.proposal;
+    if (typeof text === 'string' && discarded.has(questionKey(text))) return [];
     if (typeof text !== 'string' || typeof fromMs !== 'number' || typeof toMs !== 'number') return []; // prettier-ignore
     const quote = spokenIn({ fromMs, toMs }, transcript);
     if (quote === '') return [];

@@ -72,20 +72,11 @@ export async function askNoteQuestions(
   deps: QuestionsDependencies,
   input: QuestionsInput,
 ): Promise<AskedQuestions> {
-  const { heard } = heardLines(input.lines, deps.lexicon);
-  const conversation = questionsConversation(heard);
-  const sections = draftableSections(input.template);
-  const note = noteBlock(
-    sections.map((section) => ({
-      key: section.key,
-      title: section.title,
-      text: input.written[section.key] ?? '',
-    })),
-  );
+  const { text, markers, sections } = questionsInput(input, deps.lexicon);
 
   const cleared = await deps.pseudonymizer.pseudonymize(
     {
-      text: `${conversation.text}\n\n${note}`,
+      text,
       subject: input.subject,
       names: input.names,
       staff: input.staff,
@@ -107,7 +98,7 @@ export async function askNoteQuestions(
 
   const { kept, dropped } = backedQuestions({
     answered: answer.value.questions,
-    markers: conversation.markers,
+    markers,
     textSections: sections.map((section) => section.key),
     discarded: input.discarded,
     restore: (text) =>
@@ -117,6 +108,33 @@ export async function askNoteQuestions(
       ),
   });
   return { kept, dropped, runId: answer.runId };
+}
+
+/**
+ * AS-119, AS-124. What a review sends, before the pseudonymizer: the
+ * conversation corrected and marked, then the note's prose sections as
+ * written. The evaluation harness (AS-126) builds its prompt with this same
+ * function, so what is measured is what runs.
+ */
+export function questionsInput(
+  input: Pick<QuestionsInput, 'lines' | 'template' | 'written'>,
+  lexicon: Lexicon | null,
+) {
+  const { heard } = heardLines(input.lines, lexicon);
+  const conversation = questionsConversation(heard);
+  const sections = draftableSections(input.template);
+  const note = noteBlock(
+    sections.map((section) => ({
+      key: section.key,
+      title: section.title,
+      text: input.written[section.key] ?? '',
+    })),
+  );
+  return {
+    text: `${conversation.text}\n\n${note}`,
+    markers: conversation.markers,
+    sections,
+  };
 }
 
 /**

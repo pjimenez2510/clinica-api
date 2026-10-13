@@ -49,7 +49,12 @@ async function anAttention(prisma: PrismaClient) {
   return { encounter, note, run, userId: practitioner.userId };
 }
 
-const aRun = (prisma: PrismaClient, encounterId: string, outcome = 'ok') =>
+const aRun = (
+  prisma: PrismaClient,
+  encounterId: string,
+  outcome = 'ok',
+  purpose = 'note-questions',
+) =>
   prisma.aiRun.create({
     data: {
       requestId: randomUUID(),
@@ -57,7 +62,7 @@ const aRun = (prisma: PrismaClient, encounterId: string, outcome = 'ok') =>
       provider: 'gemini',
       model: GEMINI_MODELS.fast,
       tier: 'fast',
-      purpose: 'note-questions',
+      purpose,
       promptVersion: 'c3-questions-1',
       outcome,
       worstCaseUsd: 0.001,
@@ -149,11 +154,12 @@ describe('note_question_check (AS-121)', () => {
     expect(check.asked).toBe(0);
   });
 
-  it('AS-121: refuses a review whose attempt is of another attention or did not answer', async () => {
+  it('AS-121: refuses a review whose attempt is of another attention, did not answer, or answered something else', async () => {
     const prisma = db();
     const { encounter, run, userId } = await anAttention(prisma);
     const other = await anAttention(prisma);
     const failed = await aRun(prisma, encounter.id, 'provider-error');
+    const draft = await aRun(prisma, encounter.id, 'ok', 'note-draft');
 
     await prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, run.id, userId) }); // prettier-ignore
     await expect(
@@ -162,23 +168,26 @@ describe('note_question_check (AS-121)', () => {
     await expect(
       prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, failed.id, userId) }), // prettier-ignore
     ).rejects.toThrow(/note_question_check_run_of_its_encounter/);
+    await expect(
+      prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, draft.id, userId) }), // prettier-ignore
+    ).rejects.toThrow(/note_question_check_run_of_its_encounter/);
   });
 
   it('AS-120 AS-121: refuses more than five questions, negative counts, a stretch below zero and a digest that is not one', async () => {
     const prisma = db();
     const { encounter, run, userId } = await anAttention(prisma);
-    const refused = (over: Parameters<typeof aCheck>[3]) =>
+    const refused = (over: Parameters<typeof aCheck>[3], constraint: string) =>
       expect(
         prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, run.id, userId, over) }), // prettier-ignore
-      ).rejects.toThrow(/note_question_check_/);
+      ).rejects.toThrow(new RegExp(`note_question_check_${constraint}`));
 
     await prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, run.id, userId, { asked: 5, upToMs: 0 }) }); // prettier-ignore
-    await refused({ asked: 6 });
-    await refused({ asked: -1 });
-    await refused({ dropped: -1 });
-    await refused({ upToMs: -1 });
-    await refused({ noteDigest: 'Dolor de garganta' });
-    await refused({ noteDigest: 'A'.repeat(64) });
+    await refused({ asked: 6 }, 'asked_at_most_five');
+    await refused({ asked: -1 }, 'asked_at_most_five');
+    await refused({ dropped: -1 }, 'dropped_counted');
+    await refused({ upToMs: -1 }, 'stretch_known');
+    await refused({ noteDigest: 'Dolor de garganta' }, 'digest_is_one');
+    await refused({ noteDigest: 'A'.repeat(64) }, 'digest_is_one');
   });
 
   it('AS-121: a review is never rewritten nor deleted', async () => {

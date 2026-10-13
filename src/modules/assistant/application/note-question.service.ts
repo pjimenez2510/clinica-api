@@ -45,6 +45,7 @@ import {
   type NoteQuestionCheckStore,
 } from './note-question-check.store';
 import { askNoteQuestions } from './note-questions';
+import { QUESTIONS_PROMPT_VERSION } from './note-questions.prompts';
 import { draftableSections } from './note-writer';
 import { PSEUDONYMIZER, type Pseudonymizer } from './pseudonymizer.port';
 import {
@@ -156,9 +157,7 @@ export class NoteQuestionService {
   ): Promise<void> {
     const note = await this.notes.consultationDraft(encounter.id);
     if (!note) throw new AssistantNoteNotOpenError();
-    const lines = (await this.transcripts.transcript(encounter.id)).filter(
-      (line: TranscriptLine) => line.text.trim() !== '',
-    );
+    const lines = spokenLines(await this.transcripts.transcript(encounter.id));
     if (lines.length === 0) throw new AssistantTranscriptEmptyError();
     const upToMs = lines.reduce((most, line) => Math.max(most, line.endMs), 0);
     const template = draftableSections(note.sections);
@@ -169,6 +168,7 @@ export class NoteQuestionService {
             key: section.key,
             text: note.written[section.key] ?? '',
           })),
+          QUESTIONS_PROMPT_VERSION,
         ),
       ) // prettier-ignore
       .digest('hex');
@@ -267,7 +267,7 @@ export class NoteQuestionService {
     const [latest, stored, lines] = await Promise.all([
       this.checks.latest(encounter.id),
       this.suggestions.ofEncounter(encounter.id, writer(requester), 'note-question'), // prettier-ignore
-      this.transcripts.transcript(encounter.id),
+      this.transcripts.transcript(encounter.id).then(spokenLines),
     ]);
     return {
       latest,
@@ -319,6 +319,11 @@ export class NoteQuestionService {
     }
     return encounter;
   }
+}
+
+/** The lines with something said: what a review reads, and what it counts as heard. */
+function spokenLines(lines: readonly TranscriptLine[]): TranscriptLine[] {
+  return lines.filter((line) => line.text.trim() !== '');
 }
 
 function writer(requester: QuestionRequester): SuggestionRequester {

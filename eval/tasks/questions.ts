@@ -1,17 +1,15 @@
 import type { z } from 'zod';
 
-import { questionsRequest } from '../../src/modules/assistant/application/note-questions.ts';
+import {
+  questionsInput,
+  questionsRequest,
+} from '../../src/modules/assistant/application/note-questions.ts';
 import { QUESTIONS_PROMPT_VERSION } from '../../src/modules/assistant/application/note-questions.prompts.ts';
-import { heardLines } from '../../src/modules/assistant/application/note-writer.ts';
 import {
   buildLexicon,
   type Lexicon,
 } from '../../src/modules/assistant/domain/lexicon.ts';
-import {
-  backedQuestions,
-  noteBlock,
-  questionsConversation,
-} from '../../src/modules/assistant/domain/note-questions.ts';
+import { backedQuestions } from '../../src/modules/assistant/domain/note-questions.ts';
 import { caseText } from '../case-text.ts';
 import type { NoteCase } from '../cases.ts';
 import type { Catalogues } from '../catalogue.ts';
@@ -101,13 +99,12 @@ export function questionsTask(
   const sections = DRAFT_TEMPLATE;
   const prepared = (item: QuestionsCase) => {
     const said = heardCase(item);
-    const { heard } = heardLines(said, lexicon);
-    const written = referenceNote(item);
-    const conversation = questionsConversation(heard);
-    const note = noteBlock(
-      sections.map((section) => ({ ...section, text: written[section.key] ?? '' })), // prettier-ignore
+    // The product's own input (AS-126): what is measured is what runs.
+    const input = questionsInput(
+      { lines: said, template: sections.map((section) => ({ ...section, kind: 'TEXT' as const })), written: referenceNote(item) }, // prettier-ignore
+      lexicon,
     );
-    return { said, conversation, text: `${conversation.text}\n\n${note}` };
+    return { said, ...input };
   };
   return {
     name: 'questions',
@@ -135,10 +132,10 @@ export function questionsTask(
       return questionsRequest(caseText(prepared(item).text), sections);
     },
     evaluate(item, _arm, value) {
-      const { said, conversation } = prepared(item);
+      const { said, markers } = prepared(item);
       const { kept, dropped } = backedQuestions({
         answered: value.questions,
-        markers: conversation.markers,
+        markers,
         textSections: sections.map((section) => section.key),
         discarded: [],
         restore: (text) => text,
