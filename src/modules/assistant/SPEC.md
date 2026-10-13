@@ -1880,18 +1880,23 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   cancelado (ORD-151, ORD-152)— y DEBERÁ llevar su determinación, su valor
   (número, código o texto), su unidad, el rango de referencia y la bandera
   **congelados en el informe** (ORD-037, ORD-122), cuándo se observó, la
-  orden y la atención de las que sale y si viene de una ficha absorbida
-  (EN-275); los más recientes primero.
+  orden y la atención de las que sale, si su informe es una **corrección**
+  de otro (ORD-151: la pantalla dice «Corregido») y si viene de una ficha
+  absorbida (EN-275); los más recientes primero.
 - **AS-202** — La bandera de un resultado DEBERÁ ser la que el informe
   guardó, **nunca recalculada** con la edad, el sexo o los rangos de hoy: un
   informe de hace tres años se lee con los rangos de hace tres años. Un
   resultado sin bandera DEBERÁ decirse «sin rango de referencia» y NO DEBERÁ
   contarse como normal ni como fuera de rango (ORD-038).
 - **AS-203** — Cada medicamento recetado en una receta **emitida** —ni
-  borrador, ni descartada, ni anulada— DEBERÁ salir una vez, agrupado por su
-  concepto del CNMB o, sin él, por su nombre genérico y su concentración, con
-  cuándo se recetó la primera y la última vez, cuántas veces, la última dosis
-  y frecuencia escritas y, si la última receta dice cuántos días, hasta qué
+  borrador, ni descartada, ni anulada— DEBERÁ salir una vez **por
+  presentación**: su concepto del CNMB (o, sin él, su nombre genérico) con su
+  concentración, su forma y su vía —el CNMB tiene un concepto por código ATC,
+  y prednisona de 20 mg y de 5 mg, o enalapril oral e intravenoso, NO DEBERÁN
+  juntarse—, con cuándo se recetó la primera y la última vez, cuántas veces,
+  **todas** las dosis y frecuencias que su última receta escribe para esa
+  presentación (una pauta en dos líneas son dos dosis) y, si la última
+  receta dice cuántos días, hasta qué
   día del calendario de Guayaquil dura: el más lejano que alcanza alguna de
   sus recetas (el día de la emisión es el primero), para que una de cinco
   días escrita mientras corre una de treinta no la acorte.
@@ -1911,6 +1916,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   otra vez: un medicamento renovado antes de terminar, o hasta **7 días**
   después de su último día, sigue, sin línea nueva (D-256 §2): la receta
   mensual recogida un día tarde no es un tratamiento que se suspende.
+  «Termina» DEBERÁ nombrar el curso que terminó, y cada línea de un
+  medicamento DEBERÁ decir si su receta es de una ficha absorbida. SI las
+  recetas leídas se cortaron por el tope (AS-207), ENTONCES la más antigua
+  leída de cada medicamento NO DEBERÁ escribir «Empieza»: pudo empezar
+  antes.
 - **AS-206** — Las tendencias DEBERÁN poder dibujarse sin juntar lo que no se
   compara: cada resultado numérico DEBERÁ llevar la clave de su serie
   (`seriesKey`: la determinación del catálogo, o su nombre, **con su unidad**),
@@ -1919,7 +1929,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   accesos, de tipo `patient_clinical_history`, antes de devolver nada, y
   nunca una por resultado (EN-123); y DEBERÁ acotarse sin parámetro de la
   petición: los 300 resultados, las 100 visitas y las 200 recetas más
-  recientes, con el total de cada uno para que la pantalla diga «300 de 412».
+  recientes; cada lista DEBERÁ llevar su total, su tope y, si se cortó, el
+  día del más antiguo leído, para que la pantalla diga «300 de 412, desde el
+  …» sin conocer el tope.
 
 ### 43. En la pestaña Historia (solo interfaz)
 
@@ -1939,10 +1951,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   frecuencia y «recetado N veces desde …». Las recetas de esta atención
   siguen en la pestaña Receta, y no se repiten aquí.
 - **AS-213** — Cada pestaña DEBERÁ decir, cuando aplique, «Hay … en otras
-  sedes que usted no atiende» (AS-200), «Se muestran los N más recientes de
-  M» (AS-207), y marcar lo que viene de una ficha unificada; mientras la
-  historia no ha llegado DEBERÁ verse que carga, y NO DEBERÁ decir «no hay»
-  (la regla de `PatientRecordTabs`).
+  sedes que usted no atiende» (AS-200), lo que el tope cortó y desde qué día
+  (AS-207) —la línea de tiempo, de cada lista que se cortó—, marcar lo que
+  viene de una ficha unificada y lo corregido; mientras la historia no ha
+  llegado DEBERÁ verse que carga, y NO DEBERÁ decir «no hay» (la regla de
+  `PatientRecordTabs`); sin `record:read` DEBERÁ decir que no tiene acceso,
+  nunca cargar sin fin.
 - **AS-214** — Con más de cuatro pestañas, Historia DEBERÁ usar la pieza de
   pestañas compartida (PA-083, ESTANDAR-UI §12.6 bis), y a 375 px nada DEBERÁ
   desbordar en horizontal.
@@ -1954,7 +1968,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   una tendencia por cada serie de AS-206 con **dos o más** valores, en el
   mismo periodo elegido (EN-277); el tooltip de cada punto DEBERÁ decir el
   valor con su unidad, la fecha y la bandera en palabras; y un punto fuera de
-  rango DEBERÁ distinguirse sin depender del color. NO DEBERÁ repetir una
+  rango DEBERÁ distinguirse sin depender del color; la misma determinación
+  en dos unidades DEBERÁ titularse con su unidad; y SI los resultados se
+  cortaron, ENTONCES DEBERÁ decir desde qué día se dibujan. NO DEBERÁ repetir una
   cifra que ya es un signo (la hemoglobina tomada en preparación sigue en
   signos; la del laboratorio, aquí).
 - **AS-216** — Las tendencias de los exámenes DEBERÁN pedirse sólo al abrir

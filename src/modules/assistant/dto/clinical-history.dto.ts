@@ -31,6 +31,8 @@ export const historyResultSchema = z.object({
     .enum(['NORMAL', 'LOW', 'HIGH', 'CRITICAL_LOW', 'CRITICAL_HIGH'])
     .nullable(),
   observedAt: z.iso.datetime(),
+  /** AS-201. Its report corrects an earlier one (ORD-151): said on screen. */
+  corrected: z.boolean(),
   /** AS-206. The curve it belongs to; `null` when it is not a number. */
   seriesKey: z.string().nullable(),
   /** EN-275. Recorded on a chart this one absorbed. */
@@ -43,8 +45,10 @@ export const historyMedicationSchema = z.object({
   genericName: z.string(),
   concentration: z.string().nullable(),
   presentation: z.string().nullable(),
-  lastDoseText: z.string(),
-  lastFrequencyText: z.string(),
+  /** Every line of the last prescription with this presentation, in order. */
+  lastDoses: z.array(
+    z.object({ doseText: z.string(), frequencyText: z.string() }),
+  ),
   timesPrescribed: z.number().int(),
   firstPrescribedOn: clinicalDate,
   lastPrescribedOn: clinicalDate,
@@ -72,6 +76,7 @@ export const timelineItemSchema = z.discriminatedUnion('kind', [
     kind: z.enum(['medication-started', 'medication-ended']),
     medicationKey: z.string(),
     name: z.string(),
+    fromMergedChart: z.boolean(),
   }),
   z.object({
     kind: z.literal('result'),
@@ -81,22 +86,31 @@ export const timelineItemSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/**
+ * AS-207. How much of a list was read: at most `limit` of `total`, and when
+ * it was cut, the day of the oldest one read.
+ */
+const coverageSchema = z.object({
+  total: z.number().int(),
+  limit: z.number().int(),
+  since: clinicalDate.nullable(),
+});
+
 export const clinicalHistorySchema = z.object({
   /** The chart asked about, always an open one (AS-200). */
   patientId: z.uuid(),
-  results: z.object({
-    /** AS-201. Newest first, at most 300 (AS-207). */
+  results: coverageSchema.extend({
+    /** AS-201. Newest first, at most `limit` (AS-207). */
     items: z.array(historyResultSchema),
-    total: z.number().int(),
   }),
   medications: z.object({
     /** AS-203. Active first, then with no days, then ended. */
     items: z.array(historyMedicationSchema),
-    /** AS-207. Issued prescriptions in scope; at most 200 are read. */
-    prescriptionTotal: z.number().int(),
+    /** AS-207. The issued prescriptions they come from. */
+    prescriptions: coverageSchema,
   }),
-  /** AS-207. Attentions in scope; at most 100 are on the timeline. */
-  visits: z.object({ total: z.number().int() }),
+  /** AS-207. The attentions on the timeline. */
+  visits: coverageSchema,
   /** AS-205. Newest day first. */
   timeline: z.array(
     z.object({ date: clinicalDate, items: z.array(timelineItemSchema) }),

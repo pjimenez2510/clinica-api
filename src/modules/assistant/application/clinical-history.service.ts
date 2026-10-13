@@ -4,7 +4,10 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+import {
+  clinicalDateOf,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import {
   medicationsOf,
   seriesKeyOf,
@@ -47,14 +50,24 @@ export interface HistoryRequester {
   userAgent?: string;
 }
 
+/**
+ * AS-207. How much of a list was read: at most `limit`, of `total`; and when
+ * it was cut, the day of the oldest one read — «desde el …» on the screen.
+ */
+export interface HistoryCoverage {
+  total: number;
+  limit: number;
+  /** `null` when nothing was cut. */
+  since: ClinicalDate | null;
+}
+
 export interface ClinicalHistory {
   patientId: string;
   results: {
     items: (HistoryResult & { seriesKey: string | null })[];
-    total: number;
-  };
-  medications: { items: Medication[]; prescriptionTotal: number };
-  visits: { total: number };
+  } & HistoryCoverage;
+  medications: { items: Medication[]; prescriptions: HistoryCoverage };
+  visits: HistoryCoverage;
   timeline: TimelineDay[];
   hasEntriesOutsideScope: boolean;
 }
@@ -113,6 +126,15 @@ export class ClinicalHistoryService {
     });
 
     const today = clinicalDateOf(this.clock());
+    const coverage = (total: number, limit: number, oldest: Date[]): HistoryCoverage => ({
+      total,
+      limit,
+      since:
+        total > limit && oldest.length > 0
+          ? clinicalDateOf(new Date(Math.min(...oldest.map((d) => d.getTime()))))
+          : null,
+    }); // prettier-ignore
+    const prescriptions = coverage(prescriptionTotal, HISTORY_LIMITS.prescriptions, lines.map((l) => l.issuedAt)); // prettier-ignore
     return {
       patientId,
       results: {
@@ -120,11 +142,17 @@ export class ClinicalHistoryService {
           ...result,
           seriesKey: seriesKeyOf(result),
         })),
-        total: resultTotal,
+        ...coverage(resultTotal, HISTORY_LIMITS.results, results.map((r) => r.observedAt)), // prettier-ignore
       },
-      medications: { items: medicationsOf(lines, today), prescriptionTotal },
-      visits: { total: visitTotal },
-      timeline: timelineOf({ visits, lines, results, today }),
+      medications: { items: medicationsOf(lines, today), prescriptions },
+      visits: coverage(visitTotal, HISTORY_LIMITS.visits, visits.map((v) => v.startedAt)), // prettier-ignore
+      timeline: timelineOf({
+        visits,
+        lines,
+        results,
+        today,
+        linesCut: prescriptions.since !== null,
+      }),
       hasEntriesOutsideScope: outside,
     };
   }

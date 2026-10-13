@@ -64,17 +64,18 @@ interface ResultBody {
   referenceText: string | null;
   abnormalFlag: string | null;
   seriesKey: string | null;
+  corrected: boolean;
   fromMergedChart: boolean;
 }
 
 interface HistoryBody {
   patientId: string;
-  results: { items: ResultBody[]; total: number };
+  results: { items: ResultBody[]; total: number; limit: number; since: string | null }; // prettier-ignore
   medications: {
     items: { genericName: string; status: string; endsOn: string | null }[];
-    prescriptionTotal: number;
+    prescriptions: { total: number; limit: number; since: string | null };
   };
-  visits: { total: number };
+  visits: { total: number; limit: number; since: string | null };
   timeline: { date: string; items: { kind: string; resultId?: string }[] }[];
   hasEntriesOutsideScope: boolean;
 }
@@ -265,6 +266,18 @@ describe('la historia sin modelo por HTTP', () => {
 
     const elsewhere = await attention(survivor.id, 6, otherSiteId);
     const outside = await glucose(elsewhere.id, 6, 300);
+    // The other site's receta and visit are as out of reach as its glucose.
+    await createIssuedPrescription(prisma, {
+      siteId: otherSiteId,
+      prescriberId: doctorPractitionerId,
+      encounterId: elsewhere.id,
+      issuedAt: new Date(Date.now() - 6 * DAY),
+      items: {
+        create: [
+          { genericName: 'Losartán', concentration: '50 mg', doseText: '1 tableta', frequencyText: 'Cada día', durationDays: 30, offFormulary: true },
+        ],
+      },
+    }); // prettier-ignore
 
     const annulled = await attention(survivor.id, 2);
     const ofAnnulled = await glucose(annulled.id, 2, 45);
@@ -351,6 +364,16 @@ describe('la historia sin modelo por HTTP', () => {
     expect(wide.results.items.map((r) => r.orderId)).toContain(scene.outside.order.id); // prettier-ignore
     expect(wide.results.total).toBe(3);
     expect(wide.hasEntriesOutsideScope).toBe(false);
+    expect(wide.medications.items.map((m) => m.genericName)).toContain('Losartán'); // prettier-ignore
+    expect(wide.visits.total).toBe(3);
+
+    // Control positivo arriba; quien atiende una sola sede no ve ni la receta
+    // ni la visita de la otra, ni las cuenta.
+    const local = (await historyOf(scene.survivor.id).expect(200)).body as HistoryBody; // prettier-ignore
+    expect(local.medications.items.map((m) => m.genericName)).not.toContain('Losartán'); // prettier-ignore
+    expect(local.medications.prescriptions.total).toBe(1);
+    expect(local.visits.total).toBe(2);
+    expect(local.results).toMatchObject({ limit: 300, since: null });
   });
 
   it('AS-202 SC-098 trae el valor, la unidad, el rango y la bandera del informe vigente de su orden', async () => {
@@ -377,6 +400,9 @@ describe('la historia sin modelo por HTTP', () => {
     }
     const high = body.results.items.find((r) => r.valueNumeric === 182);
     expect(high).toMatchObject({ abnormalFlag: 'HIGH', referenceLow: 70, referenceHigh: 100 }); // prettier-ignore
+    // ORD-151: the 182 replaced a 150 the physician may have read.
+    expect(high?.corrected).toBe(true);
+    expect(body.results.items.find((r) => r.valueNumeric === 92)?.corrected).toBe(false); // prettier-ignore
     // AS-206. The same determination and unit, one series.
     expect(new Set(body.results.items.map((r) => r.seriesKey)).size).toBe(1);
   });
@@ -390,7 +416,7 @@ describe('la historia sin modelo por HTTP', () => {
       ['Enalapril', 'ACTIVE'],
       ['Amoxicilina', 'ENDED'],
     ]); // prettier-ignore
-    expect(body.medications.prescriptionTotal).toBe(1);
+    expect(body.medications.prescriptions).toEqual({ total: 1, limit: 200, since: null }); // prettier-ignore
     // Control positivo: la anulada existe, con su línea.
     await expect(
       prisma.prescriptionItem.count({ where: { prescriptionId: scene.cancelledRx.id } }),

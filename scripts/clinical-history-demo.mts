@@ -41,6 +41,15 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(1);
 }
 
+// Only a branch database: `clinica_<tema>`, never `clinica` (the author's,
+// with the signing certificate) nor `clinica_sri`. `provenDevLogin` below
+// refuses `clinica`; this refuses the rest by name before anything runs.
+const database = /\/([^/?]+)(?:\?|$)/.exec(process.env.DATABASE_URL ?? '')?.[1];
+if (!database || !/^clinica_[a-z0-9_]+$/.test(database) || database === 'clinica_sri') {
+  console.error('history:demo sólo corre contra una base de rama (clinica_<tema>).');
+  process.exit(1);
+} // prettier-ignore
+
 const { values } = parseArgs({
   options: { reads: { type: 'string', default: '50' } },
   allowPositionals: true,

@@ -34,10 +34,12 @@ function line(
     prescriptionId: `rx-${sequence}`,
     encounterId: `enc-${sequence}`,
     issuedAt: at(offset),
-    conceptId: 'cnmb-enalapril-10',
+    conceptId: 'cnmb-C09AA02',
     genericName: 'Enalapril',
     concentration: '10 mg',
     presentation: 'Tableta',
+    dosageFormCode: 'TABLET',
+    routeCode: 'ORAL',
     doseText: '1 tableta',
     frequencyText: 'cada 12 horas',
     durationDays: 30,
@@ -68,6 +70,7 @@ function result(
     criticalHigh: null,
     abnormalFlag: 'NORMAL',
     observedAt: at(offset),
+    corrected: false,
     fromMergedChart: false,
     ...over,
   };
@@ -127,7 +130,7 @@ describe('medicationsOf (AS-203, AS-204)', () => {
     expect(medicine).toMatchObject({ status: 'ACTIVE', endsOn: day(19) });
   });
 
-  it('AS-203 groups by CNMB concept, and without one by generic name and concentration', () => {
+  it('AS-203 groups one presentation: the CNMB concept, or without one the generic name, with its concentration', () => {
     const medicines = medicationsOf(
       [
         line(-60),
@@ -151,20 +154,50 @@ describe('medicationsOf (AS-203, AS-204)', () => {
       TODAY,
     );
     expect(medicines).toHaveLength(3);
-    const enalapril = medicines.find(
-      (m) => m.key === 'concept:cnmb-enalapril-10',
+    const enalapril = medicines.find((m) =>
+      m.key.startsWith('concept:cnmb-C09AA02'),
     );
     expect(enalapril).toMatchObject({
       timesPrescribed: 2,
       firstPrescribedOn: day(-60),
       lastPrescribedOn: day(-30),
-      lastDoseText: '2 tabletas',
+      lastDoses: [{ doseText: '2 tabletas', frequencyText: 'cada 12 horas' }],
     });
     const metformin850 = medicines.filter(
       (m) => m.concentration?.trim().toLowerCase() === '850 mg',
     );
     expect(metformin850).toHaveLength(1);
     expect(metformin850[0]?.timesPrescribed).toBe(2);
+  });
+
+  it('AS-203 keeps apart two strengths, forms or routes of one CNMB concept (one concept per ATC code)', () => {
+    const prednisone = { conceptId: 'cnmb-H02AB07', genericName: 'Prednisona' };
+    const medicines = medicationsOf(
+      [
+        line(-3, { ...prednisone, prescriptionId: 'rx-p', concentration: '20 mg', doseText: '1 tableta' }),
+        line(-3, { ...prednisone, prescriptionId: 'rx-p', concentration: '5 mg', doseText: '1 tableta' }),
+        line(-90, { concentration: '1,25 mg/mL', dosageFormCode: 'INJECTABLE_SOLUTION', routeCode: 'INTRAVENOUS', durationDays: 1 }),
+      ],
+      TODAY,
+    ); // prettier-ignore
+    expect(
+      medicines.map((m) => `${m.genericName} ${m.concentration}`).sort(),
+    ).toEqual(['Enalapril 1,25 mg/mL', 'Prednisona 20 mg', 'Prednisona 5 mg']);
+  });
+
+  it('AS-203 writes every dose of the last prescription when it repeats the same presentation', () => {
+    const [medicine] = medicationsOf(
+      [
+        line(-2, { prescriptionId: 'rx-1', doseText: '1 tableta', frequencyText: 'en la mañana' }),
+        line(-2, { prescriptionId: 'rx-1', doseText: '½ tableta', frequencyText: 'en la noche' }),
+      ],
+      TODAY,
+    ); // prettier-ignore
+    expect(medicine?.lastDoses).toEqual([
+      { doseText: '1 tableta', frequencyText: 'en la mañana' },
+      { doseText: '½ tableta', frequencyText: 'en la noche' },
+    ]);
+    expect(medicine?.timesPrescribed).toBe(1);
   });
 
   it('AS-203 orders the active first, then those with no days, then the ended, most recent first', () => {
@@ -253,6 +286,42 @@ describe('timelineOf (AS-205)', () => {
       [day(-31), 'medication-ended'],
       [day(-40), 'medication-started'],
     ]);
+  });
+
+  it('AS-205 names the course that ended, and carries the merged-chart mark of each line', () => {
+    const days = timelineOf({
+      visits: [],
+      lines: [
+        line(-40, {
+          concentration: '10 mg',
+          durationDays: 10,
+          fromMergedChart: true,
+        }),
+        line(-20, { concentration: '20 mg', durationDays: 30 }),
+      ],
+      results: [],
+      today: TODAY,
+    });
+    const items = days.flatMap((d) => d.items);
+    expect(items).toContainEqual(
+      expect.objectContaining({ kind: 'medication-ended', name: 'Enalapril 10 mg', fromMergedChart: true }),
+    ); // prettier-ignore
+    expect(items).toContainEqual(
+      expect.objectContaining({ kind: 'medication-started', name: 'Enalapril 20 mg', fromMergedChart: false }),
+    ); // prettier-ignore
+  });
+
+  it('AS-207 does not write «Empieza» on the oldest line read when the prescriptions were cut: it may have started before', () => {
+    const days = timelineOf({
+      visits: [],
+      lines: [line(-60, { durationDays: 90 }), line(-30, { conceptId: 'x', genericName: 'X', durationDays: 5 })],
+      results: [],
+      today: TODAY,
+      linesCut: true,
+    }); // prettier-ignore
+    const kinds = days.flatMap((d) => d.items.map((i) => i.kind));
+    expect(kinds).not.toContain('medication-started');
+    expect(kinds).toEqual(['medication-ended']);
   });
 
   it('AS-205 writes no end for a course still running or with no days', () => {

@@ -59,6 +59,8 @@ export class AssistantHistoryController {
           observedAt: result.observedAt.toISOString(),
         })),
         total: history.results.total,
+        limit: history.results.limit,
+        since: history.results.since,
       },
       medications: history.medications,
       visits: history.visits,

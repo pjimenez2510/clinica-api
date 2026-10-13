@@ -86,6 +86,7 @@ const RESULT_SELECT = {
   observedAt: true,
   report: {
     select: {
+      status: true,
       serviceOrder: {
         select: {
           id: true,
@@ -148,6 +149,7 @@ export class PrismaClinicalHistoryReader implements ClinicalHistoryReader {
       criticalHigh: decimal(row.criticalHigh),
       abnormalFlag: row.abnormalFlag,
       observedAt: row.observedAt,
+      corrected: row.report.status === 'CORRECTED',
       // EN-275. `chartScope` reads the absorbed charts too; theirs are marked.
       fromMergedChart:
         row.report.serviceOrder.encounter.patientId !== query.patientId,
@@ -169,9 +171,14 @@ export class PrismaClinicalHistoryReader implements ClinicalHistoryReader {
         encounterId: true,
         issuedAt: true,
         encounter: { select: { patientId: true } },
+        // The receta's own order (uuidv7 ids grow with each line), so a
+        // tapering written as two lines reads in the order it was written.
         items: {
+          orderBy: { id: 'asc' },
           select: {
             conceptId: true,
+            dosageFormCode: true,
+            routeCode: true,
             genericName: true,
             concentration: true,
             presentation: true,

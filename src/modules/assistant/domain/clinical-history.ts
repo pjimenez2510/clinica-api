@@ -42,6 +42,11 @@ export interface HistoryResult {
   criticalHigh: number | null;
   abnormalFlag: HistoryFlag | null;
   observedAt: Date;
+  /**
+   * AS-201. Its report is a CORRECTION of an earlier one: the value replaced
+   * another the physician may have read (ORD-151), so the screen says so.
+   */
+  corrected: boolean;
   /** EN-275. Recorded on a chart this one absorbed. */
   fromMergedChart: boolean;
 }
@@ -55,6 +60,9 @@ export interface PrescribedLine {
   genericName: string;
   concentration: string | null;
   presentation: string | null;
+  /** The form and route as coded (`prescription-vocabulary`), when coded. */
+  dosageFormCode: string | null;
+  routeCode: string | null;
   doseText: string;
   frequencyText: string;
   durationDays: number | null;
@@ -82,8 +90,11 @@ export interface Medication {
   genericName: string;
   concentration: string | null;
   presentation: string | null;
-  lastDoseText: string;
-  lastFrequencyText: string;
+  /**
+   * Every line of the LAST prescription with this presentation, in its order:
+   * a tapering written as two lines is two doses, never the last one alone.
+   */
+  lastDoses: { doseText: string; frequencyText: string }[];
   timesPrescribed: number;
   firstPrescribedOn: ClinicalDate;
   lastPrescribedOn: ClinicalDate;
@@ -107,6 +118,8 @@ export type TimelineItem =
       kind: 'medication-started' | 'medication-ended';
       medicationKey: string;
       name: string;
+      /** EN-275. The prescription that started or ended it is of an absorbed chart. */
+      fromMergedChart: boolean;
     }
   | { kind: 'result'; resultId: string; orderId: string };
 
@@ -148,13 +161,22 @@ const normalised = (text: string | null): string =>
   (text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 /**
- * AS-203. The CNMB concept when the line has one; otherwise the generic name
- * and the concentration, so 500 mg and 850 mg of metformin stay apart.
+ * AS-203. ONE PRESENTATION: the CNMB concept (or, without one, the generic
+ * name) WITH the concentration, the form and the route. The CNMB has one
+ * concept per ATC code, not per presentation: by the concept alone,
+ * prednisone 20 mg and 5 mg, or oral and intravenous enalapril, would be one
+ * line showing whichever dose came last (clinical review, grave).
  */
 export function medicationKeyOf(line: PrescribedLine): string {
-  return line.conceptId
+  const drug = line.conceptId
     ? `concept:${line.conceptId}`
-    : `name:${normalised(line.genericName)}|${normalised(line.concentration)}`;
+    : `name:${normalised(line.genericName)}`;
+  return [
+    drug,
+    normalised(line.concentration),
+    normalised(line.dosageFormCode),
+    normalised(line.routeCode),
+  ].join('|');
 }
 
 /**
@@ -220,8 +242,12 @@ export function medicationsOf(
       genericName: last.genericName.trim(),
       concentration: last.concentration,
       presentation: last.presentation,
-      lastDoseText: last.doseText,
-      lastFrequencyText: last.frequencyText,
+      lastDoses: group
+        .filter((line) => line.prescriptionId === last.prescriptionId)
+        .map((line) => ({
+          doseText: line.doseText,
+          frequencyText: line.frequencyText,
+        })),
       timesPrescribed: new Set(group.map((line) => line.prescriptionId)).size,
       firstPrescribedOn: clinicalDateOf(first.issuedAt),
       lastPrescribedOn: clinicalDateOf(last.issuedAt),
@@ -258,6 +284,11 @@ export function timelineOf(input: {
   lines: readonly PrescribedLine[];
   results: readonly HistoryResult[];
   today: ClinicalDate;
+  /**
+   * AS-207. The prescriptions read are the most recent ones, not all: the
+   * oldest course read may have started before it, so it writes no «Empieza».
+   */
+  linesCut?: boolean;
 }): TimelineDay[] {
   const days = new Map<ClinicalDate, TimelineItem[]>();
   const add = (date: ClinicalDate, item: TimelineItem): void => {
@@ -277,21 +308,34 @@ export function timelineOf(input: {
     });
   }
 
+  const medication = (
+    kind: 'medication-started' | 'medication-ended',
+    key: string,
+    line: PrescribedLine,
+  ): TimelineItem => ({
+    kind,
+    medicationKey: key,
+    name: nameOf(line),
+    fromMergedChart: line.fromMergedChart,
+  });
+
   for (const [key, group] of groupLines(input.lines)) {
     // `undefined`: not started yet; `null`: running with no known end.
     let runningEnd: ClinicalDate | null | undefined;
-    for (const line of group) {
+    // The line whose course is running: what «Termina» names.
+    let runningLine: PrescribedLine | undefined;
+    for (const [index, line] of group.entries()) {
       const issued = clinicalDateOf(line.issuedAt);
       if (
         runningEnd !== undefined &&
         runningEnd !== null &&
         addDays(runningEnd, RENEWAL_GRACE_DAYS) < issued
       ) {
-        add(runningEnd, { kind: 'medication-ended', medicationKey: key, name: nameOf(line) }); // prettier-ignore
+        add(runningEnd, medication('medication-ended', key, runningLine!));
         runningEnd = undefined;
       }
-      if (runningEnd === undefined) {
-        add(issued, { kind: 'medication-started', medicationKey: key, name: nameOf(line) }); // prettier-ignore
+      if (runningEnd === undefined && !(input.linesCut && index === 0)) {
+        add(issued, medication('medication-started', key, line));
       }
       const end = lastDayOf(line);
       runningEnd =
@@ -300,13 +344,14 @@ export function timelineOf(input: {
           : runningEnd === undefined || runningEnd === null || end > runningEnd
             ? end
             : runningEnd;
+      runningLine = line;
     }
     if (
       runningEnd !== undefined &&
       runningEnd !== null &&
       runningEnd < input.today
     ) {
-      add(runningEnd, { kind: 'medication-ended', medicationKey: key, name: nameOf(group[group.length - 1]!) }); // prettier-ignore
+      add(runningEnd, medication('medication-ended', key, runningLine!));
     }
   }
 
