@@ -3,10 +3,10 @@ import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 
 import { DEV_PASSWORD } from '../prisma/seed.mts';
-import type { AppModule as AppModuleType } from '../src/app.module';
-import type { DiagnosticReportService as ReportsType } from '../src/modules/orders/application/diagnostic-report.service';
-import type { PrismaServiceOrderRepository as OrdersType } from '../src/modules/orders/infrastructure/prisma-service-order.repository';
-import type { PrismaService as PrismaType } from '../src/shared/infrastructure/prisma/prisma.service';
+import type { AppModule as AppModuleType } from '../src/app.module.ts';
+import type { DiagnosticReportService as ReportsType } from '../src/modules/orders/application/diagnostic-report.service.ts';
+import type { PrismaServiceOrderRepository as OrdersType } from '../src/modules/orders/infrastructure/prisma-service-order.repository.ts';
+import type { PrismaService as PrismaType } from '../src/shared/infrastructure/prisma/prisma.service.ts';
 
 import { provenDevLogin } from './dev-api-target.mts';
 
@@ -207,7 +207,12 @@ const encounterId =
 await app.close();
 
 const timings: number[] = [];
-let body: { results: { total: number }; medications: { items: unknown[] }; timeline: unknown[] } | null = null; // prettier-ignore
+interface MeasuredBody {
+  results: { total: number };
+  medications: { items: unknown[] };
+  timeline: unknown[];
+}
+let body: MeasuredBody | null = null;
 for (let i = 0; i < READS + 5; i += 1) {
   // The general limit is 30 requests per 10 s (`rate-limit.ts`): paced under
   // it. The pause is outside the timed span, so it changes nothing measured.
@@ -218,7 +223,7 @@ for (let i = 0; i < READS + 5; i += 1) {
     { headers: { Authorization: `Bearer ${session.accessToken}` } },
   );
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  body = (await response.json()) as typeof body;
+  body = (await response.json()) as MeasuredBody;
   // The first five warm the connection and the query plans; not measured.
   if (i >= 5) timings.push(performance.now() - started);
 }
