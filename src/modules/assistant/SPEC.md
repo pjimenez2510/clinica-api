@@ -41,6 +41,9 @@ Este módulo **posee**:
   `ai_suggestion`;
 - las **preguntas para completar la nota** (C3): cada revisión en
   `note_question_check` y sus preguntas en `ai_suggestion`.
+- la lectura de los **signos dictados** (B2): la transcripción de un dictado
+  corto y su lectura en una propuesta para las casillas de la toma, sin
+  guardar nada.
 - lo que pasa **al firmar** (E1): firmar no se admite mientras se escucha o
   se redacta; al firmar se detiene la escucha, se cancelan los borradores en
   curso y cada sección propuesta queda revisada en `ai_suggestion_review`, con
@@ -340,6 +343,35 @@ sin firmar se rechaza.
 motivo, el rechazo dicho en el diálogo y lo que queda tras firmar; su mitad del
 servidor es AS-140, AS-141 y AS-147, que ya se prueban con esos números.
 
+### E13 — Signos dictados _(B2, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 B2: en la pestaña Signos, enfermería (en la
+preparación, F-03) o el médico (en la consulta, F-04) pulsa **«Dictar»**, dice
+«presión 120 sobre 80, pulso 72, temperatura 36 y medio…» y las casillas se
+llenan como **propuesta**: nada se guarda sin «Guardar». La lectura es la de
+SigmAI (`modules/vitals/dictation.ts` y `plausibility.ts`), copiada tal cual:
+**determinista, sin modelo de lenguaje**; el audio lo transcribe `clinica-ai`
+en esta máquina y no se guarda nunca. Lo que no se entiende con certeza —sin
+número, dudado, imposible— no se propone: se marca para teclearlo.
+
+**Por qué va así:** el vocabulario de los signos es cerrado y SigmAI midió que
+un intérprete de reglas basta (E-055: 93,9 % de los valores sin ruido, 0
+graves, sin llamar a ningún modelo), así que no hay texto que seudonimizar ni
+proveedor que esperar. Un valor mal leído es peor que una casilla vacía: la
+casilla vacía la ve quien guarda; el 170 leído por 117, no.
+**Prueba independiente:** con `clinica-ai` en marcha y el audio de prueba,
+«Dictar» y «Terminar» en la pestaña Signos llenan presión, pulso, temperatura,
+saturación, peso y talla con su marca de propuesta, la frecuencia respiratoria
+dicha «trescientos» queda marcada sin valor, y la toma no existe en la base
+hasta «Guardar»; el arnés da ≥ 93 % y 0 graves sobre el set inventado.
+**Cubre:** AS-180 a AS-195.
+**Solo servidor:** AS-184 (lo que no se guarda ni llega al log), AS-187 (el
+catálogo y los roles) y AS-188 (el arnés, fuera del verify). La pantalla los ve
+como AS-191.
+**Solo interfaz:** AS-189 a AS-195. Son el botón, la grabación, las marcas de
+propuesta y los fallos en la pestaña Signos; su mitad del servidor es AS-180,
+AS-182, AS-185 y AS-186, que ya se prueban con esos números.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -365,6 +397,14 @@ servidor es AS-140, AS-141 y AS-147, que ya se prueban con esos números.
   dice (D-253 §3).
 - **SC-094** — En esa misma corrida, el **p90** de lo que tarda una revisión es
   **≤ 5 s** (plan §5, propuestas).
+
+- **SC-095** — En el set inventado de frases dictadas
+  (`eval/casos/signos-dictados.json`), dicho por voces sintéticas del sistema
+  sin ruido y transcrito por `clinica-ai`, la lectura del producto llena
+  **≥ 93 %** de los valores esperados con el valor correcto (E-055: 93,9 %).
+- **SC-096** — En esa misma corrida y sobre el texto escrito de las mismas
+  frases: **0 graves** — ninguna casilla con un valor distinto del dicho y
+  ninguna llenada sin que se dijera.
 
 ## Supuestos
 
@@ -1758,6 +1798,119 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-150** — CUANDO la nota quede firmada, la pantalla NO DEBERÁ seguir
   mostrando el control de la escucha ni el bloque «Borrador del asistente».
 
+### 48. Dictar los signos (B2)
+
+- **AS-180** — CUANDO alguien con `assistant:dictate-vitals` y `vitals:write`
+  en la sede de una atención viva mande la grabación de un dictado a
+  `POST /v1/encounters/:id/assistant/vitals-dictation`, el sistema DEBERÁ
+  transcribirla con `clinica-ai` en esta máquina y responder lo que se oyó
+  (`heard`), los signos leídos como **propuesta** (`signs`, con los nombres de
+  la toma: `systolicBp`, `diastolicBp`, `heartRate`, `respiratoryRate`,
+  `temperatureC`, `oxygenSaturation`, `weightKg`, `heightCm`) y los que se
+  nombraron sin poder leerse (`unclear`); sin llamar a ningún proveedor de
+  modelo y sin escribir nada en la atención.
+  > Es una propuesta para el formulario, nunca una toma: la toma la escribe
+  > «Guardar» por `PUT /v1/encounters/:id/vitals` con su autor (EN-143), como
+  > siempre (P1).
+- **AS-181** — La lectura DEBERÁ ser la de SigmAI (`dictation.ts`), sin
+  modelo: cada signo nombrado se queda con lo dicho hasta que se nombra el
+  siguiente; números en cifras o en palabras («ciento cuarenta y cinco»),
+  «y medio», «punto» y «coma», la presión «120 con 80», «120 sobre 80»,
+  «120/80» y el «110,70» con que whisper escribe «con»; el peso en libras
+  pasado a kilos con un decimal; la talla en metros pasada a centímetros; y
+  ante «perdón», «no», «digo», «corrijo» o «mejor dicho» seguidos de un
+  número, lo que viene después.
+- **AS-182** — SI un signo nombrado no se puede leer con certeza —no se dijo
+  un número, se dudó («no sé», «espera», «creo», puntos suspensivos), se
+  dijeron dos valores distintos para él, está fuera de lo que una persona
+  puede medir (`plausibility.ts`) o la diastólica no queda por debajo de la
+  sistólica—, ENTONCES el sistema NO DEBERÁ proponer ningún valor para él y
+  DEBERÁ nombrarlo en `unclear`. Lo que no se nombró NO DEBERÁ aparecer en
+  `signs` ni en `unclear`.
+  > Nunca adivina: una casilla vacía la ve quien guarda; un valor mal leído
+  > no. Los límites de SigmAI son algo más estrechos que los de la base
+  > (EN-062): lo que queda entre los dos se teclea (D-255 §4).
+- **AS-183** — La temperatura dicha «axilar» o «bucal» DEBERÁ proponerse en
+  `temperatureC`, la única casilla de temperatura de la toma; SI se dicen las
+  dos con valores distintos, ENTONCES `temperatureC` DEBERÁ ir en `unclear`.
+  > El formulario 020 no distingue el sitio (D-255 §3).
+- **AS-184** — Ni la grabación, ni lo que se oyó, ni la propuesta DEBERÁN
+  guardarse en la base, en disco ni en el log; la grabación DEBERÁ pasar a
+  `clinica-ai` en memoria y olvidarse al terminar la petición; la respuesta
+  DEBERÁ llevar `Cache-Control: no-store`; y un fallo DEBERÁ registrarse sólo
+  con su motivo y sus cifras (bytes, segundos), sin texto.
+  > SigmAI RF-E09, P3. No se audita como lectura: no lee nada de la historia.
+- **AS-185** — Quién: sin `assistant:dictate-vitals` en ninguna sede la ruta
+  DEBERÁ responder 403; SI la atención no existe o es de una sede donde quien
+  pide no tiene a la vez `vitals:write` y `assistant:dictate-vitals`,
+  ENTONCES DEBERÁ responder `ASSISTANT_ENCOUNTER_NOT_FOUND` (404); SI la
+  atención ya no admite contenido nuevo, ENTONCES
+  `ASSISTANT_ENCOUNTER_CLOSED` (409); y con `ASSISTANT_ENABLED` apagado,
+  404 antes de todo (AS-026). NO DEBERÁ exigir `assistant:use` ni ser el
+  profesional de la atención: la toma la hace enfermería (D-255 §1). Admite
+  hasta **30 dictados por minuto** por cuenta.
+- **AS-186** — Fallos, sin llenar nada: una grabación vacía, o que
+  `clinica-ai` no pudo leer o en la que no oyó ninguna voz →
+  `ASSISTANT_DICTATION_NOT_HEARD` (422), con un título que dice qué hacer y,
+  cuando se sabe, cuántos segundos llegaron; más de **8 MB** →
+  413 `PAYLOAD_TOO_LARGE` del propio lector del cuerpo, antes de que llegue a
+  este módulo ni a `clinica-ai` (como DOC-052); y
+  `clinica-ai` sin reconocedor, sin secreto, caído o sin responder en
+  **60 s** → `ASSISTANT_DICTATION_UNAVAILABLE` (503).
+- **AS-187** — El catálogo DEBERÁ tener el permiso `assistant:dictate-vitals`,
+  y los roles de fábrica `ENFERMERIA` y `MEDICO` DEBERÁN traerlo (D-255 §1).
+- **AS-196** — CUANDO la pantalla pregunte por el dictado de una atención
+  (`GET /v1/encounters/:id/assistant/vitals-dictation`), el sistema DEBERÁ
+  responder, con los mismos permisos y rechazos de AS-185, lo que dura como
+  mucho un dictado (`maxSeconds`, 120).
+  > Es lo que deja a la pantalla ocultar «Dictar» con el 404 del asistente
+  > apagado, como las demás funciones (AS-026), sin grabar nada para saberlo.
+
+### 49. Medir el dictado (B2)
+
+- **AS-188** — El arnés de evaluación DEBERÁ medir, con
+  `pnpm eval:dictado` y fuera del verify, la lectura del producto —la misma
+  función de AS-181 a AS-183— sobre `eval/casos/signos-dictados.json`
+  (frases inventadas, `"origin": "invented"`) en dos brazos: el **texto
+  escrito** de cada frase y lo que `clinica-ai` **oyó** de ella dicha por
+  voces sintéticas del sistema, sin ruido; y DEBERÁ informar, por brazo, por
+  voz y por signo, los valores correctos, mal leídos, vacíos e inventados con
+  su intervalo de Wilson al 95 %, y cada grave con su texto. No DEBERÁ llamar
+  a ningún proveedor de modelo ni leer ninguna base.
+  > SigmAI E-055 (`frases.tsv`, `oir.py`, `interpretar.mts`). La voz es la
+  > síntesis de macOS, no la de ninguna persona; lo oído se guarda como caso
+  > inventado y el audio se borra.
+
+### 50. En la pestaña Signos (solo interfaz)
+
+- **AS-189** — MIENTRAS la toma de la atención se pueda escribir y la cuenta
+  tenga `assistant:dictate-vitals`, el formulario de la pestaña Signos DEBERÁ
+  ofrecer **«Dictar»**; con el asistente apagado o la atención fuera del
+  alcance (AS-196 responde 404) NO DEBERÁ mostrarlo.
+- **AS-190** — CUANDO se pulse «Dictar», la pantalla DEBERÁ abrir el
+  micrófono —o, en desarrollo, el audio de prueba, y decirlo— y mostrar
+  «Dictando…» con el tiempo, «Terminar» y «Cancelar»; al llegar a
+  `maxSeconds` DEBERÁ terminar sola. «Cancelar» DEBERÁ soltar el micrófono
+  sin mandar nada. El audio vive sólo en la memoria de la pestaña hasta
+  mandarlo.
+- **AS-191** — CUANDO llegue la propuesta, cada signo leído DEBERÁ escribirse
+  en su casilla con el borde punteado y «Propuesta» (ESTANDAR-UI §6 bis);
+  cada signo de `unclear` DEBERÁ marcar su casilla con «No se entendió:
+  escríbalo» sin poner valor; las casillas no dichas DEBERÁN quedar como
+  estaban; y DEBERÁ verse «Se oyó: «…»». Nada DEBERÁ enviarse a la toma hasta
+  «Guardar»; la marca de una casilla DEBERÁ irse al cambiarla, y todas al
+  guardar.
+- **AS-192** — SI el dictado cambia una casilla que ya tenía un valor,
+  ENTONCES la marca DEBERÁ decir el anterior («Propuesta · antes 118»).
+- **AS-193** — SI el dictado falla —micrófono denegado o ausente, sin voz,
+  demasiado largo, reconocedor no disponible—, ENTONCES la pestaña DEBERÁ
+  decir en el formulario qué pasó y qué hacer, sin llenar nada ni perder lo
+  tecleado.
+- **AS-194** — SI la propuesta no trae ningún signo ni ninguno sin entender,
+  ENTONCES DEBERÁ decir «No se reconoció ningún signo» con lo que se oyó.
+- **AS-195** — A 375 px de ancho, «Dictar», «Terminar» y «Cancelar» DEBERÁN
+  medir al menos 44 px de alto y la pestaña no DEBERÁ desbordar.
+
 ---
 
 ## Códigos de error nuevos
@@ -1795,6 +1948,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_DRAFT_CANCELLED`          | `ConflictError`        | 409       | El borrador se canceló: se firmó la nota o el médico dejó de esperarlo (AS-143, AS-147) |
 | `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
 | `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
+
+| `ASSISTANT_DICTATION_NOT_HEARD`      | `ValidationError`      | 422       | La grabación del dictado llegó vacía, no se pudo leer o no se oyó ninguna voz (AS-186) |
+| `ASSISTANT_DICTATION_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede transcribir: sin reconocedor, sin secreto, caído o sin responder (AS-186) |
 
 ## Niveles de prueba
 
@@ -1841,6 +1997,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-145 | Integración contra PostgreSQL, con control positivo |
 | AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
 
+| AS-180 a AS-183 (la lectura) | Unitario del dominio, con las frases de SigmAI |
+| AS-180, AS-184, AS-186 | Unitario del servicio y del adaptador con `fetch` y reconocedor falsos |
+| AS-180, AS-185, AS-186, AS-187, AS-196 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-188 | Arnés (`eval/`), fuera del verify |
+| AS-189 a AS-195 | Componente y composable; recorrido F-03 con el audio de prueba y `clinica-ai` |
+
 ## Preguntas abiertas
 
 Todas en **D-241**: el monto del techo, el plazo del texto sin atención, qué
@@ -1862,3 +2024,7 @@ por alergias y lo que la ficha ya sabe.
 prioridad que nadie marca. En **D-252**: interrumpir sin bloqueo, la escucha
 en pausa, firmar cualquier nota de la atención, qué secciones se miden y
 «Dejar de esperar».
+En **D-255**: el permiso propio de enfermería, el interruptor de la sede sin
+la autorización de grabar, la temperatura axilar en la única casilla, los
+límites de SigmAI frente a los de la base, lo que no mide la voz sintética y
+reemplazar lo ya tecleado.
