@@ -1815,8 +1815,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   la bitácora, porque no se reveló nada (PA-024). La ruta NO DEBERÁ depender
   de `ASSISTANT_ENABLED` ni de `assistant:use`: no llama a ningún modelo ni
   saca nada de la base (D-256 §1, como AS-118).
-  > Cada parte dice si hay algo en otras sedes que quien mira no atiende
-  > (`hasEntriesOutsideScope`), sin contarlo (D-214 §5, EN-276).
+  > La respuesta dice si la ficha tiene atenciones en sedes que quien mira no
+  > atiende (`hasEntriesOutsideScope`), sin contarlas (D-214 §5, EN-276): de
+  > ellas cuelgan los resultados y las recetas que no ve.
 - **AS-201** — Un resultado DEBERÁ venir de una orden de laboratorio emitida
   y de un informe **vigente** —ni sustituido por una corrección ni
   cancelado (ORD-151, ORD-152)— y DEBERÁ llevar su determinación, su valor

@@ -73,6 +73,13 @@ import {
 import { SUGGESTION_REVIEW_STORE } from './application/suggestion-review.store';
 import { PrismaSuggestionReviewStore } from './infrastructure/prisma-suggestion-review.store';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
+import { AssistantHistoryController } from './assistant-history.controller';
+import {
+  CLINICAL_HISTORY_CLOCK,
+  CLINICAL_HISTORY_READER,
+} from './application/clinical-history.reader';
+import { ClinicalHistoryService } from './application/clinical-history.service';
+import { PrismaClinicalHistoryReader } from './infrastructure/prisma-clinical-history.reader';
 import { ListeningAccess } from './application/listening-access';
 import {
   LISTENING_CLOCK,
@@ -135,6 +142,8 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
+    // AS-200 (D-256 §1). Outside the switch: no model, nothing leaves.
+    AssistantHistoryController,
   ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -215,6 +224,10 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: SIGNING_REVIEW_CLOCK, useValue: () => new Date() },
     SigningReviewService,
     { provide: ASSISTANT_AT_SIGNING, useExisting: SigningReviewService },
+    // AS-200 to AS-207 (B1). The history without a model.
+    { provide: CLINICAL_HISTORY_READER, useClass: PrismaClinicalHistoryReader },
+    { provide: CLINICAL_HISTORY_CLOCK, useValue: () => new Date() },
+    ClinicalHistoryService,
   ],
   // Only the port `encounter` asks at a signature: `@Global` makes every
   // export injectable anywhere, and the model client is not for anyone else.
