@@ -17,6 +17,8 @@ const chartProposalSchema = z.object({
   toMs: z.number().int(),
   /** `chart-allergy`: what `POST /patients/:id/allergies` receives. */
   substance: z.string().nullable(),
+  /** EN-084. The CNMB medicine the substance is, when it is one. */
+  substanceConceptId: z.uuid().nullable(),
   reaction: z.string().nullable(),
   /** `chart-history`: what `POST /patients/:id/history` receives. */
   history: z.enum(['PERSONAL', 'FAMILY']).nullable(),

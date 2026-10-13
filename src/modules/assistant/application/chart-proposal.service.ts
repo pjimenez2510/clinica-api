@@ -20,6 +20,10 @@ import {
   type CodingEncounter,
 } from '../../../shared/clinical/coding-context.port';
 import {
+  PRESCRIBING_CONTEXT_READER,
+  type PrescribingContextReader,
+} from '../../../shared/clinical/prescribing-context.port';
+import {
   SURVIVING_CHART_ALLERGY_READER,
   type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
@@ -30,7 +34,12 @@ import {
   SuggestionChartMismatchError,
   SuggestionNotFoundError,
 } from '../domain/assistant.errors';
-import { shownChart, type ChartProposalView } from '../domain/chart-background';
+import {
+  shownChart,
+  type ChartProposal,
+  type ChartProposalView,
+} from '../domain/chart-background';
+import { foldText } from '../domain/problem-coding';
 import type { Lexicon } from '../domain/lexicon';
 import type { TranscriptLine } from '../domain/note-draft';
 import type { SuggestionKind, SuggestionView } from '../domain/suggestion';
@@ -87,6 +96,7 @@ export class ChartProposalService {
   constructor(
     @Inject(CODING_CONTEXT_READER) private readonly context: CodingContextReader, // prettier-ignore
     @Inject(CHART_BACKGROUND_READER) private readonly chart: ChartBackgroundReader, // prettier-ignore
+    @Inject(PRESCRIBING_CONTEXT_READER) private readonly prescribing: PrescribingContextReader, // prettier-ignore
     @Inject(SURVIVING_CHART_ALLERGY_READER) private readonly allergies: SurvivingChartAllergyReader, // prettier-ignore
     @Inject(ALLERGY_ABSENCE_READER) private readonly absences: AllergyAbsenceReader, // prettier-ignore
     @Inject(LISTENING_STORE) private readonly transcripts: ListeningStore,
@@ -123,8 +133,11 @@ export class ChartProposalService {
     );
     if (read.runId === null || read.kept.length === 0) return 0;
     const runId = read.runId;
+    const kept = await Promise.all(
+      read.kept.map((proposal) => this.withConcept(proposal, input.encounter)),
+    );
     await this.suggestions.propose(
-      read.kept.map((proposal) => ({
+      kept.map((proposal) => ({
         encounterId: input.encounter.id,
         aiRunId: runId,
         kind: proposal.kind,
@@ -143,6 +156,28 @@ export class ChartProposalService {
       'assistant chart read',
     );
     return read.kept.length;
+  }
+
+  /**
+   * EN-084, PR-064. An allergy to a medicine of the cuadro carries its
+   * concept, so the receta checks it; only the medicine whose name IS the
+   * substance, never a near one. Any failure leaves it as text.
+   */
+  private async withConcept(
+    proposal: ChartProposal,
+    encounter: CodingEncounter,
+  ): Promise<ChartProposal> {
+    if (proposal.kind !== 'chart-allergy') return proposal;
+    try {
+      const found = await this.prescribing.searchCnmb(proposal.substance, encounter.clinicalDate, 3); // prettier-ignore
+      const same = found.find(
+        (medicine) =>
+          foldText(medicine.display) === foldText(proposal.substance),
+      );
+      return { ...proposal, substanceConceptId: same?.conceptId ?? null };
+    } catch {
+      return { ...proposal, substanceConceptId: null };
+    }
   }
 
   /** AS-263. What Antecedentes shows. A read of the history. */

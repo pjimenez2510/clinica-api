@@ -6,6 +6,7 @@ import type {
   ChartBackgroundReader,
   ChartRecord,
 } from '../../../shared/clinical/chart-background.port';
+import type { PrescribingContextReader } from '../../../shared/clinical/prescribing-context.port';
 import type {
   CodingContextReader,
   CodingEncounter,
@@ -134,9 +135,18 @@ function build(
   const transcripts = { transcript: () => Promise.resolve(LINES) } as unknown as ListeningStore; // prettier-ignore
   const audits: unknown[] = [];
   const audit: AccessAuditRecorder = { record: (entry) => { audits.push(entry); return Promise.resolve(); } }; // prettier-ignore
+  const prescribing = {
+    searchCnmb: (name: string) =>
+      Promise.resolve(
+        /amoxicilina/i.test(name)
+          ? [{ conceptId: 'c-amox', code: 'J01CA04', display: 'Amoxicilina', presentations: [], controlled: false }] // prettier-ignore
+          : [{ conceptId: 'c-near', code: 'X', display: `${name} compuesta`, presentations: [], controlled: false }], // prettier-ignore
+      ),
+  } as unknown as PrescribingContextReader;
   const service = new ChartProposalService(
     context,
     chart,
+    prescribing,
     {
       activeForSurvivorOf: () =>
         Promise.resolve(
@@ -185,6 +195,32 @@ describe('ChartProposalService — reading the chart from the conversation (AS-2
       ['chart-history', 'Hipertensión arterial · Madre', [{ kind: 'transcript', fromMs: 11_500, toMs: 14_000 }]], // prettier-ignore
     ]);
     expect(suggestions.raw.propose).toHaveBeenCalledWith(expect.any(Array), { userId: DOCTOR, sites: 'all' }); // prettier-ignore
+  });
+
+  it('AS-260 an allergy to a medicine of the cuadro carries its concept, so the receta checks it; a near name does not', async () => {
+    const answer = {
+      noKnownAllergies: null,
+      allergies: [
+        { substance: 'Amoxicilina', reaction: 'ronchas', source: 'L1' },
+        { substance: 'Látex', reaction: null, source: 'L1' },
+      ],
+      history: [],
+    };
+    const lines = [{ startMs: 0, endMs: 3_000, text: 'Soy alérgica a la amoxicilina y al látex, me da ronchas.' }]; // prettier-ignore
+    const { service, suggestions } = build({ llm: model(answer).client });
+
+    await service.readFrom({ encounter: ENCOUNTER, lines, requestedBy: DOCTOR, lexicon: null }); // prettier-ignore
+
+    expect(
+      suggestions.proposed.map((each) => [
+        each.proposal.substance,
+        each.proposal.substanceConceptId,
+      ]),
+    ).toEqual([
+      // prettier-ignore
+      ['Amoxicilina', 'c-amox'],
+      ['Látex', null],
+    ]);
   });
 
   it('AS-025 AS-260 an identifier still in the cleared conversation fails closed: no call, nothing proposed', async () => {

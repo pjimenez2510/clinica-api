@@ -135,6 +135,10 @@ function toResponse(overview: ChartOverview): ChartOverviewDto {
       fromMs: each.fromMs,
       toMs: each.toMs,
       substance: each.kind === 'chart-allergy' ? each.substance : null,
+      substanceConceptId:
+        each.kind === 'chart-allergy'
+          ? (each.substanceConceptId ?? null)
+          : null,
       reaction: each.kind === 'chart-allergy' ? each.reaction : null,
       history: each.kind === 'chart-history' ? each.history : null,
       description: each.kind === 'chart-history' ? each.description : null,

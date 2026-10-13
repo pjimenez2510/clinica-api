@@ -79,6 +79,11 @@ export type ChartProposal =
       text: string;
       substance: string;
       reaction: string | null;
+      /**
+       * EN-084. The CNMB medicine the substance IS, when it is one: without
+       * it the receta cannot check the allergy (PR-064). Null otherwise.
+       */
+      substanceConceptId?: string | null;
     } & Stretch)
   | ({
       kind: 'chart-history';
