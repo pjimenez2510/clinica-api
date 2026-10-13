@@ -651,6 +651,77 @@ describe('el comprobante electrónico por HTTP', () => {
     });
   });
 
+  describe('SRI-109 SRI-110 renumerar por HTTP', () => {
+    async function aReturnedInvoice(code: string, message: string) {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'RETURNED',
+               "last_messages" = ${JSON.stringify([
+                 {
+                   identifier: code,
+                   message,
+                   additionalInformation: null,
+                   type: 'ERROR',
+                 },
+               ])}::jsonb
+         WHERE "id" = ${invoice.electronic!.voucherId}::uuid`;
+      await prisma.$executeRaw`UPDATE "invoice" SET "status" = 'REJECTED' WHERE "id" = ${invoice.id}::uuid`;
+      return invoice;
+    }
+    const renumber = (voucherId: string, token = cashierToken) =>
+      api()
+        .post(`/api/v1/sri/vouchers/${voucherId}/renumber`)
+        .set('Authorization', `Bearer ${token}`);
+
+    it('SRI-110 SRI_VOUCHER_NOT_RENUMBERABLE (409) para una devuelta por otro motivo, sin tocarla', async () => {
+      const invoice = await aReturnedInvoice(
+        '35',
+        'ARCHIVO NO CUMPLE ESTRUCTURA XML',
+      );
+      const response = await renumber(invoice.electronic!.voucherId).expect(
+        409,
+      );
+      expect(response.body).toMatchObject({
+        status: 409,
+        code: 'SRI_VOUCHER_NOT_RENUMBERABLE',
+        title: expect.stringMatching(/secuencial registrado/) as string,
+      });
+      expect(
+        (await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } }))
+          .accessKey,
+      ).toBe(invoice.accessKey);
+    });
+
+    it('SRI-109 SRI_RENUMBER_UNCHECKED (503) si no se puede preguntar al SRI por la clave devuelta, y no renumera', async () => {
+      const invoice = await aReturnedInvoice(
+        '45',
+        'ERROR SECUENCIAL REGISTRADO',
+      );
+      const response = await renumber(invoice.electronic!.voucherId).expect(
+        503,
+      );
+      expect((response.body as Problem).code).toBe('SRI_RENUMBER_UNCHECKED');
+      expect(response.headers['retry-after']).toBe('60');
+      expect(await prisma.voucherRenumbering.count()).toBe(0);
+    });
+
+    it('SRI-110 SRI_VOUCHER_NOT_FOUND (404) en otra sede, y sin `billing:write` 403', async () => {
+      const invoice = await aReturnedInvoice(
+        '45',
+        'ERROR SECUENCIAL REGISTRADO',
+      );
+      const foreign = await renumber(
+        invoice.electronic!.voucherId,
+        otherCashierToken,
+      ).expect(404);
+      expect((foreign.body as Problem).code).toBe('SRI_VOUCHER_NOT_FOUND');
+      await renumber(invoice.electronic!.voucherId, receptionToken).expect(403);
+      // Positive control: caja of the site reaches the rule (the 503 of no SRI).
+      await renumber(invoice.electronic!.voucherId).expect(503);
+    });
+  });
+
   describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
     async function aReturnedInvoice() {
       await uploadCertificate();

@@ -8,6 +8,7 @@ import type {
 import { CHART_PURPOSE } from '../../application/chart-background.prompts';
 import { DRAFT_PURPOSE } from '../../application/note-draft.prompts';
 import { QUESTIONS_PURPOSE } from '../../application/note-questions.prompts';
+import { PREPARATION_PURPOSE } from '../../application/preparation-reading.prompts';
 import { EXAMS_PURPOSE } from '../../application/order-reading.prompts';
 import {
   LINES_PURPOSE,
@@ -21,6 +22,7 @@ import { LlmCallFailed } from '../../domain/assistant.errors';
 import type { ModelTier } from '../../domain/llm-outcome';
 import type { ModelPrice } from '../../domain/pricing';
 
+import { preparationOf } from './demo-preparation';
 import script from './demo-script.json';
 
 /** The model `ai_run` names for the demonstration: never a real one. */
@@ -103,6 +105,7 @@ export class DemoLlmProvider implements LlmProvider {
     if (purpose === EXAMS_PURPOSE) return { exams: examsIn(prompt) };
     if (purpose === QUESTIONS_PURPOSE) return { questions: questionsOf(prompt) }; // prettier-ignore
     if (purpose === CHART_PURPOSE) return chartOf(prompt);
+    if (purpose === PREPARATION_PURPOSE) return preparationOf(prompt);
     return {};
   }
 }

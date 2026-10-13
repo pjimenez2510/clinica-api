@@ -55,6 +55,8 @@ const sriMessageSchema = z.object({
 
 const voucherStatus = z.enum([
   'NO_VOUCHER',
+  // SRI-109. Never listed: a replaced voucher belongs to no document.
+  'SUPERSEDED',
   'PREPARED',
   'SIGNED',
   'RECEIVED',
@@ -94,6 +96,21 @@ const monitorRowSchema = z.object({
   /** SRI-055, D-102. Its key belongs to the environment not configured now. */
   environmentMismatch: z.boolean(),
   needsAPerson: z.boolean(),
+  /** SRI-108. Returned only with the 45 and never authorised: renumber it. */
+  renumberable: z.boolean(),
+  /** SRI-108. What decides it: whether the SRI ever authorised the voucher. */
+  authorisationNumber: z.string().nullable(),
+  everAuthorised: z.boolean(),
+  /** SRI-109. The numbers the SRI already held, oldest first. */
+  renumberedFrom: z.array(
+    z.object({
+      previousNumber: z.string(),
+      newSequential: z.string(),
+      renumberedAt: z.iso.datetime(),
+      renumberedByName: z.string(),
+      sriMessage: z.string(),
+    }),
+  ),
   /**
    * SRI-069. The last attempt, when it was a transport failure: the status
    * and a summary of the fault's string. The whole of it, its detail and the
@@ -166,3 +183,11 @@ const resendVoucherSchema = z.strictObject({
     .max(320, 'El correo no puede superar 320 caracteres'),
 });
 export class ResendVoucherDto extends createZodDto(resendVoucherSchema) {}
+
+/** SRI-109. The number the SRI already held, and the one it goes out with now. */
+const renumberedSchema = z.object({
+  previousSequential: z.string(),
+  newSequential: z.string(),
+});
+export class RenumberedDto extends createZodDto(renumberedSchema) {}
+export type RenumberedResponse = z.infer<typeof renumberedSchema>;

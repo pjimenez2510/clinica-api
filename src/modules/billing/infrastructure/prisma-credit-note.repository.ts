@@ -26,7 +26,6 @@ import type {
 } from '../domain/credit-note.repository';
 import {
   FINAL_CONSUMER_IDENTIFICATION,
-  nextSequential,
   type BuyerIdentificationType,
   type InvoiceStatus,
 } from '../domain/invoice';
@@ -179,21 +178,17 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
           }));
         const totals = totalsOf(lines);
 
-        await tx.$queryRaw`
-          SELECT "id" FROM "emission_point"
-           WHERE "id" = ${invoice.emission_point_id}::uuid
-             FOR UPDATE`;
-        const [last] = await tx.$queryRaw<{ sequential: string | null }[]>`
-          SELECT max("sequential") AS "sequential"
-            FROM "credit_note"
-           WHERE "emission_point_id" = ${invoice.emission_point_id}::uuid`;
+        // BI-308. Its own sequence on the invoice's point, numbered by the
+        // database under the point's lock.
+        const [{ sequential }] = await tx.$queryRaw<[{ sequential: string }]>`
+          SELECT next_voucher_sequential(${invoice.emission_point_id}::uuid, '04') AS "sequential"`;
 
         const created = await tx.creditNote.create({
           data: {
             invoiceId: issuance.invoiceId,
             siteId: issuance.siteId,
             emissionPointId: invoice.emission_point_id,
-            sequential: nextSequential(last?.sequential ?? null),
+            sequential,
             reasonCode: issuance.reasonCode,
             reason: issuance.reason,
             // BI-210 (D-152.2). The invoice's receiver, even when it was the

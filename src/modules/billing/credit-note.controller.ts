@@ -229,6 +229,10 @@ function toCreditNoteResponse(note: CreditNoteWithVoucher): CreditNoteResponse {
       ? {
           ...note.electronic,
           authorisedAt: note.electronic.authorisedAt?.toISOString() ?? null,
+          renumberedFrom: note.electronic.renumberedFrom.map((renumbering) => ({
+            ...renumbering,
+            at: renumbering.at.toISOString(),
+          })),
         }
       : null,
   };

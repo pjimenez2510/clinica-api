@@ -77,6 +77,7 @@ export const DOMAIN_ERROR_CODES = [
   'CLINICAL_HISTORY_CHART_NOT_OPEN',
   // AS-165, AS-166 (A3): escuchar sin la autorización de grabar del paciente.
   'ASSISTANT_RECORDING_NOT_AUTHORIZED',
+  'ASSISTANT_PREPARATION_OVER',
   'ASSISTANT_NOTE_EMPTY',
   'SUGGESTION_DIAGNOSIS_MISMATCH',
   // AS-265: una propuesta de la ficha se acepta con su propio registro.
@@ -435,6 +436,13 @@ export const DOMAIN_ERROR_CODES = [
   'SRI_VOUCHER_NOT_AUTHORISED',
   'SRI_VOUCHER_NOT_FOUND',
   'SRI_VOUCHER_NOT_RETRIABLE',
+  // SRI-110 (D-262). Sólo se renumera lo devuelto únicamente con el 45 y
+  // nunca autorizado (409).
+  'SRI_VOUCHER_NOT_RENUMBERABLE',
+  // SRI-116. Antes de renumerar se pregunta al SRI por la clave devuelta: si
+  // la autorizó, queda autorizada (409); si no contesta, no se renumera (503).
+  'SRI_VOUCHER_AUTHORISED_AFTER_ALL',
+  'SRI_RENUMBER_UNCHECKED',
   'SITE_IN_USE',
   // OR-032. La sede nace con su establecimiento: sin él, no hay sede.
   'SITE_ESTABLISHMENT_REQUIRED',
@@ -659,6 +667,12 @@ export const DOMAIN_ERROR_CODES = [
   'LAST_ACTIVE_PAYMENT_METHOD',
   'PAYMENT_METHOD_NAME_TAKEN',
   'PAYMENT_METHOD_NOT_FOUND',
+  // BI-306, BI-307 (D-262). El «próximo número» de un punto de emisión: con
+  // motivo (422), y nunca hasta el mayor usado (409, también de la base).
+  'NUMBERING_REASON_REQUIRED',
+  'NUMBERING_BELOW_USED',
+  // BI-306. Un punto de otra sede, o un tipo que no es 01 ni 04 (404).
+  'NUMBERING_EMISSION_POINT_NOT_FOUND',
   // Los cobros y el cierre de caja (B6, BI-101 a BI-105, BI-247 a BI-253).
   // El saldo, la caja cerrada y la foto del cierre los arbitra la base
   // (`trg_payment_guard`, `trg_payment_only_reverses`,

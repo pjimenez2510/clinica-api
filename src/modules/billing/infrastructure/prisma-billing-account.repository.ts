@@ -64,7 +64,6 @@ import {
   type InvoiceReceiver,
   type InvoiceStatus,
   type PaymentMethod,
-  nextSequential,
 } from '../domain/invoice';
 import { Money, Percentage, Quantity } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
@@ -1132,10 +1131,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           throw new InvoiceChargesChangedError();
         }
 
-        const [last] = await tx.$queryRaw<{ sequential: string | null }[]>`
-          SELECT max("sequential") AS "sequential"
-            FROM "invoice"
-           WHERE "emission_point_id" = ${issuance.emissionPointId}::uuid`;
+        // BI-085, BI-308. The database numbers it, under the point's lock:
+        // the largest used plus one, or the «próximo número» fixed above it.
+        const [{ sequential }] = await tx.$queryRaw<[{ sequential: string }]>`
+          SELECT next_voucher_sequential(${issuance.emissionPointId}::uuid, '01') AS "sequential"`;
 
         const invoice = await tx.invoice.create({
           include: INVOICE_NUMBER_INCLUDE,
@@ -1143,7 +1142,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             accountId: issuance.accountId,
             siteId: issuance.siteId,
             emissionPointId: issuance.emissionPointId,
-            sequential: nextSequential(last?.sequential ?? null),
+            sequential,
             buyerIdentificationType: issuance.receiver.buyerIdentificationType,
             buyerIdentification: issuance.receiver.buyerIdentification,
             buyerName: issuance.receiver.buyerName,

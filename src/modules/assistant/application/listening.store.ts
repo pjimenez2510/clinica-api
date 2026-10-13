@@ -45,3 +45,8 @@ export interface ListeningStore {
 }
 
 export const LISTENING_STORE = Symbol('LISTENING_STORE');
+
+/** AS-241, AS-245 (B3). The store of the preparation's listening. */
+export const PREPARATION_LISTENING_STORE = Symbol(
+  'PREPARATION_LISTENING_STORE',
+);

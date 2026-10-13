@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type {
   AssistantActivity,
@@ -8,7 +8,7 @@ import { DomainError } from '../../../shared/domain/errors/domain-error';
 import { asStoredSection } from '../domain/note-draft';
 import { reviewOf, sectionsToReview } from '../domain/signing-review';
 
-import { ListeningService } from './listening.service';
+import { ListeningService, PREPARATION_LISTENING } from './listening.service';
 import { NoteDraftService } from './note-draft.service';
 import { NOTE_DRAFT_STORE, type NoteDraftStore } from './note-draft.store';
 import {
@@ -40,6 +40,10 @@ export class SigningReviewService implements AssistantAtSigning {
     @Inject(SUGGESTION_STORE) private readonly suggestions: SuggestionStore,
     @Inject(SUGGESTION_REVIEW_STORE) private readonly reviews: SuggestionReviewStore, // prettier-ignore
     @Inject(SIGNING_REVIEW_CLOCK) private readonly clock: () => Date,
+    /** B3 (revisión M1). The preparation's listening, stopped by the signature too. */
+    @Optional()
+    @Inject(PREPARATION_LISTENING)
+    private readonly preparation?: ListeningService,
   ) {}
 
   /** AS-140, AS-141. The capture held by this process, and the drafts in flight. */
@@ -58,6 +62,12 @@ export class SigningReviewService implements AssistantAtSigning {
     await this.quietly(encounterId, 'listening', () =>
       this.listening.close(encounterId),
     );
+    if (this.preparation) {
+      const preparation = this.preparation;
+      await this.quietly(encounterId, 'listening', () =>
+        preparation.close(encounterId),
+      );
+    }
     await this.quietly(encounterId, 'note_draft', () =>
       this.drafts.cancel(encounterId),
     );

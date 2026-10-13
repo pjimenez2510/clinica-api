@@ -107,6 +107,12 @@ interface Live {
  * One process holds the live listenings (D-247 §5): the clock written every
  * five seconds is what survives a restart.
  */
+/**
+ * AS-241 (B3). The listening of the preparation: this same service over the
+ * preparation's store, and without the draft's observer (AS-242).
+ */
+export const PREPARATION_LISTENING = Symbol('PREPARATION_LISTENING');
+
 @Injectable()
 export class ListeningService {
   private readonly logger = new Logger(ListeningService.name);

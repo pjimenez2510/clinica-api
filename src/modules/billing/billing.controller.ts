@@ -949,6 +949,12 @@ function toInvoiceResponse(invoice: InvoiceWithVoucher): InvoiceResponse {
       ? {
           ...invoice.electronic,
           authorisedAt: invoice.electronic.authorisedAt?.toISOString() ?? null,
+          renumberedFrom: invoice.electronic.renumberedFrom.map(
+            (renumbering) => ({
+              ...renumbering,
+              at: renumbering.at.toISOString(),
+            }),
+          ),
         }
       : null,
   };
