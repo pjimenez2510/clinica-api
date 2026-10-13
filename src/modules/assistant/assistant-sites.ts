@@ -33,3 +33,15 @@ function intersect(a: SiteScope, b: SiteScope): SiteScope {
   if (b === 'all') return a;
   return a.filter((site) => b.includes(site));
 }
+
+/**
+ * AS-185, D-255 §1. Where the requester may take vital signs AND dictate
+ * them. Not `assistant:use`: nursing dictates without the consultation's
+ * assistant (A3's per-site switch will narrow this list too).
+ */
+export function withDictation(principal: Principal): SiteScope {
+  return intersect(
+    scopeOf(principal, 'vitals:write'),
+    scopeOf(principal, 'assistant:dictate-vitals'),
+  );
+}

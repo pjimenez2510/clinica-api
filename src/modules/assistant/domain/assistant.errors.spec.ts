@@ -37,6 +37,8 @@ import {
   AssistantDraftInterruptedError,
   AssistantDraftFailedError,
   AssistantDraftRetryLimitError,
+  DictationNotHeardError,
+  DictationUnavailableError,
 } from './assistant.errors';
 
 /**
@@ -315,4 +317,44 @@ describe('assistant errors', () => {
     expect(error.userTitle).toContain('Recargue la atención');
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
+
+  it.each([
+    [{ kind: 'empty' } as const, /No llegó ninguna grabación/],
+    [{ kind: 'unreadable' } as const, /No se pudo leer la grabación/],
+    [{ kind: 'silent', seconds: 0.6 } as const, /Solo llegaron 0,6 s/],
+    [
+      { kind: 'silent', seconds: 7.25 } as const,
+      /Llegaron 7,3 s de grabación pero no se oyó ninguna voz/,
+    ],
+  ])(
+    'AS-186 answers ASSISTANT_DICTATION_NOT_HEARD as a 422 that says what to do (%o)',
+    (heard, title) => {
+      const error = new DictationNotHeardError(heard);
+
+      expect(error.code).toBe('ASSISTANT_DICTATION_NOT_HEARD');
+      expect(error).toBeInstanceOf(ValidationError);
+      expect(error.userTitle).toMatch(title);
+      expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    },
+  );
+
+  it.each([
+    ['no-recognizer', /no está instalado/],
+    ['unreachable', /no responde/],
+  ] as const)(
+    'AS-186 answers ASSISTANT_DICTATION_UNAVAILABLE as a retryable 503 when %s',
+    (reason, title) => {
+      const error = new DictationUnavailableError(reason);
+
+      expect(error.code).toBe('ASSISTANT_DICTATION_UNAVAILABLE');
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect(error.isRetryable).toBe(true);
+      expect(error.userTitle).toMatch(title);
+      expect(error.userTitle).toMatch(/escriba los signos/);
+      expect(error.message).toBe(
+        `clinica-ai cannot transcribe the dictation: ${reason}`,
+      );
+      expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    },
+  );
 });

@@ -142,17 +142,21 @@ describe('el tarifario de la pared por HTTP', () => {
     return row.amount.toFixed(2);
   }
 
-  it('BI-110 BI-112 BI-114 sin sesión y sin publicación dice que no hay tarifario; publicado, lo enseña con versión y vigencia', async () => {
+  it('BI-110 BI-112 BI-114 AU-061 sin sesión y sin publicación dice que no hay tarifario; publicado, lo enseña con versión y vigencia', async () => {
     const before = await wall().expect(404);
     expect((before.body as Problem).code).toBe('TARIFF_PUBLICATION_NOT_FOUND');
     expect((before.body as Problem).title).toBe(
       'La clínica todavía no ha publicado su tarifario',
     );
 
-    await publish().expect(201);
+    const published = await publish().expect(201);
     const response = await wall().expect(200);
     const body = response.body as PublicTariff;
 
+    expect(published.headers['cache-control']).toBe('no-store');
+    // AU-061: nobody's data, meant for anyone: a cache may keep it, but must
+    // revalidate. Control: publishing it, on the same application, is no-store.
+    expect(response.headers['cache-control']).toBe('no-cache');
     expect(body.version).toBe(1);
     expect(body.effectiveFrom).toBe(today());
     expect(body.establishmentName).toBe('Clínica de Pruebas S.A.');

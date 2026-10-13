@@ -1,0 +1,307 @@
+{
+  "origin": "invented",
+  "description": "Set RESERVADO de frases de signos dictados (B2, AS-188, AS-197): escrito antes de medirlo y nunca usado para elegir el umbral de confianza. Inventadas: ninguna sale de una persona, una base ni una historia.",
+  "cases": [
+    {
+      "id": "V01",
+      "category": "completa-palabras",
+      "text": "Presión ciento veintidós con setenta y cuatro, pulso sesenta y cinco, temperatura treinta y seis, saturación noventa y seis, peso cincuenta y cinco, talla uno cincuenta y uno.",
+      "expected": {
+        "systolicBp": 122,
+        "diastolicBp": 74,
+        "heartRate": 65,
+        "temperatureC": 36,
+        "oxygenSaturation": 96,
+        "weightKg": 55,
+        "heightCm": 151
+      }
+    },
+    {
+      "id": "V02",
+      "category": "completa-palabras",
+      "text": "Presión ciento treinta y ocho con ochenta y seis, frecuencia ochenta y tres, saturación noventa y cuatro, temperatura treinta y siete y medio, peso noventa y dos, talla uno setenta y cinco.",
+      "expected": {
+        "systolicBp": 138,
+        "diastolicBp": 86,
+        "heartRate": 83,
+        "oxygenSaturation": 94,
+        "temperatureC": 37.5,
+        "weightKg": 92,
+        "heightCm": 175
+      }
+    },
+    {
+      "id": "V03",
+      "category": "completa-palabras",
+      "text": "Presión ciento cinco con sesenta y ocho, pulso noventa y siete, frecuencia respiratoria veinticuatro, temperatura treinta y nueve, saturación noventa, peso cuarenta y dos, talla uno cuarenta y cinco.",
+      "expected": {
+        "systolicBp": 105,
+        "diastolicBp": 68,
+        "heartRate": 97,
+        "respiratoryRate": 24,
+        "temperatureC": 39,
+        "oxygenSaturation": 90,
+        "weightKg": 42,
+        "heightCm": 145
+      }
+    },
+    {
+      "id": "V04",
+      "category": "completa-cifras",
+      "text": "Presión 132 sobre 84, pulso 69, temperatura 36,6, saturación 97, peso 77, talla 1,70.",
+      "expected": {
+        "systolicBp": 132,
+        "diastolicBp": 84,
+        "heartRate": 69,
+        "temperatureC": 36.6,
+        "oxygenSaturation": 97,
+        "weightKg": 77,
+        "heightCm": 170
+      }
+    },
+    {
+      "id": "V05",
+      "category": "completa-cifras",
+      "text": "Presión 148 con 92, frecuencia 88, frecuencia respiratoria 18, saturación 95, temperatura 37,2, peso 83,5, talla 1,64.",
+      "expected": {
+        "systolicBp": 148,
+        "diastolicBp": 92,
+        "heartRate": 88,
+        "respiratoryRate": 18,
+        "oxygenSaturation": 95,
+        "temperatureC": 37.2,
+        "weightKg": 83.5,
+        "heightCm": 164
+      }
+    },
+    {
+      "id": "V06",
+      "category": "completa-cifras",
+      "text": "PA 125/78, FC 71, saturación 98, peso 66, talla 160 centímetros.",
+      "expected": {
+        "systolicBp": 125,
+        "diastolicBp": 78,
+        "heartRate": 71,
+        "oxygenSaturation": 98,
+        "weightKg": 66,
+        "heightCm": 160
+      }
+    },
+    {
+      "id": "V07",
+      "category": "orden-parcial",
+      "text": "Talla uno sesenta y siete, peso setenta y nueve, presión ciento diecinueve con setenta y siete.",
+      "expected": {
+        "heightCm": 167,
+        "weightKg": 79,
+        "systolicBp": 119,
+        "diastolicBp": 77
+      }
+    },
+    {
+      "id": "V08",
+      "category": "orden-parcial",
+      "text": "Pulso noventa y saturación noventa y siete.",
+      "expected": {
+        "heartRate": 90,
+        "oxygenSaturation": 97
+      }
+    },
+    {
+      "id": "V09",
+      "category": "orden-parcial",
+      "text": "Saturación noventa y cinco, temperatura treinta y ocho y medio.",
+      "expected": {
+        "oxygenSaturation": 95,
+        "temperatureC": 38.5
+      }
+    },
+    {
+      "id": "V10",
+      "category": "presion",
+      "text": "Tensión arterial ciento sesenta sobre cien.",
+      "expected": {
+        "systolicBp": 160,
+        "diastolicBp": 100
+      }
+    },
+    {
+      "id": "V11",
+      "category": "presion",
+      "text": "La presión está en ciento treinta, noventa.",
+      "expected": {
+        "systolicBp": 130,
+        "diastolicBp": 90
+      }
+    },
+    {
+      "id": "V12",
+      "category": "presion",
+      "text": "Presión 98 con 64.",
+      "expected": {
+        "systolicBp": 98,
+        "diastolicBp": 64
+      }
+    },
+    {
+      "id": "V13",
+      "category": "talla",
+      "text": "Talla ciento cincuenta y cuatro centímetros, peso sesenta kilos.",
+      "expected": {
+        "heightCm": 154,
+        "weightKg": 60
+      }
+    },
+    {
+      "id": "V14",
+      "category": "talla",
+      "text": "Mide un metro setenta y ocho y pesa ochenta y cinco kilos.",
+      "expected": {
+        "heightCm": 178,
+        "weightKg": 85
+      }
+    },
+    {
+      "id": "V15",
+      "category": "saturacion",
+      "text": "Saturando noventa y tres, pulso ochenta y uno.",
+      "expected": {
+        "oxygenSaturation": 93,
+        "heartRate": 81
+      }
+    },
+    {
+      "id": "V16",
+      "category": "saturacion",
+      "text": "Oxígeno noventa y seis por ciento.",
+      "expected": {
+        "oxygenSaturation": 96
+      }
+    },
+    {
+      "id": "V17",
+      "category": "fr-fc",
+      "text": "Frecuencia respiratoria diecisiete, frecuencia cardiaca sesenta y siete.",
+      "expected": {
+        "respiratoryRate": 17,
+        "heartRate": 67
+      }
+    },
+    {
+      "id": "V18",
+      "category": "fr-fc",
+      "text": "Frecuencia cardiaca setenta y ocho, frecuencia respiratoria veintiuno.",
+      "expected": {
+        "heartRate": 78,
+        "respiratoryRate": 21
+      }
+    },
+    {
+      "id": "V19",
+      "category": "temperatura",
+      "text": "Temperatura axilar treinta y siete coma uno.",
+      "expected": {
+        "temperatureC": 37.1
+      }
+    },
+    {
+      "id": "V20",
+      "category": "temperatura",
+      "text": "Temperatura treinta y seis punto ocho.",
+      "expected": {
+        "temperatureC": 36.8
+      }
+    },
+    {
+      "id": "V21",
+      "category": "peso",
+      "text": "Peso ciento cuarenta libras.",
+      "expected": {
+        "weightKg": 63.5
+      }
+    },
+    {
+      "id": "V22",
+      "category": "peso",
+      "text": "Pesa cincuenta y ocho kilos y medio.",
+      "expected": {
+        "weightKg": 58.5
+      }
+    },
+    {
+      "id": "V23",
+      "category": "correccion",
+      "text": "Pulso setenta y seis, perdón, setenta y nueve.",
+      "expected": {
+        "heartRate": 79
+      }
+    },
+    {
+      "id": "V24",
+      "category": "correccion",
+      "text": "Presión ciento veinte con ochenta, mejor dicho, ciento veinticuatro con ochenta.",
+      "expected": {
+        "systolicBp": 124,
+        "diastolicBp": 80
+      }
+    },
+    {
+      "id": "V25",
+      "category": "dudoso",
+      "text": "Temperatura normal, pulso bien.",
+      "expected": {}
+    },
+    {
+      "id": "V26",
+      "category": "dudoso",
+      "text": "Peso setenta y... no sé, espera. Saturación noventa y nueve.",
+      "expected": {
+        "oxygenSaturation": 99
+      }
+    },
+    {
+      "id": "V27",
+      "category": "imposible",
+      "text": "Saturación ciento veinte, pulso setenta.",
+      "expected": {
+        "heartRate": 70
+      }
+    },
+    {
+      "id": "V28",
+      "category": "largo",
+      "text": "Peso setenta y cuatro kilos. Ahora párese derecho. Talla uno sesenta y nueve. Siéntese por favor. Presión ciento dieciséis con setenta y cuatro. Pulso setenta y tres.",
+      "expected": {
+        "weightKg": 74,
+        "heightCm": 169,
+        "systolicBp": 116,
+        "diastolicBp": 74,
+        "heartRate": 73
+      }
+    },
+    {
+      "id": "V29",
+      "category": "largo",
+      "text": "Vamos a ver. Saturación noventa y seis. Temperatura treinta y seis y medio. Respire tranquilo. Frecuencia respiratoria dieciséis.",
+      "expected": {
+        "oxygenSaturation": 96,
+        "temperatureC": 36.5,
+        "respiratoryRate": 16
+      }
+    },
+    {
+      "id": "V30",
+      "category": "completa-palabras",
+      "text": "Presión ciento cuarenta y uno con ochenta y nueve, pulso setenta y cuatro, saturación noventa y siete, temperatura treinta y seis y medio, peso setenta y seis, talla uno cincuenta y seis.",
+      "expected": {
+        "systolicBp": 141,
+        "diastolicBp": 89,
+        "heartRate": 74,
+        "oxygenSaturation": 97,
+        "temperatureC": 36.5,
+        "weightKg": 76,
+        "heightCm": 156
+      }
+    }
+  ]
+}

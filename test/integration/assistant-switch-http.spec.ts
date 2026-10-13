@@ -85,4 +85,16 @@ describe('el asistente apagado (AS-026)', () => {
     // Control: the orders of the attention, outside the assistant, ask for a session.
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/orders`).expect(401); // prettier-ignore
   });
+
+  it('AS-026 AS-185 answers 404 to the dictated vital signs, before the session and the recording', async () => {
+    const server = app.getHttpServer();
+    await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/vitals-dictation`).expect(404); // prettier-ignore
+    await request(server)
+      .post(`/api/v1/encounters/${ENCOUNTER}/assistant/vitals-dictation`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from('RIFF invented'))
+      .expect(404);
+    // Control: the taking itself, outside the assistant, asks for a session.
+    await request(server).get(`/api/v1/encounters/${ENCOUNTER}/vitals`).expect(401); // prettier-ignore
+  });
 });

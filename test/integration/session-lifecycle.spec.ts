@@ -39,6 +39,7 @@ import {
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -297,6 +298,25 @@ describe('session over HTTP', () => {
       .expect(200);
 
     expect(Object.keys(sessionBody(resumed))).not.toContain('refreshToken');
+  });
+
+  it('AU-061 the access token never stays in a cache: sign-in and refresh answer no-store', async () => {
+    // RFC 6749 §5.1: a response carrying a token is never stored.
+    await createAccount();
+
+    const signedIn = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
+      .expect(200);
+    const resumed = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', signedIn.get('Set-Cookie')!)
+      .expect(200);
+
+    expect(sessionBody(signedIn).accessToken).toEqual(expect.any(String));
+    expect(signedIn.headers['cache-control']).toBe('no-store');
+    expect(resumed.headers['cache-control']).toBe('no-store');
+    await expectPublicTariffCacheable(app.getHttpServer());
   });
 
   /**

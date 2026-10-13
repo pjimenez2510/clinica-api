@@ -1,3 +1,4 @@
+import express from 'express';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -73,6 +74,16 @@ import {
 import { SUGGESTION_REVIEW_STORE } from './application/suggestion-review.store';
 import { PrismaSuggestionReviewStore } from './infrastructure/prisma-suggestion-review.store';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
+import {
+  AssistantVitalsDictationController,
+  MAX_DICTATION_BYTES,
+} from './assistant-vitals-dictation.controller';
+import {
+  DICTATION_TRANSCRIBER,
+  type DictationTranscriber,
+} from './application/dictation-transcriber.port';
+import { VitalsDictationService } from './application/vitals-dictation.service';
+import { dictationTranscriberFor } from './infrastructure/clinica-ai.dictation-transcriber';
 import { ListeningAccess } from './application/listening-access';
 import {
   LISTENING_CLOCK,
@@ -135,6 +146,7 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
+    AssistantVitalsDictationController,
   ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -215,6 +227,14 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: SIGNING_REVIEW_CLOCK, useValue: () => new Date() },
     SigningReviewService,
     { provide: ASSISTANT_AT_SIGNING, useExisting: SigningReviewService },
+    // AS-180 to AS-186 (B2). The dictated vital signs: clinica-ai transcribes,
+    // a rule reads; no model, nothing kept.
+    {
+      provide: DICTATION_TRANSCRIBER,
+      inject: [ConfigService],
+      useFactory: buildDictationTranscriber,
+    },
+    VitalsDictationService,
   ],
   // Only the port `encounter` asks at a signature: `@Global` makes every
   // export injectable anywhere, and the model client is not for anyone else.
@@ -243,7 +263,15 @@ export class AssistantModule
         AssistantNoteQuestionsController,
         AssistantPrescriptionController,
         AssistantOrdersController,
+        AssistantVitalsDictationController,
       );
+    // AS-186. The recording as raw bytes, whatever its type, capped at the
+    // socket: a larger one is the parser's 413 before it reaches clinica-ai
+    // (as DOC-052). Mounted after the switch, so an assistant that is off
+    // still answers 404 first.
+    consumer
+      .apply(express.raw({ type: () => true, limit: MAX_DICTATION_BYTES }))
+      .forRoutes(AssistantVitalsDictationController);
   }
 
   /**
@@ -313,6 +341,24 @@ export class AssistantModule
 }
 
 type Config = ConfigService<Env, true>;
+
+/** AS-186. Long enough for two minutes of speech on this machine's recogniser. */
+const DICTATION_TIMEOUT_MS = 60_000;
+
+/**
+ * AS-186. `clinica-ai`'s short dictation with the shared secret; without the
+ * secret nothing is sent and «Dictar» says the recogniser is not available.
+ */
+export function buildDictationTranscriber(
+  config: Config,
+): DictationTranscriber {
+  return dictationTranscriberFor({
+    url: config.get('ASSISTANT_AI_SERVICE_URL', { infer: true }),
+    secret:
+      config.get('ASSISTANT_AI_SERVICE_SECRET', { infer: true }) || undefined,
+    timeoutMs: DICTATION_TIMEOUT_MS,
+  });
+}
 
 /**
  * AS-048. `clinica-ai`'s recogniser with the shared secret; without the
