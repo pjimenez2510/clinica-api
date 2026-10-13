@@ -135,8 +135,23 @@ describe('AS-282 a reason worded only from what the patient said', () => {
         ['Mi hijito tiene tos y yo tengo fiebre', 'Hijito con tos y fiebre'],
         ['Mi guagua tiene fiebre', 'Guagua con fiebre'],
         ['A ella le duele la cabeza', 'Dolor de cabeza'],
+        ['El niño tiene fiebre y yo tengo tos', 'Niño con fiebre y tos'],
+        ['La guagua tiene fiebre y yo tengo tos', 'Guagua con fiebre y tos'],
+        ['Mi ñaño tiene fiebre y yo tengo tos', 'Ñaño con fiebre y tos'],
+        [
+          'Mi compañero tiene fiebre y yo tengo tos',
+          'Compañero con fiebre y tos',
+        ],
+        [
+          'Mi guambra tiene fiebre y yo diarrea',
+          'Guambra con fiebre y diarrea',
+        ],
+        [
+          'Mi taita tiene dolor de pecho y yo mareo',
+          'Taita con dolor de pecho y mareo',
+        ],
       ]),
-    ).toEqual(Array(5).fill(false));
+    ).toEqual(Array(11).fill(false));
   });
 
   it('AS-282 a root, a cause, an amount or a tense the patient did not say is not believed', () => {
@@ -155,9 +170,11 @@ describe('AS-282 a reason worded only from what the patient said', () => {
         ],
         ['Tos desde hace una semana', 'Tos desde hace unas semanas'],
         ['Tenía fiebre', 'Fiebre'],
+        ['Me dolió', 'Dolor'],
+        ['Me dolía la cabeza', 'Dolor de cabeza'],
         ['Desde ayer no sé caminar bien', 'Camina bien desde ayer'],
       ]),
-    ).toEqual(Array(8).fill(false));
+    ).toEqual(Array(10).fill(false));
     expect(groundedWording('Fiebre desde hace un día', 'Ay señorita, tengo fiebre desde hace un día')).toBe(true); // prettier-ignore
   });
 

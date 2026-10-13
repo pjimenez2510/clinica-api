@@ -2764,7 +2764,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   ella ni que 500 caracteres; (b) cada palabra suya la dijo el paciente
   **en el mismo orden** —comparadas sin mayúsculas, tildes ni signos: la
   misma palabra o con otro género o número, nunca por una raíz común, y
-  «dolor» por «duele», «mareo» por «mareada», «siente» por «siento»—, salvo
+  «dolor» por «duele» (nunca por «dolió» ni «dolía»), «mareo» por
+  «mareada», «siente» por «siento»—, salvo
   las de enlace y de redacción («de», «con», «desde», «hace», «sensación»,
   «refiere»…; nunca «al», «por» ni «para», que añaden una causa, ni
   «unos», «varios», que cambian una cantidad); (c) cada palabra con
@@ -2773,8 +2774,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   «me siento», «vengo»); (d) dice los mismos números que la fuente, «un
   día» como 1; y (e) no niega nada. Y NO DEBERÁ creerse ninguna redacción si la fuente niega
   algo (sin contar el «no sé» que duda ni el «¿no?» final), nombra a otra
-  persona («mi mamá», «mi hijito», «mi señora», «mi guagua», «le duele»,
-  «a ella»…), dice derecha e izquierda, o trae más de
+  persona («mi mamá», «mi hijito», «mi señora», «la guagua», «le duele»,
+  «a ella»…) o usa un verbo de otra persona («tiene», «está», «siente»: «el
+  niño tiene fiebre y yo tengo tos»), dice derecha e izquierda, o trae más de
   una duración o más de un número: lo que una comparación palabra por
   palabra no distingue. SI no las pasa, o el modelo no la da, ENTONCES el
   motivo DEBERÁ ser la frase entera, como AS-249. La respuesta DEBERÁ

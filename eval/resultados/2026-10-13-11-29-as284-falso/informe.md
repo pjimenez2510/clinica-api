@@ -1,6 +1,6 @@
 # B3 — La preparación escuchada: medición (as284-falso)
 
-- Corrida: 2026-10-13 11:22:28 (America/Guayaquil), commit `c323e57e+cambios`, proveedor **demostración**.
+- Corrida: 2026-10-13 11:29:13 (America/Guayaquil), commit `269200f6+cambios`, proveedor **demostración**.
 - Lecturas: 132 de 132.
 - Casos inventados (`eval/casos/preparaciones.json`, `eval/casos/preparaciones-motivo.json` sólo escrito, el reservado de B2 sólo en cifras); sin seudonimizador (EV-2).
 
