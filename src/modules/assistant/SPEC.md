@@ -440,6 +440,34 @@ como AS-191.
 propuesta y los fallos en la pestaña Signos; su mitad del servidor es AS-180,
 AS-182, AS-185 y AS-186, que ya se prueban con esos números.
 
+### E15 — El asistente llena como lo haría el médico _(13-10-2026)_
+
+El autor leyó el libreto de la amigdalitis con el modelo real y pidió cinco
+cosas: las alergias y los antecedentes dichos llegan como **registros** de sus
+tablas y no como prosa (corrige D-249 §1, D-261); cada código CIE-10 se
+registra **de un toque** y sin códigos de síntoma sueltos; la receta llega
+**completa** —concentración, presentación, forma, vía, dosis y unidad— con lo
+deducido marcado «Nadie lo dijo»; cada medicamento pasa al borrador de la
+receta **con un solo ✓**; y una pregunta no vuelve con otra redacción.
+
+**Por qué va así:** un toque no quita el acto del médico (P1): registra por la
+misma ruta y con las mismas validaciones que el botón de hoy, con el médico
+como autor, y nada se registra sin él. Lo que la conversación no dijo y el
+sistema deduce del CNMB se escribe, pero se marca: el médico ve qué revisar.
+**Prueba independiente:** con el modo de demostración, el libreto produce en
+Antecedentes «Sin alergias conocidas» e «Hipertensión arterial · Madre» con ✓;
+en Diagnósticos J03.9 de un toque y ningún código R; en Receta la amoxicilina
+500 mg cápsula oral, 1 cápsula cada 8 horas 7 días, y el paracetamol 500 mg
+tableta oral, 1 tableta cada 8 horas, con la vía y la tableta marcadas «Nadie
+lo dijo»; y cada ✓ los deja registrados o en el borrador de la receta.
+**Cubre:** AS-260 a AS-279.
+**Solo servidor:** AS-262 (las barreras de lo leído), AS-266 (la base enlaza
+el registro de la ficha) y AS-277 (el arnés, fuera del verify). La pantalla los
+ve como AS-263 y AS-265.
+**Solo interfaz:** AS-261, AS-268, AS-271, AS-274 y AS-279. Son los ✓ de
+Antecedentes, Diagnósticos y Receta, las marcas de lo deducido y el teléfono; su mitad del
+servidor es AS-263, AS-265, AS-037, AS-267, AS-269, AS-270, AS-272, AS-073 y AS-275, que ya se prueban con esos números.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -483,6 +511,22 @@ AS-182, AS-185 y AS-186, que ya se prueban con esos números.
   **100 %** de los resultados de la historia tiene el mismo valor, unidad,
   rango y bandera que el informe vigente de su orden
   (`GET /v1/orders/:id/reports`), y ninguno es de otra persona (PA-055).
+
+- **SC-102** — En el set inventado de recetas leídas de la nota
+  (`eval/casos/receta-notas.json` y el libreto con sus tres variantes), con el
+  proveedor principal, **≥ 95 %** de los campos dichos o deducibles de cada
+  línea —concentración, presentación, vía, dosis y unidad— llenos y
+  correctos, y **0** campos llenos que no se dijeron ni se deducen (los
+  deducidos, todos marcados «Nadie lo dijo»).
+- **SC-103** — En el set de problemas de la nota (el libreto, sus tres
+  variantes y los casos de D1 con un diagnóstico definido), con el proveedor
+  principal, **0** códigos del capítulo XVIII (R00–R99) propuestos cuando la
+  nota trae un diagnóstico definido que los explica.
+- **SC-104** — En el set inventado de conversaciones con antecedentes (el
+  libreto, sus tres variantes y las consultas de `nota.json` que los dicen),
+  con el proveedor principal, **≥ 90 %** de las alergias, «sin alergias
+  conocidas» y antecedentes personales y familiares dichos, propuestos como
+  registro con su línea, y **0** propuestos sin decirse.
 
 ## Supuestos
 
@@ -2277,6 +2321,149 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 
 ---
 
+### 55. Las alergias y los antecedentes dichos, como registros (D-261, P1, P2)
+
+- **AS-260** — CUANDO se escriba el borrador de la nota de una atención
+  (AS-086), el sistema DEBERÁ leer además, de la misma conversación
+  seudonimizada y en una llamada aparte (`chart-background`, nivel
+  `quality`), lo que se dijo de la ficha del paciente: **«sin alergias
+  conocidas»**, cada **alergia** con su sustancia y su reacción si se dijo, y
+  cada **antecedente** personal o familiar con su descripción y, si es
+  familiar, el parentesco; y DEBERÁ guardarlo como propuestas de la clase
+  `chart-allergy`, `chart-no-allergy` y `chart-history`, cada una con el minuto
+  de su línea (P2). Lo que esa llamada no pueda leer no DEBERÁ hacer fallar el
+  borrador: el borrador se guarda y la lectura de la ficha queda en el log con
+  su código.
+  > Cambia D-249 §1 (D-261): lo que la conversación dice de la ficha va a la
+  > ficha y no a la prosa; la ficha registrada sigue sin ir al modelo.
+- **AS-261** _(solo interfaz)_ — En la sección de antecedentes de la nota,
+  bajo **Alergias** y bajo **Antecedentes**, cada propuesta de la ficha DEBERÁ
+  verse en su fila con «Propuesta», lo que se registraría («Sin alergias
+  conocidas», «Amoxicilina · ronchas», «Hipertensión arterial · Madre») y su
+  frase subrayada con su minuto, un ✓ y un ✕. El ✓ DEBERÁ registrarla por la
+  ruta de siempre, con el médico como autor, y enlazarla (AS-265); la fila
+  desaparece y el registro aparece en su tabla. El «sin alergias» en conflicto
+  (AS-264) DEBERÁ decir «La ficha tiene alergias registradas» y no tener ✓.
+- **AS-262** — El sistema DEBERÁ descartar, sin mostrarlas y contándolas, las
+  propuestas de la ficha cuya línea no existe; la alergia cuya sustancia no se
+  dice en su línea; el antecedente familiar sin parentesco de la lista cerrada
+  (`Madre`, `Padre`, `Hermano`, `Hermana`, `Hijo`, `Hija`, `Abuelo`, `Abuela`,
+  `Tío`, `Tía`) o cuyo parentesco no se dice en su línea («mamá» dice
+  `Madre`); y el «sin alergias» de una lectura que también propone una
+  alergia. La descripción va en el español de la clínica («Hipertensión
+  arterial»), no como la dijo el paciente («es hipertensa»).
+- **AS-263** — `GET /v1/encounters/:id/assistant/chart` DEBERÁ responder, al
+  profesional de la atención con `assistant:use`, las propuestas de la ficha
+  de la última lectura, sin las descartadas ni las que la ficha ya tiene: una
+  alergia activa de la misma sustancia, un antecedente vigente con la misma
+  clase, descripción y parentesco, o un «sin alergias» vigente. Cada una con su
+  frase, su minuto y su estado.
+- **AS-264** — SI la ficha tiene una alergia activa, el sistema DEBERÁ mostrar
+  el «sin alergias» propuesto con `conflict: 'active-allergy'` y nunca
+  aceptarlo: lo dicho hoy contradice lo registrado, y lo decide el médico en la
+  ficha.
+- **AS-265** — CUANDO el médico registre una propuesta por la ruta de siempre
+  (`POST /v1/patients/:id/allergies`, `…/allergies/none-known` o `…/history`,
+  con sus validaciones y él como autor) y pida
+  `POST /v1/encounters/:id/assistant/chart/:suggestionId/accept` con el id de
+  lo registrado, el sistema DEBERÁ enlazar la propuesta a ese registro si es
+  de la ficha del paciente de la atención, de la clase de la propuesta, lo
+  registró quien acepta y después de proponerse; si no, `SUGGESTION_CHART_MISMATCH`
+  (422) y nada cambia. `…/discard` la descarta (AS-038).
+- **AS-266** — La base DEBERÁ garantizar que una propuesta de la ficha
+  aceptada enlaza exactamente un registro de su clase (`patient_allergy`,
+  `patient_allergy_absence` o `patient_history`) y que ese registro es del
+  paciente de su atención.
+
+### 56. Diagnósticos de un toque y sin síntomas sueltos (D1, P5)
+
+- **AS-267** — SI entre los problemas leídos de la nota hay uno cuyo código
+  propuesto no es del capítulo XVIII de la CIE-10 (R00–R99), el sistema NO
+  DEBERÁ proponer ningún código de ese capítulo: el problema que sólo tiene
+  códigos R se muestra como frase del primer problema con diagnóstico
+  (`symptoms`) y no como problema aparte, y los códigos R de las alternativas
+  se quitan. Sin diagnóstico definido, los síntomas se proponen como hoy.
+  > La convención de la CIE-10 (cap. XVIII): un síntoma que explica un
+  > diagnóstico definido no se codifica aparte.
+- **AS-268** _(solo interfaz)_ — Cada código ofrecido de un problema, el
+  propuesto y la alternativa, DEBERÁ ser su propio botón ✓ «J03.9 Amigdalitis
+  aguda, no especificada»; un toque DEBERÁ registrar el diagnóstico por la ruta
+  de siempre con **Presuntivo**, la ocurrencia que propone el sistema (EN-184)
+  y **principal** si la atención no tiene uno, y enlazar la propuesta
+  (AS-037). La fila DEBERÁ decir entonces «Registrado · <código>» con
+  **Editar**, que abre el diálogo de hoy; ✕ descarta. SI la propuesta de la
+  ocurrencia no llega, el toque DEBERÁ abrir «Registrar diagnóstico» con el
+  código puesto, como hoy.
+
+### 57. La receta completa (D2, P5)
+
+- **AS-269** — La concentración escrita DEBERÁ leerse en la forma del cuadro:
+  «500 miligramos», «500mg» y «500 mg» son `500 mg`; y una cifra sola («de
+  500») DEBERÁ tomarse como la concentración de la única presentación del
+  medicamento que la tiene en su unidad, marcada «Nadie lo dijo»
+  (`unsaid: 'presentation'`). Con más de una, la concentración queda vacía.
+- **AS-270** — SI el modelo no elige presentación, o elige una que contradice
+  lo escrito, el sistema DEBERÁ elegir la **única** presentación del
+  medicamento compatible con la forma y la concentración escritas; con
+  ninguna o más de una, la deja vacía y dice por qué (`presentationGap:
+  'none' | 'several'`).
+- **AS-271** _(solo interfaz)_ — Lo que el sistema dedujo y nadie dijo —la
+  presentación o su forma, la vía, la dosis de una unidad, la cantidad total—
+  DEBERÁ verse llenado y marcado «Nadie lo dijo» campo por campo, en la fila y
+  en la línea del borrador; y SI quedó una presentación vacía, su porqué en una
+  línea («Hay varias presentaciones: elíjala»).
+- **AS-272** — La forma dicha («cápsula», «tableta») DEBERÁ ser la forma de
+  la línea cuando la presentación la admite, y la vía oral del cuadro DEBERÁ
+  llenarse marcada «Nadie lo dijo»; una dosis dicha en unidades («una
+  cápsula») sin su unidad escrita DEBERÁ tomar la unidad de la forma. Las
+  barreras de D2 siguen: la alergia falla cerrada (AS-070) y no se calcula
+  ninguna dosis por peso (AS-068, D-084 §5).
+- **AS-273** — El borrador de la nota DEBERÁ escribir cada medicamento del
+  plan con todo lo que se dijo de él: concentración, forma, dosis, vía,
+  frecuencia, duración y la condición («si tiene fiebre o dolor»), para que la
+  receta lo lea (`c2-draft-4`).
+
+### 58. Un ✓ por medicamento (D2, P1)
+
+- **AS-274** _(solo interfaz)_ — Cada línea de la receta propuesta que se
+  puede añadir DEBERÁ tener un ✓ «Añadir a la receta»; un toque DEBERÁ pasarla
+  al borrador de la receta (AS-073), guardarlo sin emitir y enlazar la
+  propuesta (AS-074), y la fila DEBERÁ decir «En la receta» con **Quitar**,
+  que la saca del borrador y lo guarda. Desaparecen «Aceptada» y «Confirmar la
+  receta». Una línea bloqueada por alergia, fuera del CNMB o ya recetada no
+  tiene ✓ (AS-071).
+- **AS-275** — `GET …/assistant/prescription` DEBERÁ decir de cada línea
+  enlazada si su medicamento sigue en el borrador o la receta enlazada
+  (`inPrescription`), para que la fila diga «En la receta» o «Se quitó de la
+  receta» también tras recargar.
+
+### 59. Las preguntas sin repetir (C3)
+
+- **AS-276** — Dos preguntas DEBERÁN considerarse la misma cuando dicen lo
+  mismo con otras palabras: las mismas palabras de contenido en cualquier
+  orden, sin tildes ni mayúsculas, sin las palabras vacías ni los verbos de
+  pregunta («presenta», «tiene», «ha tenido»), o casi todas (≥ 0,75 de
+  coincidencia). Una pregunta igual a una ya propuesta en la atención DEBERÁ
+  mostrarse con la redacción de la primera; una revisión no DEBERÁ mostrar dos
+  iguales; y una descartada no DEBERÁ volver con ninguna redacción.
+
+### 60. Medir y demostrar (P7)
+
+- **AS-277** — El arnés DEBERÁ medir, fuera del verify, SC-102 a SC-104 con
+  el camino del producto: la receta (`prescription-from-note`) y los problemas
+  (`cie10-by-problem`) sobre sus sets con el libreto y tres variantes, y una
+  tarea nueva `chart-background` sobre conversaciones inventadas con sus
+  alergias y antecedentes esperados; sin ningún dato real.
+- **AS-278** — El guion del modo de demostración DEBERÁ responder a la
+  conversación del libreto: «sin alergias conocidas» e «Hipertensión
+  arterial · Madre»; el problema «Amigdalitis aguda» con J03.9 y J02.9 y los
+  síntomas «Dolor de garganta» (R07.0) y «Fiebre» (R50.9), que la barrera de
+  AS-267 vuelve frases; y la amoxicilina y el paracetamol con lo que el
+  libreto dice de ellos.
+- **AS-279** _(solo interfaz)_ — A 375 px de ancho, cada ✓ y cada ✕ de las
+  propuestas de Antecedentes, Diagnósticos y Receta DEBERÁN medir al menos
+  44 px de alto y la página no DEBERÁ desbordar a lo ancho.
+
 ## Códigos de error nuevos
 
 | Código                                  | Clase base             | HTTP      | Cuándo                                                                                                                                        |
@@ -2313,6 +2500,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
 | `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
 | `CLINICAL_HISTORY_CHART_NOT_OPEN`    | `ConflictError`        | 409       | La ficha de la historia no existe o la absorbió una unificación (AS-200)     |
+| `SUGGESTION_CHART_MISMATCH`          | `ValidationError`      | 422       | Lo registrado con que se acepta una propuesta de la ficha no es de su paciente, de su clase, de quien acepta o es anterior a ella (AS-265) |
 
 ## Niveles de prueba
 
