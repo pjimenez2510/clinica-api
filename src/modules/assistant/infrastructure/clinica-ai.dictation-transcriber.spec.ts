@@ -39,13 +39,18 @@ async function failure(promise: Promise<unknown>): Promise<Error> {
   throw new Error('expected a failure');
 }
 
-describe('AS-180 AS-184 AS-186 ClinicaAiDictationTranscriber', () => {
+describe('AS-180 AS-184 AS-186 AS-197 ClinicaAiDictationTranscriber', () => {
   it('AS-180 sends the recording as it came, with the shared secret and no redirect, and returns what was heard', async () => {
-    const fetcher = answering(200, { text: `  ${SAID} `, seconds: 6.4 });
+    const words = [
+      { text: 'Presión', probability: 0.99 },
+      { text: ' 120', probability: 0.61 },
+    ];
+    const fetcher = answering(200, { text: `  ${SAID} `, seconds: 6.4, words });
 
     await expect(adapter(fetcher).transcribe(RECORDING)).resolves.toEqual({
       text: SAID,
       seconds: 6.4,
+      words,
     });
 
     const [url, init] = fetcher.mock.calls[0]!;
@@ -57,6 +62,12 @@ describe('AS-180 AS-184 AS-186 ClinicaAiDictationTranscriber', () => {
       'content-type': 'application/octet-stream',
     });
     expect(Buffer.from(init?.body as Uint8Array).equals(RECORDING)).toBe(true);
+  });
+
+  it('AS-197 a clinica-ai older than CAI-016 gives no words, and none are made up', async () => {
+    await expect(
+      adapter(answering(200, { text: SAID, seconds: 2 })).transcribe(RECORDING),
+    ).resolves.toEqual({ text: SAID, seconds: 2, words: [] });
   });
 
   it('AS-186 an empty recording is not heard, and clinica-ai is not asked', async () => {

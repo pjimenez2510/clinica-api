@@ -11,6 +11,7 @@ import {
   DictationNotHeardError,
 } from '../domain/assistant.errors';
 
+import type { DictationHeard } from './dictation-transcriber.port';
 import {
   MAX_DICTATION_SECONDS,
   VitalsDictationService,
@@ -18,6 +19,15 @@ import {
 
 const ENCOUNTER_ID = '01900000-0000-7000-8000-000000000001';
 const RECORDING = Buffer.from('a recording');
+
+/** What clinica-ai heard, every token sure of itself. */
+function sure(text: string, seconds = 3): DictationHeard {
+  return {
+    text,
+    seconds,
+    words: text.split(' ').map((piece, at) => ({ text: at === 0 ? piece : ` ${piece}`, probability: 0.98 })), // prettier-ignore
+  };
+}
 
 function encounter(status: CodingEncounterStatus = 'OPEN'): CodingEncounter {
   return {
@@ -32,7 +42,7 @@ function encounter(status: CodingEncounterStatus = 'OPEN'): CodingEncounter {
 
 function service(
   found: CodingEncounter | null,
-  heard: { text: string; seconds: number } = { text: '', seconds: 0 },
+  heard: DictationHeard = { text: '', seconds: 0, words: [] },
 ) {
   const reader = { encounter: vi.fn(() => Promise.resolve(found)) };
   const transcriber = { transcribe: vi.fn(() => Promise.resolve(heard)) };
@@ -46,16 +56,18 @@ function service(
   };
 }
 
-describe('AS-180 AS-185 AS-186 AS-196 VitalsDictationService', () => {
+describe('AS-180 AS-185 AS-186 AS-196 AS-197 VitalsDictationService', () => {
   it('AS-180 reads what clinica-ai heard into a proposal and asks for the attention within the sites given', async () => {
     const {
       service: dictation,
       reader,
       transcriber,
-    } = service(encounter(), {
-      text: 'Presión 120 sobre 80, pulso 72, frecuencia respiratoria trescientos',
-      seconds: 5.2,
-    });
+    } = service(
+      encounter(),
+      sure(
+        'Presión 120 sobre 80, pulso 72, frecuencia respiratoria trescientos',
+      ),
+    );
 
     await expect(
       dictation.dictate(ENCOUNTER_ID, RECORDING, { sites: ['site-1'] }),
@@ -96,10 +108,10 @@ describe('AS-180 AS-185 AS-186 AS-196 VitalsDictationService', () => {
   );
 
   it('AS-185 an attention on hold still takes a dictation (the control of the closed ones)', async () => {
-    const { service: dictation } = service(encounter('ON_HOLD'), {
-      text: 'pulso 70',
-      seconds: 2,
-    });
+    const { service: dictation } = service(
+      encounter('ON_HOLD'),
+      sure('pulso 70'),
+    );
 
     await expect(
       dictation.dictate(ENCOUNTER_ID, RECORDING, { sites: 'all' }),
@@ -110,6 +122,7 @@ describe('AS-180 AS-185 AS-186 AS-196 VitalsDictationService', () => {
     const { service: dictation } = service(encounter(), {
       text: '   ',
       seconds: 4.4,
+      words: [],
     });
 
     const error = await dictation
@@ -120,6 +133,20 @@ describe('AS-180 AS-185 AS-186 AS-196 VitalsDictationService', () => {
     expect((error as DictationNotHeardError).heard).toEqual({
       kind: 'silent',
       seconds: 4.4,
+    });
+  });
+
+  it('AS-197 a number clinica-ai was unsure of is not proposed, and what was heard is shown as heard', async () => {
+    const heard = sure('frecuencia respiratoria 20, pulso 80');
+    heard.words[2] = { text: ' 20,', probability: 0.6 };
+    const { service: dictation } = service(encounter(), heard);
+
+    await expect(
+      dictation.dictate(ENCOUNTER_ID, RECORDING, { sites: 'all' }),
+    ).resolves.toEqual({
+      heard: 'frecuencia respiratoria 20, pulso 80',
+      signs: { heartRate: 80 },
+      unclear: ['respiratoryRate'],
     });
   });
 

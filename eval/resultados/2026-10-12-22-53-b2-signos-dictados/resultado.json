@@ -1,0 +1,98 @@
+{
+  "label": "b2-signos-dictados",
+  "startedAt": "2026-10-12 22:53:17",
+  "commit": "55fe2009+cambios",
+  "casesSha256": "f76dfcf723b96dc095aa2baeacb86273f0ffb22f2251a41234dd9cce63d37b18",
+  "heardSha256": "df245f914adde9b94853f50a869275bb54f701de1c5f20a0b6dd53c3d9a72c05",
+  "voices": [
+    "Paulina",
+    "Eddy (Español (México))",
+    "Flo (Español (México))",
+    "Mónica"
+  ],
+  "cases": 40,
+  "verdict": {
+    "sc095": true,
+    "sc096": false
+  },
+  "texto": {
+    "expected": 117,
+    "correct": 117,
+    "wrong": 0,
+    "empty": 0,
+    "invented": 0,
+    "unsaid": 203,
+    "serious": 0,
+    "correctRate": {
+      "low": 0.9682107538517098,
+      "high": 1
+    },
+    "emptyRate": {
+      "low": 0,
+      "high": 0.03178924614829014
+    }
+  },
+  "oido": {
+    "expected": 936,
+    "correct": 883,
+    "wrong": 4,
+    "empty": 49,
+    "invented": 0,
+    "unsaid": 1624,
+    "serious": 4,
+    "correctRate": {
+      "low": 0.9266769041237451,
+      "high": 0.9564507682689565
+    },
+    "emptyRate": {
+      "low": 0.03982322776411939,
+      "high": 0.06853702589240589
+    }
+  },
+  "serious": [
+    {
+      "id": "C03",
+      "category": "completa-cifras",
+      "arm": "oido",
+      "voice": "Flo (Español (México))",
+      "field": "respiratoryRate",
+      "expected": 22,
+      "got": 20,
+      "outcome": "wrong",
+      "text": "presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 20, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "category": "completa-cifras",
+      "arm": "oido",
+      "voice": "Flo (Español (México)) · 220",
+      "field": "respiratoryRate",
+      "expected": 22,
+      "got": 20,
+      "outcome": "wrong",
+      "text": "Presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 20, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "T03",
+      "category": "talla",
+      "arm": "oido",
+      "voice": "Eddy (Español (México))",
+      "field": "heightCm",
+      "expected": 180,
+      "got": 80,
+      "outcome": "wrong",
+      "text": "estatura en ochenta, peso ochenta y nueve."
+    },
+    {
+      "id": "R01",
+      "category": "fr-fc",
+      "arm": "oido",
+      "voice": "Flo (Español (México)) · 220",
+      "field": "heartRate",
+      "expected": 70,
+      "got": 60,
+      "outcome": "wrong",
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 60."
+    }
+  ]
+}
