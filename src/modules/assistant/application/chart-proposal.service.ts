@@ -218,6 +218,7 @@ export class ChartProposalService {
     );
     if (
       !record ||
+      record.withdrawn ||
       record.patientId !== encounter.patientId ||
       record.authorId !== requester.userId ||
       record.recordedAt < suggestion.proposedAt

@@ -32,13 +32,14 @@ export class PrismaChartBackgroundReader implements ChartBackgroundReader {
     if (kind === 'allergy') {
       const row = await this.prisma.patientAllergy.findUnique({
         where: { id },
-        select: { patientId: true, recordedById: true, recordedAt: true, substanceText: true, reaction: true }, // prettier-ignore
+        select: { patientId: true, recordedById: true, recordedAt: true, substanceText: true, reaction: true, refutedAt: true }, // prettier-ignore
       });
       return row
         ? {
             patientId: row.patientId,
             authorId: row.recordedById,
             recordedAt: row.recordedAt,
+            withdrawn: row.refutedAt !== null,
             text: chartRecordText({ kind, substance: row.substanceText, reaction: row.reaction }), // prettier-ignore
           }
         : null;
@@ -46,26 +47,28 @@ export class PrismaChartBackgroundReader implements ChartBackgroundReader {
     if (kind === 'absence') {
       const row = await this.prisma.patientAllergyAbsence.findUnique({
         where: { id },
-        select: { patientId: true, assertedById: true, assertedAt: true },
+        select: { patientId: true, assertedById: true, assertedAt: true, retractedAt: true },
       });
       return row
         ? {
             patientId: row.patientId,
             authorId: row.assertedById,
             recordedAt: row.assertedAt,
+            withdrawn: row.retractedAt !== null,
             text: chartRecordText({ kind }),
           }
         : null;
     }
     const row = await this.prisma.patientHistory.findUnique({
       where: { id },
-      select: { patientId: true, recordedById: true, recordedAt: true, description: true, relative: true }, // prettier-ignore
+      select: { patientId: true, recordedById: true, recordedAt: true, description: true, relative: true, refutedAt: true }, // prettier-ignore
     });
     return row
       ? {
           patientId: row.patientId,
           authorId: row.recordedById,
           recordedAt: row.recordedAt,
+          withdrawn: row.refutedAt !== null,
           text: chartRecordText({ kind, description: row.description, relative: row.relative }), // prettier-ignore
         }
       : null;

@@ -173,6 +173,7 @@ const record = (overrides: Partial<ChartRecord> = {}): ChartRecord => ({
   patientId: 'pat-1',
   authorId: DOCTOR,
   recordedAt: new Date(10_000),
+  withdrawn: false,
   text: 'Sin alergias conocidas',
   ...overrides,
 });
@@ -282,10 +283,17 @@ describe('ChartProposalService — on screen, accepted and discarded (AS-263 to 
         theirs: record({ patientId: 'pat-2' }),
         someoneElse: record({ authorId: 'user-nurse' }),
         before: record({ recordedAt: new Date(0) }),
+        retracted: record({ withdrawn: true }),
       },
     });
 
-    for (const recordId of ['theirs', 'someoneElse', 'before', 'missing']) {
+    for (const recordId of [
+      'theirs',
+      'someoneElse',
+      'before',
+      'retracted',
+      'missing',
+    ]) {
       await expect(service.accept({ encounterId: 'enc-1', suggestionId: 'sug-1', recordId }, doctor)).rejects.toBeInstanceOf(SuggestionChartMismatchError); // prettier-ignore
     }
     expect(suggestions.raw.accept).not.toHaveBeenCalled();

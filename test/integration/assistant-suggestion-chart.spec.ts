@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { SuggestionService } from '../../src/modules/assistant/application/suggestion.service';
+import { SuggestionChartMismatchError } from '../../src/modules/assistant/domain/assistant.errors';
 import { GEMINI_MODELS } from '../../src/modules/assistant/infrastructure/model-routing';
 import { PrismaSuggestionStore } from '../../src/modules/assistant/infrastructure/prisma-suggestion.store';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -58,7 +59,7 @@ async function anAttention(prisma: PrismaClient) {
 const serviceOf = (prisma: PrismaClient) =>
   new SuggestionService(
     new PrismaSuggestionStore(prisma as unknown as PrismaService),
-    () => new Date(Date.now() + 60_000),
+    () => new Date(),
   );
 
 describe('ai_suggestion for the chart (AS-266)', () => {
@@ -147,5 +148,33 @@ describe('ai_suggestion for the chart (AS-266)', () => {
     await expect(decide(`patient_history_id = '${entry.id}', patient_allergy_id = '${allergy.id}'`)).rejects.toThrow(/ai_suggestion_accepted_links_its_record/); // prettier-ignore
     // Control: its own class, alone, is admitted.
     await expect(decide(`patient_history_id = '${entry.id}'`)).resolves.toBe(1);
+  });
+
+  it('AS-265 AS-266 the base refuses a record of another author or made before the proposal, and one record answering two proposals', async () => {
+    const prisma = db();
+    const { encounter, run, patient, user } = await anAttention(prisma);
+    const colleague = await createUser(prisma);
+    const service = serviceOf(prisma);
+    const as = { userId: user.id, sites: 'all' as const };
+    const before = await prisma.patientAllergy.create({
+      data: { patientId: patient.id, substanceText: 'Látex', recordedById: user.id }, // prettier-ignore
+    });
+    const [first, second, third] = await service.propose(
+      [0, 1, 2].map(() => ({ encounterId: encounter.id, aiRunId: run.id, kind: 'chart-allergy' as const, proposal: { text: 'Látex' }, sources: [] })), // prettier-ignore
+      as,
+    );
+    const theirs = await prisma.patientAllergy.create({
+      data: { patientId: patient.id, substanceText: 'Látex', recordedById: colleague.id }, // prettier-ignore
+    });
+    const mine = await prisma.patientAllergy.create({
+      data: { patientId: patient.id, substanceText: 'Látex', recordedById: user.id }, // prettier-ignore
+    });
+
+    await expect(service.accept({ suggestionId: first!.id, recordId: theirs.id }, as)).rejects.toBeInstanceOf(SuggestionChartMismatchError); // prettier-ignore
+    await expect(service.accept({ suggestionId: first!.id, recordId: before.id }, as)).rejects.toBeInstanceOf(SuggestionChartMismatchError); // prettier-ignore
+    // Control: the record the one who decides made after the proposal.
+    await expect(service.accept({ suggestionId: first!.id, recordId: mine.id }, as)).resolves.toMatchObject({ status: 'ACCEPTED' }); // prettier-ignore
+    await expect(service.accept({ suggestionId: second!.id, recordId: mine.id }, as)).rejects.toBeInstanceOf(SuggestionChartMismatchError); // prettier-ignore
+    expect(third).toBeDefined();
   });
 });

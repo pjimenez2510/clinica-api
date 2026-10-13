@@ -22,6 +22,8 @@ export interface ChartRecord {
   /** Who recorded or asserted it; null only on rows older than EN-086. */
   authorId: string | null;
   recordedAt: Date;
+  /** Refuted or retracted since: no longer what the chart says. */
+  withdrawn: boolean;
   /** `chartRecordText` of the record: what a proposal is compared with (AS-022). */
   text: string;
 }
