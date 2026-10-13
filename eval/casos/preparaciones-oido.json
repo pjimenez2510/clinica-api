@@ -1,0 +1,353 @@
+{
+  "origin": "invented",
+  "description": "Lo que clinica-ai oyó de cada línea de preparaciones.json dicha por una voz sintética de macOS por persona (nursing: Paulina, patient: Eddy (Español (México)), other: Mónica), sin ruido (AS-255). El audio no se guardó.",
+  "casesSha256": "800b228762795db8bb6e85038f28fb4a6900fd018de5b95cba061c44261e0c6f",
+  "heard": [
+    {
+      "id": "P01",
+      "lines": [
+        "Presión sistólica 120, presión diastólica 100.",
+        "talla 160, perímetro cefálico 48, perímetro abdominal 65.",
+        "Hemoglobina 22.5, se lo midió de pie.",
+        "Acude por dolor a la espalda y en el pecho."
+      ]
+    },
+    {
+      "id": "P02",
+      "lines": [
+        "Buenos días, siéntese por favor. ¿Qué le trae por aquí?",
+        "Me duele la espalda y el pecho desde ayer.",
+        "Presión sistólica 120, presión diastólica 100.",
+        "talla 160, se lo midió de pie. Perímetro abdominal 65.",
+        "Hemoglobina 22.5."
+      ]
+    },
+    {
+      "id": "P03",
+      "lines": [
+        "Vamos a tomarle la presión.",
+        "Presión 120 con 80, pulso 76.",
+        "¿Y por qué viene hoy?",
+        "Vengo por un control de la diabetes, doctorita."
+      ]
+    },
+    {
+      "id": "P04",
+      "lines": [
+        "Súbase a la balanza.",
+        "Pesa 70 kilos y mide 1.60.",
+        "qué molestia tiene.",
+        "Tengo dos con flema hace una semana."
+      ]
+    },
+    {
+      "id": "P05",
+      "lines": [
+        "Hola, ¿cómo ha estado?",
+        "ahí, más o menos, señorita. Es que me arde al orinar y tengo fiebre en la noche.",
+        "Ya, le pongo el termómetro. Temperatura 38 y medio.",
+        "saturación 96, frecuencia cardíaca 104."
+      ]
+    },
+    {
+      "id": "P06",
+      "lines": [
+        "¿Cuánto pesa usted?",
+        "72 kilos, más o menos.",
+        "¿Y cuánto mide?",
+        "165.",
+        "Bien, ¿por qué viene?",
+        "Por un dolor de cabeza que no se me quita."
+      ]
+    },
+    {
+      "id": "P07",
+      "lines": [
+        "Temperatura 37.4, saturación 98%.",
+        "65 pesos coma 5 kilos.",
+        "¿Qué le pasa?",
+        "Me duele la ergata."
+      ]
+    },
+    {
+      "id": "P08",
+      "lines": [
+        "Pesa 150 libras.",
+        "talla un metro cincuenta y ocho.",
+        "¿Cuál es el motivo de la consulta?",
+        "Quiero que me revisen la presión, me han dicho que la tengo alta."
+      ]
+    },
+    {
+      "id": "P09",
+      "lines": [
+        "a ver el bebé, vamos a medirlo acostado.",
+        "Talla 74 centímetros, perímetro cefálico 45.",
+        "Peso 9 kilos y medio.",
+        "Es que tiene diarrea desde el domingo, señorita.",
+        "Temperatura 37,8."
+      ]
+    },
+    {
+      "id": "P10",
+      "lines": [
+        "Presión 130,85, perdón, 130,80.",
+        "Pulso 70.",
+        "Vengo por el resultado de los exámenes."
+      ]
+    },
+    {
+      "id": "P11",
+      "lines": [
+        "¿Desde cuándo está así?",
+        "Desde hace tres días me duele el estómago, y tengo 45 años nunca me había pasado.",
+        "Presión 110 sobre 70, frecuencia respiratoria 18."
+      ]
+    },
+    {
+      "id": "P12",
+      "lines": [
+        "Saturación 99, pulso 68, temperatura 36,5.",
+        "80 pesos kilos, talla 1,75 de pie."
+      ]
+    },
+    {
+      "id": "P13",
+      "lines": [
+        "Frecuencia respiratoria 92 y medio.",
+        "Pulso 88, saturación 95.",
+        "Me falta el aire cuando camino."
+      ]
+    },
+    {
+      "id": "P14",
+      "lines": [
+        "Le tomé la hemoglobina, 14,2, y la corregida 13,1.",
+        "58 pesos, talla 155.",
+        "Estoy muy cansada, sin ganas de nada."
+      ]
+    },
+    {
+      "id": "P15",
+      "lines": [
+        "Tensión arterial 140 sobre 90.",
+        "Frecuencia cardíaca 82.",
+        "Toma alguna medicina.",
+        "Sí, la Los Artán de 50, una al día, pero me olvido."
+      ]
+    },
+    {
+      "id": "P16",
+      "lines": [
+        "Señora, ¿qué le pasa a su papá?",
+        "Se cayó en la casa y le duele la cadera.",
+        "Presión 150,95, pulso 90, saturación 93."
+      ]
+    },
+    {
+      "id": "P17",
+      "lines": [
+        "¿Sabe cuánto pesa?",
+        "La semana pasada pesé 64 kilos en la farmacia.",
+        "Ya, súbase. 63 pesos kilos.",
+        "¿Qué le trae?",
+        "una alergia en la piel que me pica mucho."
+      ]
+    },
+    {
+      "id": "P18",
+      "lines": [
+        "Presión 118 sobre 76, pulso 64, frecuencia respiratoria 16, temperatura 36 y medio, saturación 97 pesos 70, talla 1,68.",
+        "Vengo a control no más."
+      ]
+    },
+    {
+      "id": "P19",
+      "lines": [
+        "Le mido la cintura, perímetro abdominal 98.",
+        "92 pesos, talla 1,70.",
+        "El doctor me mandó a bajar de peso y vengo a ver cómo voy."
+      ]
+    },
+    {
+      "id": "P20",
+      "lines": [
+        "La temperatura, no sé, el termómetro marca raro.",
+        "Pulso 72.",
+        "Tengo escalofrío desde anoche."
+      ]
+    },
+    {
+      "id": "P21",
+      "lines": [
+        "Presión 125'78.",
+        "Pulso 72, saturación 97.",
+        "Me duele el oído derecho."
+      ]
+    },
+    {
+      "id": "P22",
+      "lines": [
+        "párate derechito, talla 112, parado.",
+        "19 pesos kilos.",
+        "Viene por la vacuna y porque no come bien."
+      ]
+    },
+    {
+      "id": "P23",
+      "lines": [
+        "la sistólica 135, y la diastólica 88.",
+        "me mareo cuando me levanto."
+      ]
+    },
+    {
+      "id": "P24",
+      "lines": [
+        "Cuénteme qué le pasó.",
+        "Me torcí el tobillo jugando fútbol y se me enchó.",
+        "Presión 120 con 70, pulso 80."
+      ]
+    },
+    {
+      "id": "P25",
+      "lines": [
+        "¿Cuántas semanas tiene?",
+        "32 semanas.",
+        "Presión 110,70, 68 pesos kilos.",
+        "Vengo al control del embarazo, y se me hinchan los pies."
+      ]
+    },
+    {
+      "id": "P26",
+      "lines": [
+        "saturación de oxígeno 91, frecuencia respiratoria 24.",
+        "No puedo respirar bien, tengo mucha tos.",
+        "Temperatura 38."
+      ]
+    },
+    {
+      "id": "P27",
+      "lines": [
+        "54 pesos, talla 150, pulso 78.",
+        "Tengo dolor en la abuela."
+      ]
+    },
+    {
+      "id": "P28",
+      "lines": [
+        "78 de pulso, y de temperatura 36.8.",
+        "Vengo por un dolor de rodilla."
+      ]
+    },
+    {
+      "id": "P29",
+      "lines": [
+        "perímetro cefálico 39, talla 58 acostado, peso 5 kilos.",
+        "Es el control del mes, señorita."
+      ]
+    },
+    {
+      "id": "P30",
+      "lines": [
+        "Quítese el zapato, por favor.",
+        "talla 1,62, 61 pesos con 30 céntimos.",
+        "Ahora el brazo, presión 100 con 60.",
+        "es que me baja la presión y me desmayo."
+      ]
+    },
+    {
+      "id": "P31",
+      "lines": [
+        "¿Qué le trae?",
+        "Mire, desde el mes pasado tengo un dolor en el lado derecho de la barilla, que me da después de comer grasa.",
+        "77 pesos, presión 128 con 82."
+      ]
+    },
+    {
+      "id": "P32",
+      "lines": [
+        "Hemoglobina 12,5.",
+        "Me dijeron que tenía anemia."
+      ]
+    },
+    {
+      "id": "P33",
+      "lines": [
+        "Deme la mano, le tomo el pulso.",
+        "86",
+        "Siento el corazón acelerado."
+      ]
+    },
+    {
+      "id": "P34",
+      "lines": [
+        "66 pesos kilos.",
+        "Repito, 66 pesos.",
+        "Vengo por el certificado para el trabajo."
+      ]
+    },
+    {
+      "id": "P35",
+      "lines": [
+        "Hemoglobina 11, hemoglobina corregida 12.",
+        "Me siento débil."
+      ]
+    },
+    {
+      "id": "P36",
+      "lines": [
+        "¿Cuántos años tiene?",
+        "68 años.",
+        "Presión 160 sobre 100.",
+        "Me duele la cabeza en la nuca."
+      ]
+    },
+    {
+      "id": "P37",
+      "lines": [
+        "Presión sistólica 120.",
+        "Presión diastólica 100.",
+        "Talla 160.",
+        "Perímetro cefálico 48.",
+        "Perímetro abdominal 65.",
+        "Hemoglobina 22.5, se lo midió de pie.",
+        "Me duele la espalda y el pecho."
+      ]
+    },
+    {
+      "id": "P38",
+      "lines": [
+        "Buenos días, ¿qué le trae?",
+        "Vengo a retirar la receta de mi mamá."
+      ]
+    },
+    {
+      "id": "P39",
+      "lines": [
+        "Temperatura axilar 37,9, pulso 98.",
+        "La niña está con vómito desde la mañana."
+      ]
+    },
+    {
+      "id": "P40",
+      "lines": [
+        "Estatura 1,80 de pie, 85 pesos kilos y medio.",
+        "Me lastimé la espalda cargando cajas."
+      ]
+    },
+    {
+      "id": "P41",
+      "lines": [
+        "saturación 88, temperatura 39,2, frecuencia cardíaca 120.",
+        "Estoy con fiebre y dolor de todo el cuerpo."
+      ]
+    },
+    {
+      "id": "P42",
+      "lines": [
+        "Frecuencia 72, respiración 20.",
+        "Vengo por un chequeo."
+      ]
+    }
+  ]
+}
