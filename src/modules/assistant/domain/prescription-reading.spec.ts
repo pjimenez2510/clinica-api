@@ -437,6 +437,8 @@ describe('the strength as the cuadro writes it (AS-269)', () => {
     expect(strengthIn('siga con el paracetamol de 500 cada 8 horas', 'paracetamol')).toBe('500'); // prettier-ignore
     expect(strengthIn('Amoxicilina 500 miligramos cada 8 horas', 'Amoxicilina')).toBe('500 mg'); // prettier-ignore
     expect(strengthIn('paracetamol cada 8 horas', 'paracetamol')).toBeNull();
+    expect(strengthIn('y siga con el paracetamol de quinientos cada ocho horas', 'paracetamol')).toBe('500'); // prettier-ignore
+    expect(strengthIn('amoxicilina de quinientos miligramos, una cápsula', 'amoxicilina')).toBe('500 mg'); // prettier-ignore
   });
 });
 

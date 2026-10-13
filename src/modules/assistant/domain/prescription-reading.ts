@@ -133,6 +133,15 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
   quince: 15,
   veinte: 20,
   treinta: 30,
+  // AS-269. The strengths a physician says in words: «de quinientos».
+  cien: 100,
+  doscientos: 200,
+  trescientos: 300,
+  cuatrocientos: 400,
+  quinientos: 500,
+  seiscientos: 600,
+  ochocientos: 800,
+  mil: 1000,
 };
 
 /** Every figure a sentence writes, in digits or in words. */
@@ -393,12 +402,14 @@ export function writtenStrength(written: string | null): string | null {
 export function strengthIn(sentence: string, drug: string): string | null {
   const head = headWord(drug);
   if (head === '') return null;
+  const words = Object.keys(NUMBER_WORDS).filter((word) => NUMBER_WORDS[word]! >= 100).join('|'); // prettier-ignore
   const match = new RegExp(
-    `${head}\\p{L}*\\s+(?:de\\s+)?(\\d+(?:[.,]\\d+)?)(\\s*(?:miligramos?|mg|microgramos?|mcg|gramos?|g)\\b)?`,
+    `${head}\\p{L}*\\s+(?:de\\s+)?(\\d+(?:[.,]\\d+)?|${words})\\b(\\s*(?:miligramos?|mg|microgramos?|mcg|gramos?|g)\\b)?`,
     'u',
   ).exec(foldText(sentence));
   if (!match) return null;
-  return writtenStrength(`${match[1]}${match[2] ?? ''}`);
+  const figure = NUMBER_WORDS[match[1]!] ?? match[1];
+  return writtenStrength(`${figure}${match[2] ?? ''}`);
 }
 
 /** AS-270. Why a medicine of the cuadro went without presentation. */
