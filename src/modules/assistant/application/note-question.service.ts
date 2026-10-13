@@ -33,7 +33,7 @@ import {
   noteDigestInput,
   type QuestionView,
 } from '../domain/note-questions';
-import type { SuggestionView } from '../domain/suggestion';
+import { type SuggestionView, validSources } from '../domain/suggestion';
 
 import { ASSISTANT_DEMO } from './diagnosis-proposal.service';
 import { LexiconCache } from './lexicon-cache';
@@ -217,28 +217,27 @@ export class NoteQuestionService {
     if (!(await this.notes.consultationDraft(encounter.id))) {
       throw new AssistantNoteNotOpenError();
     }
-    if (asked.kept.length > 0) {
-      await this.suggestions.propose(
-        asked.kept.map((question) => ({
-          encounterId: encounter.id,
-          aiRunId: runId,
-          kind: 'note-question' as const,
-          proposal: { ...question, demo: this.demo },
-          sources: [{ kind: 'transcript' as const, fromMs: question.fromMs, toMs: question.toMs }], // prettier-ignore
-        })),
-        writer(requester),
-      );
-    }
-    await this.checks.record({
-      encounterId: encounter.id,
-      aiRunId: runId,
-      upToMs,
-      noteDigest,
-      asked: asked.kept.length,
-      dropped: asked.dropped,
-      requestedBy: requester.userId,
-      checkedAt: this.clock(),
-    });
+    // AS-124. The review and its questions together, or neither.
+    await this.checks.record(
+      {
+        encounterId: encounter.id,
+        aiRunId: runId,
+        upToMs,
+        noteDigest,
+        asked: asked.kept.length,
+        dropped: asked.dropped,
+        requestedBy: requester.userId,
+        checkedAt: this.clock(),
+      },
+      asked.kept.map((question) => ({
+        encounterId: encounter.id,
+        aiRunId: runId,
+        kind: 'note-question' as const,
+        proposal: { ...question, demo: this.demo },
+        sources: validSources([{ kind: 'transcript', fromMs: question.fromMs, toMs: question.toMs }]), // prettier-ignore
+      })),
+      requester.writeSites,
+    );
     // AS-124. Counts only: no question, no line, no word of the note.
     this.logger.log(
       {

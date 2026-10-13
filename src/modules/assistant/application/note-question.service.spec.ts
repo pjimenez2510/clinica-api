@@ -124,9 +124,13 @@ class World {
   } as unknown as ListeningStore;
 
   store: NoteQuestionCheckStore = {
-    record: (check) => {
+    // As the database: the review and its questions together, or neither.
+    record: (check, questions) => {
+      if (!this.note) return Promise.reject(new AssistantNoteNotOpenError());
       this.checks.push(check);
-      return Promise.resolve();
+      return this.suggestionService
+        .propose(questions, { userId: DOCTOR, sites: [SITE] })
+        .then(() => undefined);
     },
     latest: (encounterId) =>
       Promise.resolve(this.checks.filter((each) => each.encounterId === encounterId).at(-1) ?? null), // prettier-ignore
@@ -370,7 +374,7 @@ describe('NoteQuestionService — the review on screen (AS-122, AS-123, AS-125)'
     expect(world.suggestions).toEqual([]);
   });
 
-  it('AS-124 a note signed while the model answered keeps nothing, and the same review unsigned keeps it (positive control)', async () => {
+  it('AS-124 a note signed while the model answered, the attention on hold, keeps nothing, and the same review unsigned keeps it (positive control)', async () => {
     const unsigned = new World();
     let releaseUnsigned!: () => void;
     unsigned.gate = new Promise((resolve) => (releaseUnsigned = resolve));
@@ -385,7 +389,9 @@ describe('NoteQuestionService — the review on screen (AS-122, AS-123, AS-125)'
     world.gate = new Promise((resolve) => (release = resolve));
     const checking = world.service().check(ENCOUNTER, doctor);
     await vi.waitFor(() => expect(world.prompts).toHaveLength(1));
-    // Signed: the 002 is no longer the attention's draft.
+    // Signed with the attention on hold (signing it otherwise discharges it,
+    // which answers ASSISTANT_ENCOUNTER_CLOSED): no 002 in draft any more.
+    world.encounter = { ...world.encounter, status: 'ON_HOLD' };
     world.note = null;
     release();
 

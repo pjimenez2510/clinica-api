@@ -58,6 +58,55 @@ const COLUMN_OF = {
 } as const satisfies Record<SuggestionRecord['kind'], keyof SuggestionRow>;
 
 /**
+ * AS-039. Inserts the proposals of one answer inside `tx`, after locking
+ * their attentions, so a signature or a close from another tab waits for
+ * this insert or is seen by it: a reading of up to 90 s keeps nothing on an
+ * attention that no longer takes new clinical content. Out of scope reads as
+ * absent: no telling «exists elsewhere». The same order of locks as signing
+ * (attention, then note), so the two never wait on each other (AS-124).
+ */
+export async function proposeLocked(
+  tx: Prisma.TransactionClient,
+  suggestions: readonly NewSuggestion[],
+  proposedAt: Date,
+  sites: SiteScopeFilter,
+  encounterIds: readonly string[] = [],
+): Promise<SuggestionRow[]> {
+  const encounters = [...new Set([...encounterIds, ...suggestions.map((each) => each.encounterId)])]; // prettier-ignore
+  const locked = await tx.$queryRaw<{ status: CodingEncounterStatus }[]>`
+    SELECT status::text AS status FROM encounter
+     WHERE id = ANY(${encounters}::uuid[])
+       ${sites === 'all' ? Prisma.empty : Prisma.sql`AND site_id = ANY(${[...sites]}::uuid[])`}
+     FOR UPDATE`;
+  if (locked.length !== encounters.length) throw new SuggestionNotFoundError();
+  if (!locked.every(({ status }) => acceptsNewContent(status))) {
+    throw new AssistantEncounterClosedError();
+  }
+  const created: SuggestionRow[] = [];
+  for (const suggestion of suggestions) {
+    created.push(
+      await tx.aiSuggestion
+        .create({
+          data: {
+            encounterId: suggestion.encounterId,
+            aiRunId: suggestion.aiRunId,
+            kind: suggestion.kind,
+            proposal: suggestion.proposal as Prisma.InputJsonObject,
+            sources: suggestion.sources,
+            proposedAt,
+          },
+          select: SUGGESTION_SELECT,
+        })
+        .catch((error: unknown) => {
+          // AS-124. A question once its 002 is signed.
+          throw suggestionErrorFrom(error) ?? error;
+        }),
+    );
+  }
+  return created;
+}
+
+/**
  * AS-020 to AS-024 over PostgreSQL. What a decision may look like is the
  * table's (`ai_suggestion_*` CHECKs and triggers); this adapter only reads
  * and writes, and decides under the row's lock.
@@ -71,44 +120,9 @@ export class PrismaSuggestionStore implements SuggestionStore {
     proposedAt: Date,
     sites: SiteScopeFilter,
   ): Promise<SuggestionView[]> {
-    const rows = await this.prisma.$transaction(async (tx) => {
-      // Out of scope reads as absent: no telling «exists elsewhere».
-      const encounters = [...new Set(suggestions.map((each) => each.encounterId))]; // prettier-ignore
-      // AS-039. Locked, so a signature or a close from another tab waits for
-      // this insert or is seen by it: a reading of up to 90 s keeps nothing
-      // on an attention that no longer takes new clinical content.
-      const locked = await tx.$queryRaw<{ status: CodingEncounterStatus }[]>`
-        SELECT status::text AS status FROM encounter
-         WHERE id = ANY(${encounters}::uuid[])
-           ${sites === 'all' ? Prisma.empty : Prisma.sql`AND site_id = ANY(${[...sites]}::uuid[])`}
-         FOR UPDATE`;
-      if (locked.length !== encounters.length) throw new SuggestionNotFoundError(); // prettier-ignore
-      if (!locked.every(({ status }) => acceptsNewContent(status))) {
-        throw new AssistantEncounterClosedError();
-      }
-      const created: SuggestionRow[] = [];
-      for (const suggestion of suggestions) {
-        created.push(
-          await tx.aiSuggestion
-            .create({
-              data: {
-                encounterId: suggestion.encounterId,
-                aiRunId: suggestion.aiRunId,
-                kind: suggestion.kind,
-                proposal: suggestion.proposal as Prisma.InputJsonObject,
-                sources: suggestion.sources,
-                proposedAt,
-              },
-              select: SUGGESTION_SELECT,
-            })
-            .catch((error: unknown) => {
-              // AS-124. A question once its 002 is signed.
-              throw suggestionErrorFrom(error) ?? error;
-            }),
-        );
-      }
-      return created;
-    });
+    const rows = await this.prisma.$transaction((tx) =>
+      proposeLocked(tx, suggestions, proposedAt, sites),
+    );
     return rows.map(toView);
   }
 

@@ -14,7 +14,7 @@ import {
  * 12-10-2026, 11).
  *
  * Only the CONSTRAINT NAME is read, from where Prisma's driver adapter puts
- * it — the offending row rides in its detail and never leaves (as
+ * it, or from the head of the trigger's RAISE (`<name>: …`) — the offending row rides in its detail and never leaves (as
  * `specialties-database-errors.ts`).
  */
 interface PrismaErrorLike {
@@ -35,10 +35,24 @@ const ONE_PER_ORDERED_EXAM = 'ai_suggestion_one_per_ordered_exam';
 const QUESTION_OF_A_DRAFT = 'note_question_of_a_draft';
 
 export function suggestionErrorFrom(error: unknown): Error | undefined {
-  if (refusedBy(error, '23505', ONE_PER_ORDERED_EXAM)) {
+  if (
+    refusedBy(
+      error,
+      '23505',
+      (message) => message.includes(`constraint "${ONE_PER_ORDERED_EXAM}"`),
+      ONE_PER_ORDERED_EXAM,
+    )
+  ) {
     return new SuggestionOrderMismatchError();
   }
-  if (refusedBy(error, '23514', QUESTION_OF_A_DRAFT)) {
+  if (
+    refusedBy(
+      error,
+      '23514',
+      (message) => message.startsWith(`${QUESTION_OF_A_DRAFT}:`),
+      QUESTION_OF_A_DRAFT,
+    )
+  ) {
     return new AssistantNoteNotOpenError();
   }
   return undefined;
@@ -47,15 +61,15 @@ export function suggestionErrorFrom(error: unknown): Error | undefined {
 function refusedBy(
   error: unknown,
   sqlState: string,
+  names: (message: string) => boolean,
   constraint: string,
 ): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const cause = (error as PrismaErrorLike).meta?.driverAdapterError?.cause;
   if ((cause?.code ?? cause?.originalCode) !== sqlState) return false;
-  const index = cause?.constraint?.index;
   const message = cause?.originalMessage;
   return (
-    index === constraint ||
-    (typeof message === 'string' && message.includes(constraint))
+    cause?.constraint?.index === constraint ||
+    (typeof message === 'string' && names(message))
   );
 }

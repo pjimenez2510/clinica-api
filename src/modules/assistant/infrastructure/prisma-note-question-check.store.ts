@@ -5,7 +5,10 @@ import type {
   NoteQuestionCheck,
   NoteQuestionCheckStore,
 } from '../application/note-question-check.store';
+import type { NewSuggestion } from '../application/suggestion.store';
+import type { SiteScopeFilter } from '../domain/suggestion';
 
+import { proposeLocked } from './prisma-suggestion.store';
 import { suggestionErrorFrom } from './suggestion-database-errors';
 
 /**
@@ -18,12 +21,19 @@ import { suggestionErrorFrom } from './suggestion-database-errors';
 export class PrismaNoteQuestionCheckStore implements NoteQuestionCheckStore {
   constructor(private readonly prisma: PrismaService) {}
 
-  async record(check: NoteQuestionCheck): Promise<void> {
-    await this.prisma.noteQuestionCheck
-      .create({ data: check })
-      .catch((error: unknown) => {
-        throw suggestionErrorFrom(error) ?? error;
-      });
+  async record(
+    check: NoteQuestionCheck,
+    questions: readonly NewSuggestion[],
+    sites: SiteScopeFilter,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await proposeLocked(tx, questions, check.checkedAt, sites, [check.encounterId]); // prettier-ignore
+      await tx.noteQuestionCheck
+        .create({ data: check })
+        .catch((error: unknown) => {
+          throw suggestionErrorFrom(error) ?? error;
+        });
+    });
   }
 
   async latest(encounterId: string): Promise<NoteQuestionCheck | null> {

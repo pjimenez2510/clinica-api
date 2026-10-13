@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { AssistantNoteNotOpenError } from '../../src/modules/assistant/domain/assistant.errors';
@@ -302,50 +302,146 @@ describe('questions only of a draft note (AS-124)', () => {
 
     // Positive control: the same calls keep them while the 002 is a draft.
     await suggestions.propose([question], new Date(), 'all');
-    await checks.record(aCheck(encounter.id, run.id, userId));
+    await checks.record(
+      aCheck(encounter.id, run.id, userId),
+      [question],
+      'all',
+    );
     await prisma.clinicalNote.update({ where: { id: note.id }, data: signedNote(note.authorId) }); // prettier-ignore
 
     await expect(suggestions.propose([question], new Date(), 'all')).rejects.toBeInstanceOf(AssistantNoteNotOpenError); // prettier-ignore
-    await expect(checks.record(aCheck(encounter.id, run.id, userId))).rejects.toBeInstanceOf(AssistantNoteNotOpenError); // prettier-ignore
+    await expect(checks.record(aCheck(encounter.id, run.id, userId), [question], 'all')).rejects.toBeInstanceOf(AssistantNoteNotOpenError); // prettier-ignore
+    // Neither the review nor its question: all or none.
+    expect(await prisma.noteQuestionCheck.count({ where: { encounterId: encounter.id } })).toBe(1); // prettier-ignore
+    expect(await prisma.aiSuggestion.count({ where: { encounterId: encounter.id, kind: 'note-question' } })).toBe(2); // prettier-ignore
   });
 
-  it('AS-124: a signature that commits while the review is being kept wins, and the review is refused', async () => {
+  it('AS-124: a review that holds the attention keeps no question when the database refuses the review', async () => {
     const prisma = db();
     const { encounter, note, run, userId } = await anAttention(prisma);
+    const checks = new PrismaNoteQuestionCheckStore(prisma as unknown as PrismaService); // prettier-ignore
+    const question = {
+      encounterId: encounter.id,
+      aiRunId: run.id,
+      kind: 'note-question' as const,
+      proposal: aQuestion(encounter.id, run.id).proposal,
+      sources: [{ kind: 'transcript' as const, fromMs: 0, toMs: 12_000 }],
+    };
+    // The question is of this attention's run, the review of another: the
+    // question goes in, the review is refused, and the transaction undoes both.
+    const other = await anAttention(prisma);
+
+    await expect(checks.record(aCheck(encounter.id, other.run.id, userId), [question], 'all')).rejects.toThrow(/note_question_check_run_of_its_encounter/); // prettier-ignore
+
+    expect(await prisma.aiSuggestion.count({ where: { encounterId: encounter.id, kind: 'note-question' } })).toBe(0); // prettier-ignore
+    expect(note.status).toBe('DRAFT');
+  });
+
+  /**
+   * Holds `hold` open in one transaction, runs `attempt` until the database
+   * says it waits on a lock (`pg_stat_activity`, no sleep), then commits
+   * `hold`. `waited` says whether `attempt` was seen waiting.
+   */
+  async function whileHeld<T>(
+    prisma: PrismaClient,
+    hold: (tx: Prisma.TransactionClient) => Promise<unknown>,
+    attempt: () => Promise<T>,
+  ) {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    let signedNotCommitted!: () => void;
-    const signing = new Promise<void>(
-      (resolve) => (signedNotCommitted = resolve),
-    );
-
-    const signature = prisma.$transaction(
+    let held!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const holder = prisma.$transaction(
       async (tx) => {
-        await tx.clinicalNote.update({ where: { id: note.id }, data: signedNote(note.authorId) }); // prettier-ignore
-        signedNotCommitted();
+        await hold(tx);
+        held();
         await gate;
       },
       { timeout: 30_000, maxWait: 30_000 },
     );
-    await signing;
-    const keeping = Promise.allSettled([
-      prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, run.id, userId) }), // prettier-ignore
-    ]).then(([result]) => result);
-    // The database says when the review waits on the note; no sleep.
-    for (let tries = 0; tries < 500; tries += 1) {
+    await holding;
+    const outcome = Promise.allSettled([attempt()]).then(([result]) => result);
+    let waited = false;
+    for (let tries = 0; tries < 2_000 && !waited; tries += 1) {
       const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
         SELECT count(*) AS waiting FROM pg_stat_activity
-         WHERE wait_event_type = 'Lock' AND datname = current_database()`;
-      if (Number(row!.waiting) > 0) break;
-      await new Promise((resolve) => setImmediate(resolve));
+         WHERE wait_event_type = 'Lock' AND datname = current_database()
+           AND pid <> pg_backend_pid()`;
+      waited = Number(row!.waiting) > 0;
+      if (!waited) await new Promise((resolve) => setImmediate(resolve));
     }
     release();
-    await signature;
-    const kept = await keeping;
+    await holder;
+    return { result: await outcome, waited };
+  }
 
-    expect(kept.status).toBe('rejected');
-    expect(String((kept as PromiseRejectedResult).reason)).toMatch(/note_question_of_a_draft/); // prettier-ignore
+  /** What signing does to the database, in its order: the attention, then the note. */
+  const signing =
+    (encounterId: string, note: { id: string; authorId: string }) =>
+    async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT 1 FROM encounter WHERE id = ${encounterId}::uuid FOR UPDATE`;
+      await tx.clinicalNote.update({ where: { id: note.id }, data: signedNote(note.authorId) }); // prettier-ignore
+    };
+
+  it('AS-124: a signature that commits while the review waits wins, and neither the review nor its questions are kept', async () => {
+    const prisma = db();
+    const { encounter, note, run, userId } = await anAttention(prisma);
+    const checks = new PrismaNoteQuestionCheckStore(prisma as unknown as PrismaService); // prettier-ignore
+    const question = {
+      encounterId: encounter.id,
+      aiRunId: run.id,
+      kind: 'note-question' as const,
+      proposal: aQuestion(encounter.id, run.id).proposal,
+      sources: [{ kind: 'transcript' as const, fromMs: 0, toMs: 12_000 }],
+    };
+
+    const { result, waited } = await whileHeld(
+      prisma,
+      signing(encounter.id, note),
+      () =>
+        checks.record(aCheck(encounter.id, run.id, userId), [question], 'all'),
+    );
+
+    expect(waited).toBe(true);
+    expect(result.status).toBe('rejected');
+    expect((result as PromiseRejectedResult).reason).toBeInstanceOf(AssistantNoteNotOpenError); // prettier-ignore
     expect((await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } })).status).toBe('SIGNED'); // prettier-ignore
     expect(await prisma.noteQuestionCheck.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
+    expect(await prisma.aiSuggestion.count({ where: { encounterId: encounter.id, kind: 'note-question' } })).toBe(0); // prettier-ignore
+  });
+
+  it('AS-124: an insert of its own waits for the signature on the attention, never the other way round, and is refused', async () => {
+    const prisma = db();
+    const { encounter, note, run, userId } = await anAttention(prisma);
+
+    const { result, waited } = await whileHeld(
+      prisma,
+      signing(encounter.id, note),
+      () =>
+      prisma.noteQuestionCheck.create({ data: aCheck(encounter.id, run.id, userId) }), // prettier-ignore
+    );
+
+    expect(waited).toBe(true);
+    expect(result.status).toBe('rejected');
+    expect(String((result as PromiseRejectedResult).reason)).toMatch(/note_question_of_a_draft/); // prettier-ignore
+  });
+
+  it('AS-124: a review kept before the signature reaches the note stands, and the signature follows it (positive control)', async () => {
+    const prisma = db();
+    const { encounter, note, run, userId } = await anAttention(prisma);
+
+    const { result, waited } = await whileHeld(
+      prisma,
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM encounter WHERE id = ${encounter.id}::uuid FOR UPDATE`;
+        await tx.noteQuestionCheck.create({ data: aCheck(encounter.id, run.id, userId) }); // prettier-ignore
+      },
+      () => prisma.$transaction(signing(encounter.id, note)),
+    );
+
+    expect(waited).toBe(true);
+    expect(result.status).toBe('fulfilled');
+    expect((await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } })).status).toBe('SIGNED'); // prettier-ignore
+    expect(await prisma.noteQuestionCheck.count({ where: { encounterId: encounter.id } })).toBe(1); // prettier-ignore
   });
 });
