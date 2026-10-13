@@ -1,0 +1,867 @@
+{
+  "label": "ajustes-medico-gemini-3",
+  "ledger": "~/.clinica-eval/gasto",
+  "fake": false,
+  "startedAt": "2026-10-13 10:23:09",
+  "finishedAt": "2026-10-13 10:24:11",
+  "commit": "82df0b08+cambios",
+  "seed": 42,
+  "ceilingUsd": 100,
+  "providers": [
+    {
+      "name": "gemini",
+      "model": "gemini-3.8-flash"
+    }
+  ],
+  "withoutKey": [
+    "anthropic",
+    "openai"
+  ],
+  "judge": null,
+  "tasks": [
+    {
+      "name": "receta-campos",
+      "promptVersions": {
+        "D": "d2-lines-2+d2-mapping-1"
+      }
+    },
+    {
+      "name": "sintomas",
+      "promptVersions": {
+        "D": "d1-problems-3+d1-codes-2"
+      }
+    }
+  ],
+  "catalogues": [
+    {
+      "file": "cie10-oms-deis-2026-08.xlsx",
+      "sha256": "0d5e19d5d68856aee9379cc91ec16ac931cbfb60dcd06575dec5089cc0a5a75a"
+    },
+    {
+      "file": "cnmb-2026.xlsx",
+      "sha256": "e968d14c9fa3896e7e5cfcb2eb9717b2cde25a7483387ce7f5ced3d62dbdf2e1"
+    },
+    {
+      "file": "llm-pricing.json",
+      "sha256": "9af59d090989ecccfb55aaf1e1d0682a2388e58c51ff0306be16caa4d5464557"
+    }
+  ],
+  "cases": [
+    {
+      "task": "receta-campos",
+      "source": "receta-campos.json",
+      "sha256": "ec13e7c724ef22a8ae6d3ecaf9858e916f8813a70ace6d88b1ff118bc2521f0b",
+      "n": 7
+    },
+    {
+      "task": "sintomas",
+      "source": "sintomas.json",
+      "sha256": "836eb2659744b57c2855f546665f86de320a5fc60b169dfc44b7eb3fa44235f6",
+      "n": 4
+    }
+  ],
+  "codiesp": null,
+  "stopped": null,
+  "calls": [
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CA04",
+          "fields": {
+            "form": "CAPSULE",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "CAPSULE",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": 7,
+            "quantity": 21
+          },
+          "unsaid": [
+            "route",
+            "quantity"
+          ],
+          "said": {
+            "form": "CAPSULE",
+            "route": null,
+            "dose": true
+          }
+        },
+        {
+          "code": "N02BE01",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": null,
+            "quantity": null
+          },
+          "unsaid": [
+            "presentation",
+            "route",
+            "dose"
+          ],
+          "said": {
+            "form": null,
+            "route": null,
+            "dose": false
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto-autor",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CA04",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": 7,
+            "quantity": 21
+          },
+          "unsaid": [
+            "presentation",
+            "route",
+            "dose",
+            "quantity"
+          ],
+          "said": {
+            "form": null,
+            "route": null,
+            "dose": true
+          }
+        },
+        {
+          "code": "N02BE01",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": null,
+            "quantity": null
+          },
+          "unsaid": [
+            "presentation",
+            "route",
+            "dose"
+          ],
+          "said": {
+            "form": null,
+            "route": null,
+            "dose": false
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto-dicho",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CA04",
+          "fields": {
+            "form": "CAPSULE",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "CAPSULE",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": 7,
+            "quantity": 21
+          },
+          "unsaid": [
+            "route",
+            "quantity"
+          ],
+          "said": {
+            "form": "CAPSULE",
+            "route": null,
+            "dose": true
+          }
+        },
+        {
+          "code": "N02BE01",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": null,
+            "quantity": null
+          },
+          "unsaid": [
+            "presentation",
+            "route",
+            "dose"
+          ],
+          "said": {
+            "form": null,
+            "route": null,
+            "dose": false
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-azitromicina",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01FA10",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "ONCE_DAILY",
+            "frequencyText": null,
+            "durationDays": 3,
+            "quantity": 3
+          },
+          "unsaid": [
+            "presentation",
+            "route",
+            "quantity"
+          ],
+          "said": {
+            "form": "TABLET",
+            "route": null,
+            "dose": true
+          }
+        },
+        {
+          "code": "N02BE01",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "500 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": null,
+            "quantity": null
+          },
+          "unsaid": [
+            "route"
+          ],
+          "said": {
+            "form": "TABLET",
+            "route": null,
+            "dose": true
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-esguince",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "M01AE01",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "400 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "EVERY_8_HOURS",
+            "frequencyText": null,
+            "durationDays": 5,
+            "quantity": 15
+          },
+          "unsaid": [
+            "route",
+            "quantity"
+          ],
+          "said": {
+            "form": "TABLET",
+            "route": null,
+            "dose": true
+          }
+        },
+        {
+          "code": "R06AX13",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "10 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "ONCE_DAILY",
+            "frequencyText": null,
+            "durationDays": 5,
+            "quantity": 5
+          },
+          "unsaid": [
+            "presentation",
+            "route",
+            "dose",
+            "quantity"
+          ],
+          "said": {
+            "form": null,
+            "route": null,
+            "dose": false
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-gastritis",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "A02BC01",
+          "fields": {
+            "form": "CAPSULE",
+            "concentration": "20 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "CAPSULE",
+            "frequency": null,
+            "frequencyText": "en ayunas",
+            "durationDays": 14,
+            "quantity": null
+          },
+          "unsaid": [
+            "route"
+          ],
+          "said": {
+            "form": "CAPSULE",
+            "route": null,
+            "dose": true
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-presion",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C09CA01",
+          "fields": {
+            "form": "TABLET",
+            "concentration": "50 mg",
+            "route": "ORAL",
+            "doseAmount": 1,
+            "doseUnit": "TABLET",
+            "frequency": "ONCE_DAILY",
+            "frequencyText": null,
+            "durationDays": null,
+            "quantity": null
+          },
+          "unsaid": [
+            "presentation",
+            "route"
+          ],
+          "said": {
+            "form": "TABLET",
+            "route": null,
+            "dose": true
+          }
+        }
+      ],
+      "scores": {
+        "fields": 1,
+        "wrong": 0,
+        "unmarked": 0
+      }
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-libreto",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "problem": "FARINGOAMIGDALITIS AGUDA CON PLACAS",
+          "codes": [
+            "J03.9",
+            "J03.0",
+            "J02.9",
+            "J02.0",
+            "J06.8"
+          ],
+          "symptoms": []
+        }
+      ],
+      "scores": {
+        "symptomCodes": 0,
+        "diagnosis": 1,
+        "symptomProblems": 0
+      }
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-ivu",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "problem": "INFECCIÓN DE VÍAS URINARIAS BAJA",
+          "codes": [
+            "N39.0",
+            "N30.0",
+            "N30.9",
+            "N34.1",
+            "N34.2"
+          ],
+          "symptoms": []
+        }
+      ],
+      "scores": {
+        "symptomCodes": 0,
+        "diagnosis": 1,
+        "symptomProblems": 0
+      }
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-gastroenteritis",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "problem": "GASTROENTERITIS AGUDA",
+          "codes": [
+            "A09.0",
+            "K52.9",
+            "A09.9",
+            "A08.4"
+          ],
+          "symptoms": []
+        }
+      ],
+      "scores": {
+        "symptomCodes": 0,
+        "diagnosis": 1,
+        "symptomProblems": 0
+      }
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-bronquitis",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "problem": "BRONQUITIS AGUDA",
+          "codes": [
+            "J20.9",
+            "J20.8",
+            "J20.0",
+            "J20.1",
+            "J20.2"
+          ],
+          "symptoms": []
+        }
+      ],
+      "scores": {
+        "symptomCodes": 0,
+        "diagnosis": 1,
+        "symptomProblems": 0
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3634,
+      "costUsd": 0.00201675,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2531,
+      "costUsd": 0.0006195,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto-autor",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 5794,
+      "costUsd": 0.00198825,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto-autor",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2072,
+      "costUsd": 0.00066,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto-dicho",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2677,
+      "costUsd": 0.00201525,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-libreto-dicho",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2416,
+      "costUsd": 0.00062025,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-azitromicina",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4557,
+      "costUsd": 0.002019,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-azitromicina",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2055,
+      "costUsd": 0.0005715,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-esguince",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3357,
+      "costUsd": 0.001803,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-esguince",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2432,
+      "costUsd": 0.0005070000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-gastritis",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2144,
+      "costUsd": 0.001335,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-gastritis",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3250,
+      "costUsd": 0.000879,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-presion",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2519,
+      "costUsd": 0.0015157499999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-campos",
+      "caseId": "receta-campos-presion",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2342,
+      "costUsd": 0.0008145,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-libreto",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2508,
+      "costUsd": 0.0005535000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-libreto",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2221,
+      "costUsd": 0.0002925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-ivu",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2636,
+      "costUsd": 0.0004994999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-ivu",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2322,
+      "costUsd": 0.000291,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-gastroenteritis",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1836,
+      "costUsd": 0.00045224999999999996,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-gastroenteritis",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4903,
+      "costUsd": 0.0013635,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-bronquitis",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2197,
+      "costUsd": 0.00046275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "sintomas",
+      "caseId": "sintomas-bronquitis",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1814,
+      "costUsd": 0.00028724999999999996,
+      "model": "gemini-3.8-flash"
+    }
+  ]
+}
