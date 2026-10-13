@@ -53,7 +53,24 @@ export type DoubleScenario =
    */
   | 'ODD_FAULT'
   /** AUTORIZADO with the voucher and a `fechaAutorizacion` that does not parse. */
-  | 'AUTHORISED_BAD_DATE';
+  | 'AUTHORISED_BAD_DATE'
+  /**
+   * DEVUELTA 45 — the SRI already holds a voucher with this RUC, type,
+   * establishment, point and sequential (SRI-108, SRI-115).
+   */
+  | 'SEQUENTIAL_REGISTERED_45';
+
+/**
+ * SRI-115. A number the SRI already holds — issued from another database or
+ * another system with the same RUC. `ruc` absent: any issuer.
+ */
+export interface TakenSequential {
+  documentType: string;
+  ruc?: string;
+  establishmentCode: string;
+  emissionPointCode: string;
+  sequential: string;
+}
 
 export interface DoubleCall {
   operation: 'RECEPTION' | 'AUTHORISATION';
@@ -72,6 +89,14 @@ export interface SriDouble {
   setDown(down: boolean): void;
   /** How many authorisation polls a 70 stays pending before it is given. */
   setPendingPolls(polls: number): void;
+  /** SRI-115. Numbers any OTHER key that carries them is returned 45 for. */
+  takeSequential(taken: TakenSequential): void;
+  /**
+   * SRI-115. Remember the number of what was received, as the SRI does, so a
+   * second voucher with the same number and another key is returned 45. Off
+   * by default: tests that reset their database reuse numbers on purpose.
+   */
+  rememberReceived(on: boolean): void;
   callsFor(
     accessKey: string,
     operation?: DoubleCall['operation'],
@@ -106,6 +131,27 @@ function messageXml(
     `<tipo>${type}</tipo>` +
     '</mensaje>'
   );
+}
+
+/** RUC · type · establishment · point · sequential, read off the key. */
+function numberOf(accessKey: string) {
+  return {
+    documentType: accessKey.slice(8, 10),
+    ruc: accessKey.slice(10, 23),
+    establishmentCode: accessKey.slice(24, 27),
+    emissionPointCode: accessKey.slice(27, 30),
+    sequential: accessKey.slice(30, 39),
+  };
+}
+
+function numberKey(parts: TakenSequential) {
+  return [
+    parts.ruc ?? '*',
+    parts.documentType,
+    parts.establishmentCode,
+    parts.emissionPointCode,
+    parts.sequential,
+  ].join('|');
 }
 
 function reception(
@@ -304,6 +350,22 @@ export async function startSriDouble(
   let fallback: DoubleScenario = 'AUTHORISED';
   let down = false;
   let pendingPolls = 2;
+  /** SRI-115. The key that holds each number, or `''` when declared taken. */
+  const holders = new Map<string, string>();
+  let remember = false;
+  const holderOf = (accessKey: string) => {
+    const parts = numberOf(accessKey);
+    return (
+      holders.get(numberKey(parts)) ??
+      holders.get(numberKey({ ...parts, ruc: undefined })) ??
+      null
+    );
+  };
+  const take = (taken: TakenSequential) =>
+    holders.set(
+      numberKey({ ...taken, sequential: taken.sequential.padStart(9, '0') }),
+      '',
+    );
 
   const scenarioOf = (key: string) => scenarios.get(key) ?? fallback;
 
@@ -325,14 +387,18 @@ export async function startSriDouble(
           default?: DoubleScenario;
           down?: boolean;
           scenario?: { accessKey: string; scenario: DoubleScenario };
+          taken?: TakenSequential[];
+          remember?: boolean;
         };
         if (state.default) fallback = state.default;
         if (typeof state.down === 'boolean') down = state.down;
         if (state.scenario)
           scenarios.set(state.scenario.accessKey, state.scenario.scenario);
+        for (const taken of state.taken ?? []) take(taken);
+        if (typeof state.remember === 'boolean') remember = state.remember;
         reply(
           200,
-          JSON.stringify({ default: fallback, down }),
+          JSON.stringify({ default: fallback, down, remember }),
           'application/json',
         );
         return;
@@ -372,6 +438,21 @@ export async function startSriDouble(
         if (failure) return reply(failure.status, failure.body, failure.type);
         if (scenario === 'GARBAGE')
           return reply(200, '<html>mantenimiento</html>', 'text/html');
+        // SRI-115. The number is somebody else's: another key carries it.
+        const holder = holderOf(accessKey);
+        if (
+          scenario === 'SEQUENTIAL_REGISTERED_45' ||
+          (holder !== null && holder !== accessKey)
+        ) {
+          return reply(
+            200,
+            reception(
+              'DEVUELTA',
+              accessKey,
+              messageXml('45', 'ERROR SECUENCIAL REGISTRADO', 'ERROR'),
+            ),
+          );
+        }
         if (scenario === 'RETURNED_35') {
           return reply(
             200,
@@ -410,6 +491,7 @@ export async function startSriDouble(
           );
         }
         received.set(accessKey, voucher);
+        if (remember) holders.set(numberKey(numberOf(accessKey)), accessKey);
         return reply(200, reception('RECIBIDA', accessKey));
       }
 
@@ -508,6 +590,10 @@ export async function startSriDouble(
     setPendingPolls: (value) => {
       pendingPolls = value;
     },
+    takeSequential: take,
+    rememberReceived: (on) => {
+      remember = on;
+    },
     callsFor: (accessKey, operation) =>
       calls.filter(
         (c) =>
@@ -519,6 +605,8 @@ export async function startSriDouble(
       received.clear();
       polls.clear();
       refusals.clear();
+      holders.clear();
+      remember = false;
       calls.length = 0;
       fallback = 'AUTHORISED';
       down = false;

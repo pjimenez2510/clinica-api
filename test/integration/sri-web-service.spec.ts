@@ -112,6 +112,52 @@ describe('SRI-042 a SRI-050 el cliente del servicio web contra el doble local', 
     ).toBe('70');
   });
 
+  it('SRI-115 un número declarado ocupado vuelve DEVUELTA 45, y otro número del mismo punto se recibe', async () => {
+    double.takeSequential({
+      documentType: '01',
+      establishmentCode: '001',
+      emissionPointCode: '001',
+      sequential: '123',
+    });
+    const answer = await client.receive(SIGNED);
+    expect(answer).toEqual({
+      kind: 'DEVUELTA',
+      messages: [
+        {
+          identifier: '45',
+          message: 'ERROR SECUENCIAL REGISTRADO',
+          additionalInformation: null,
+          type: 'ERROR',
+        },
+      ],
+    });
+
+    // Positive control: the next number of the same point is free.
+    const next = KEY.slice(0, 30) + '000000124' + KEY.slice(39);
+    await expect(client.receive(SIGNED.replace(KEY, next))).resolves.toEqual({
+      kind: 'RECIBIDA',
+      messages: [],
+    });
+  });
+
+  it('SRI-115 recordando lo recibido, otra clave con el mismo número vuelve 45 y la misma clave no', async () => {
+    double.rememberReceived(true);
+    await expect(client.receive(SIGNED)).resolves.toMatchObject({
+      kind: 'RECIBIDA',
+    });
+
+    // The same voucher again is not a 45: that is what 43 is for.
+    await expect(client.receive(SIGNED)).resolves.toMatchObject({
+      kind: 'RECIBIDA',
+    });
+
+    const sameNumber = KEY.slice(0, 39) + '99999999' + KEY.slice(47);
+    const answer = await client.receive(SIGNED.replace(KEY, sameNumber));
+    expect(answer.kind === 'DEVUELTA' && answer.messages[0]?.identifier).toBe(
+      '45',
+    );
+  });
+
   it('SRI-049 sin comprobantes para la clave todavía, la autorización es PENDING', async () => {
     double.setScenario(KEY, 'PENDING');
     await client.receive(SIGNED);

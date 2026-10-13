@@ -12,7 +12,15 @@ import { startSriDouble } from '../test/sri-double/sri-double.ts';
  *
  * Scenarios: AUTHORISED · RETURNED_35 · ALREADY_REGISTERED_43 ·
  * IN_PROCESS_70 · NOT_AUTHORISED · PENDING · GARBAGE · FAULT_500 · HTML_500 ·
- * HUGE_500 · ECHO_FAULT.
+ * HUGE_500 · ECHO_FAULT · SEQUENTIAL_REGISTERED_45.
+ *
+ * SRI-115. The 45 («secuencial registrado») as the SRI gives it: a number
+ * declared taken, or —with `remember`— one it already received with another
+ * key:
+ *
+ *   curl -X POST localhost:8099/__double/state \
+ *     -d '{"taken":[{"documentType":"01","establishmentCode":"001","emissionPointCode":"001","sequential":"19"}]}'
+ *   curl -X POST localhost:8099/__double/state -d '{"remember":true}'
  */
 const port = Number(process.env.SRI_DOUBLE_PORT ?? 8099);
 const double = await startSriDouble({ port });
