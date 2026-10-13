@@ -2614,8 +2614,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   con su intervalo de Wilson, que con el proveedor principal DEBERÁ ser
   **≥ 90 %**.
 - **AS-285** _(solo interfaz)_ — La casilla del motivo DEBERÁ llamarse
-  **«Motivo de consulta»**, con la ayuda «Lo que refiere el paciente», en la
-  toma y en su lectura guardada (D-263 §2).
+  **«Motivo de consulta»** en la toma, con la ayuda «Lo que refiere el
+  paciente», y en su lectura guardada, sin ayuda (D-263 §2).
 - **AS-286** _(solo interfaz)_ — Bajo el motivo propuesto, la procedencia
   DEBERÁ citar la **fuente** («Paciente · 00:07 «Ay, señorita, tengo…»»), no
   la redacción, y abrir la transcripción en esa frase como las demás.
