@@ -67,6 +67,8 @@ import {
   InvalidEncounterTransitionError,
   NoKnownAllergiesNotStandingError,
   NoteAlreadySignedError,
+  NoteSignWhileDraftingError,
+  NoteSignWhileListeningError,
   NoteContentIncompleteError,
   NoteNotAmendableError,
   NoteTemplateInvalidError,
@@ -113,6 +115,8 @@ const EVERY_ERROR: readonly DomainError[] = [
   new UnknownClinicalFormError(['002@1']),
   new NoteContentIncompleteError(['motivoConsulta']),
   new NoteAlreadySignedError(),
+  new NoteSignWhileListeningError(),
+  new NoteSignWhileDraftingError(),
   new ClinicalNoteAlreadyOpenError(),
   new AmendmentReasonRequiredError(),
   new NoteNotAmendableError('SUPERSEDED'),
@@ -656,6 +660,24 @@ describe('el contrato de errores de la atención', () => {
     expect(error.code).toBe('NOTE_ALREADY_SIGNED');
     expect(error).toBeInstanceOf(ConflictError); // 409, nunca 403
     expect(error.userTitle).toContain('enmiéndela indicando el motivo');
+  });
+
+  it('AS-140 firmar mientras el asistente escucha es un 409 que dice qué hacer', () => {
+    const error = new NoteSignWhileListeningError();
+
+    expect(error.code).toBe('NOTE_SIGN_WHILE_LISTENING');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe(
+      'El asistente está escuchando la consulta. Detenga la escucha para firmar',
+    );
+  });
+
+  it('AS-141 firmar mientras se redacta el borrador es un 409 que dice qué hacer', () => {
+    const error = new NoteSignWhileDraftingError();
+
+    expect(error.code).toBe('NOTE_SIGN_WHILE_DRAFTING');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('deje de esperarlo para firmar');
   });
 
   it('EN-229 abrir una segunda nota de consulta es un 409 que dice qué hacer', () => {

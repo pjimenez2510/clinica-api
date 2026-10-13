@@ -131,6 +131,18 @@ export class PrismaNoteDraftStore implements NoteDraftStore {
     });
   }
 
+  async cancelInFlight(encounterId: string, code: string, at: Date) {
+    // One statement: a draft that starts or finishes meanwhile is either
+    // cancelled here or already out of flight, never half of each.
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      UPDATE "note_draft"
+         SET "status" = 'FAILED', "failure_code" = ${code}, "finished_at" = ${at}
+       WHERE "encounter_id" = ${encounterId}::uuid
+         AND "status" IN ('QUEUED', 'RUNNING')
+      RETURNING "id"`;
+    return rows.map(({ id }) => id);
+  }
+
   async failInFlight(code: string, at: Date) {
     const { count } = await this.prisma.noteDraft.updateMany({
       where: { status: { in: IN_FLIGHT } },

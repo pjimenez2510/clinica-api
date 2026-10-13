@@ -53,9 +53,11 @@ CREATE TABLE "note_question_check" (
 CREATE INDEX "note_question_check_encounter_checked_idx"
   ON "note_question_check" ("encounter_id", "checked_at");
 
--- AS-121. The attempt answered (`ok`) in this same attention: a review that
--- pointed at another one would lead «de dónde salió» to another patient's
--- conversation, as AS-020 guards for `ai_suggestion`.
+-- AS-121. The attempt answered (`ok`) these questions (`note-questions`) in
+-- this same attention: a review that pointed at another one would lead «de
+-- dónde salió» to another patient's conversation, as AS-020 guards for
+-- `ai_suggestion`, and one of a draft or a receta would misattribute who
+-- asked what (review of 12-10-2026).
 CREATE OR REPLACE FUNCTION note_question_check_run_of_its_encounter()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -63,15 +65,17 @@ AS $$
 DECLARE
   run_encounter UUID;
   run_outcome   TEXT;
+  run_purpose   TEXT;
 BEGIN
-  SELECT "encounter_id", "outcome" INTO run_encounter, run_outcome
+  SELECT "encounter_id", "outcome", "purpose" INTO run_encounter, run_outcome, run_purpose
     FROM "ai_run" WHERE "id" = NEW."ai_run_id";
   IF run_encounter IS DISTINCT FROM NEW."encounter_id"
-     OR run_outcome IS DISTINCT FROM 'ok' THEN
-    RAISE EXCEPTION 'note_question_check_run_of_its_encounter: the attempt is not an answer of this attention'
+     OR run_outcome IS DISTINCT FROM 'ok'
+     OR run_purpose IS DISTINCT FROM 'note-questions' THEN
+    RAISE EXCEPTION 'note_question_check_run_of_its_encounter: the attempt is not an answer of this attention to its questions'
       USING ERRCODE = 'check_violation',
             CONSTRAINT = 'note_question_check_run_of_its_encounter',
-            HINT = 'AS-121. La revisión sale del intento que respondió en su propia atención.';
+            HINT = 'AS-121. La revisión sale del intento que respondió a las preguntas en su propia atención.';
   END IF;
   RETURN NEW;
 END;

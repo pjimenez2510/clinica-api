@@ -17,6 +17,7 @@ import {
 import { DomainError } from '../../../shared/domain/errors/domain-error';
 import { LiveEventBus } from '../../../shared/events/live-event-bus';
 import {
+  AssistantDraftCancelledError,
   AssistantDraftFailedError,
   AssistantDraftInterruptedError,
   AssistantDraftRetryLimitError,
@@ -29,11 +30,11 @@ import {
   SuggestionNotFoundError,
 } from '../domain/assistant.errors';
 import {
+  asStoredSection,
   type DraftPhrase,
   draftDue,
   type NoteDraftStatus,
   shownSections,
-  type StoredDraftSection,
   type TranscriptLine,
 } from '../domain/note-draft';
 import type { SuggestionStatus, SuggestionView } from '../domain/suggestion';
@@ -139,6 +140,8 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
   private readonly inProgress = new Set<Promise<void>>();
   /** AS-087. Asked for while another was in flight: asked again after it. */
   private readonly again = new Map<string, string>();
+  /** AS-143, AS-147. The draft being written, and how to cut its call. */
+  private readonly writing = new Map<string, { encounterId: string; stop: AbortController }>(); // prettier-ignore
   private readonly lexicon: LexiconCache;
 
   constructor(
@@ -223,6 +226,56 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     await this.suggestions.discard(input.suggestionId, writer(requester));
     this.announce(encounter.siteId, requester.userId);
     return this.overview(encounter.id, requester);
+  }
+
+  /**
+   * AS-147. «Dejar de esperar»: the draft queued or being written is
+   * cancelled, as at the signature (AS-143); without one, nothing changes.
+   */
+  async stopWaiting(
+    encounterId: string,
+    requester: DraftRequester,
+  ): Promise<DraftOverview> {
+    const encounter = await this.ownLiveEncounter(encounterId, requester);
+    if ((await this.cancel(encounter.id)) > 0) {
+      // Who stopped it: `requested_by` still names who asked for it.
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: READ_RESOURCE,
+        resourceId: encounter.id,
+        action: 'UPDATE',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
+      this.announce(encounter.siteId, requester.userId);
+    }
+    return this.overview(encounter.id, requester);
+  }
+
+  /**
+   * AS-143, AS-147. Cancels what the attention has queued or being written:
+   * failed with `ASSISTANT_DRAFT_CANCELLED`, its call cut, nothing it returns
+   * kept, and no later stretch asked for behind it. Answers how many.
+   */
+  async cancel(encounterId: string): Promise<number> {
+    this.again.delete(encounterId);
+    for (let index = this.waiting.length - 1; index >= 0; index -= 1) {
+      if (this.waiting[index]!.encounterId === encounterId) this.waiting.splice(index, 1); // prettier-ignore
+    }
+    const cancelled = await this.drafts.cancelInFlight(
+      encounterId,
+      new AssistantDraftCancelledError().code,
+      this.clock(),
+    );
+    for (const [, each] of this.writing) {
+      if (each.encounterId === encounterId) each.stop.abort();
+    }
+    return cancelled.length;
+  }
+
+  /** AS-141. A draft of the attention is queued or being written. */
+  async drafting(encounterId: string): Promise<boolean> {
+    return (await this.drafts.inFlight(encounterId)) !== null;
   }
 
   /** AS-087. Three more minutes of conversation since the last draft asked for. */
@@ -365,6 +418,8 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
    */
   private async write(draft: StoredNoteDraft): Promise<void> {
     let siteId: string | null = null;
+    const stop = new AbortController();
+    this.writing.set(draft.id, { encounterId: draft.encounterId, stop });
     try {
       if (!(await this.drafts.start(draft.id, this.clock()))) return;
       const encounter = await this.context.encounter(draft.encounterId, 'all');
@@ -402,9 +457,11 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
           lines,
           template: draftableSections(note.sections),
           encounterId: encounter.id,
-          signal: AbortSignal.timeout(DRAFT_LIMIT_MS),
+          signal: AbortSignal.any([AbortSignal.timeout(DRAFT_LIMIT_MS), stop.signal]), // prettier-ignore
         },
       );
+      // AS-143, AS-147. Cancelled while the model answered: nothing is kept.
+      if (stop.signal.aborted) throw new AssistantDraftCancelledError();
       if (written.runId === null) throw new AssistantProposalNotKeptError();
       const runId = written.runId;
 
@@ -456,6 +513,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
         'assistant note draft failed',
       );
     } finally {
+      this.writing.delete(draft.id);
       if (siteId !== null) this.announce(siteId, draft.requestedBy);
       const waiting = this.again.get(draft.encounterId);
       if (waiting !== undefined) {
@@ -585,18 +643,6 @@ function codeOf(error: unknown): string {
   return error instanceof DomainError
     ? error.code
     : new AssistantDraftFailedError().code;
-}
-
-function asStoredSection(view: SuggestionView): StoredDraftSection {
-  const proposal = view.proposal as Partial<SectionProposal>;
-  return {
-    id: view.id,
-    draftId: String(proposal.draftId ?? ''),
-    section: String(proposal.section ?? ''),
-    text: String(proposal.text ?? ''),
-    status: view.status,
-    proposedAt: view.proposedAt,
-  };
 }
 
 function sectionView(

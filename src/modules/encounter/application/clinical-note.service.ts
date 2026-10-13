@@ -8,6 +8,10 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
+  ASSISTANT_AT_SIGNING,
+  type AssistantAtSigning,
+} from '../../../shared/clinical/assistant-at-signing.port';
+import {
   assertAmendable,
   assertEditable,
   contentHashOf,
@@ -50,6 +54,8 @@ import {
   ReferralRequiredOnDischargeError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
+  NoteSignWhileDraftingError,
+  NoteSignWhileListeningError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import { assertRevision } from '../../../shared/domain/errors/record-changed.error';
@@ -155,6 +161,9 @@ export class ClinicalNoteService {
     private readonly logger: PinoLogger,
     /** AG-179, BI-238. Where «this site's day changed» is said. */
     private readonly liveEvents: LiveEventBus,
+    /** AS-140 to AS-143 (E1). What the assistant is doing, asked and told. */
+    @Inject(ASSISTANT_AT_SIGNING)
+    private readonly assistant: AssistantAtSigning,
   ) {
     this.logger.setContext(ClinicalNoteService.name);
   }
@@ -317,6 +326,7 @@ export class ClinicalNoteService {
   ): Promise<NoteWithTemplate> {
     const signer = await this.requirePractitioner(requester.userId);
     this.assertLicensed(signer.acessExpiresOn);
+    await this.assertAssistantIdle(request, requester);
     const now = new Date();
     // EN-204, EN-205. The template the note was opened with — fixed by
     // `trg_clinical_note_template_is_fixed`, so reading it before the
@@ -442,15 +452,48 @@ export class ClinicalNoteService {
       { action: 'CLINICAL_NOTE_SIGNED' },
       'clinical note signed',
     );
+    const discharges = requireForm(
+      signed.formCode,
+      signed.formVersion,
+    ).dischargesTheEncounter;
     // AG-179, BI-238. The signature that discharges ends the attention; caja
     // hears only that one.
-    await this.announce(
-      request.encounterId,
-      requester,
-      requireForm(signed.formCode, signed.formVersion).dischargesTheEncounter,
-    );
+    await this.announce(request.encounterId, requester, discharges);
+    // AS-143, AS-144. The signature is stored: what the assistant had running
+    // stops and its proposals are reviewed — after the answer, not inside
+    // it: stopping waits for the recogniser to hand over (up to 90 s), and
+    // the doctor and caja must not wait for that. It never throws; what it
+    // could not review, the sweep does.
+    if (discharges) {
+      this.assistant.signed(request.encounterId).catch(() => undefined);
+    }
 
     return { ...signed, template };
+  }
+
+  /**
+   * AS-140, AS-141 (D-247 §7, SigmAI U-03). Nobody signs a note of the
+   * attention while the assistant is still hearing it or writing its draft:
+   * what is said or written meanwhile would never reach what was signed. Asked
+   * before the transaction; whatever slips in between is stopped after the
+   * signature (AS-143).
+   */
+  private async assertAssistantIdle(
+    request: { encounterId: string; noteId: string },
+    requester: Requester,
+  ): Promise<void> {
+    // Only over a draft the signer reaches: an attention of another site, an
+    // unknown note or a signed one get their own answer from the transaction
+    // (404, NOTE_ALREADY_SIGNED) and never say what the assistant is doing.
+    const note = await this.notes.findById({
+      encounterId: request.encounterId,
+      noteId: request.noteId,
+      sites: requester.sites,
+    });
+    if (note?.status !== 'DRAFT') return;
+    const activity = await this.assistant.activity(request.encounterId);
+    if (activity.listening) throw new NoteSignWhileListeningError();
+    if (activity.drafting) throw new NoteSignWhileDraftingError();
   }
 
   /**

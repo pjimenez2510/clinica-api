@@ -7,6 +7,10 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
+import {
+  ASSISTANT_AT_SIGNING,
+  type AssistantAtSigning,
+} from '../../../shared/clinical/assistant-at-signing.port';
 import { contentHashOf, type NoteContent } from '../domain/clinical-note';
 import { withBackgroundSnapshot } from '../domain/background-snapshot';
 import { BackgroundSnapshotReader } from './background-snapshot.reader';
@@ -97,6 +101,9 @@ export class EncounterExitService {
     private readonly logger: PinoLogger,
     /** AG-179, BI-238. Where «this site's day changed» is said. */
     private readonly liveEvents: LiveEventBus,
+    /** AS-142, AS-143. The interruption signs: the assistant is told after. */
+    @Inject(ASSISTANT_AT_SIGNING)
+    private readonly assistant: AssistantAtSigning,
   ) {
     this.logger.setContext(EncounterExitService.name);
   }
@@ -161,6 +168,9 @@ export class EncounterExitService {
       'encounter annulled',
     );
     announceEncounterChange(this.liveEvents, annulled.siteId, { ended: true });
+    // AS-143. An attention opened on the wrong patient: what the assistant
+    // was hearing or drafting for it stops now, not at the next check.
+    this.assistant.signed(annulled.id).catch(() => undefined);
 
     return annulled;
   }
@@ -282,6 +292,11 @@ export class EncounterExitService {
     }
 
     announceEncounterChange(this.liveEvents, discontinued.siteId, { ended: true }); // prettier-ignore
+    // AS-142, AS-143. Not refused while the assistant listens or drafts —it
+    // is the way out of a consultation that cannot go on (D-252 §1)—, but
+    // what it had running stops and its proposals are reviewed, after the
+    // answer (see ClinicalNoteService.sign). Never throws.
+    this.assistant.signed(discontinued.id).catch(() => undefined);
 
     return { encounter: discontinued, unsignedEmptyNoteIds };
   }

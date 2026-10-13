@@ -1193,6 +1193,12 @@ requisitos que cambian.
   > lo dice: prueba que el contenido no cambió desde la firma **sin confiar en que
   > el disparador de inmutabilidad nunca se haya desactivado**. Es lo que se
   > recalcula en SC-012.
+  >
+  > **Con el asistente en marcha** no se firma: mientras escucha o redacta el
+  > borrador, la firma se rechaza diciendo por qué, y al firmar la 002 o
+  > interrumpir se detiene lo que tenía en marcha. Lo especifica el módulo
+  > `assistant` (AS-140 a AS-144), que este módulo consulta por el puerto
+  > `ASSISTANT_AT_SIGNING` de `shared/clinical`.
 - **EN-028** — El sistema DEBERÁ hacer constar la identificación del profesional
   que interviene en cada nota, con **firma electrónica certificada**.
   > **Art. 4 del A.M. 00115-2021**: *«todo profesional de salud que intervenga en
