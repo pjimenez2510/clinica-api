@@ -376,6 +376,41 @@ atención sin IA, el interruptor de la ficha y de la llegada y «Escuchar» sin
 autorización; su mitad del servidor es AS-160, AS-162, AS-164, AS-165, AS-167
 y AS-168, que ya se prueban con esos números.
 
+### E12 — La historia sin modelo _(B1, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 B1: de un vistazo y **sin modelo de lenguaje**, lo
+que el médico necesita antes de hablar. En la pestaña Historia de la consulta,
+los resultados de laboratorio **del paciente** —no sólo de esta atención— con
+el rango y la bandera con que el laboratorio los informó, lo fuera de rango
+marcado; los medicamentos recetados, activos o terminados y desde cuándo; y una
+línea de tiempo que junta, por día, las visitas, los medicamentos que empiezan
+o terminan y los resultados fuera de rango. En Evolución, las tendencias de los
+exámenes junto a las de los signos, con la misma gráfica (D-214, D-226 §3).
+Se adapta `modules/history/` de SigmAI (`timeline.ts`; E-066: P95 12 ms). Su
+`reference-range.ts` **no** se trae: aquí el rango y la bandera se guardan
+estructurados en cada resultado (ORD-035 a ORD-038, ORD-122) y se muestran
+tal cual, sin volver a leer texto.
+
+**Por qué va así:** la pestaña Historia decía «sólo las de esta atención: las
+anteriores todavía no llegan al resumen del paciente». Un resultado de hace
+tres meses que el médico no ve es un examen que se repite o una anemia que no
+se sigue. Sin modelo no hay omisión que medir (E-067 apagó el resumen con
+modelo por omitir fármacos activos): la lista es la de la base, entera hasta
+su tope y con el total dicho.
+**Prueba independiente:** contra PostgreSQL, una ficha con una ficha absorbida,
+dos sedes, una atención anulada, un informe corregido y otro cancelado, una
+receta anulada y otra con un medicamento de 7 días: la historia trae los
+resultados vigentes de las dos fichas y de las sedes de quien mira, con las
+mismas cifras, rango y bandera que el informe de su orden; nada de la atención
+anulada, del informe sustituido o cancelado, ni de la receta anulada; el
+medicamento sale activo hasta el séptimo día y terminado después; y la
+lectura queda en la bitácora una vez.
+**Cubre:** AS-200 a AS-216.
+**Solo servidor:** AS-207 (el tope y la bitácora). La pantalla lo ve como
+AS-212.
+**Solo interfaz:** AS-210 a AS-216. Son las pestañas de Historia, la línea de
+tiempo y las tendencias de Evolución; su mitad del servidor es AS-200 a
+AS-206, que ya se prueban con esos números.
 ### E13 — Signos dictados _(B2, 12-10-2026)_
 
 `PLAN-ASISTENTE-IA.md` §7 B2: en la pestaña Signos, enfermería (en la
@@ -440,6 +475,14 @@ AS-182, AS-185 y AS-186, que ya se prueban con esos números.
 - **SC-096** — En esas mismas corridas y sobre el texto escrito de las mismas
   frases: **0 graves** — ninguna casilla con un valor distinto del dicho y
   ninguna llenada sin que se dijera.
+- **SC-097** — Sobre la base de demostración de la rama, con una ficha de
+  60 atenciones, 300 resultados y 60 recetas, el **P95** de 50 lecturas de la
+  historia (`GET /v1/patients/:id/clinical-history`, API en marcha y sin
+  caché de la aplicación) es **< 100 ms** (plan §7 B1; SigmAI E-066: 12 ms).
+- **SC-098** — En esa misma ficha y en la prueba contra PostgreSQL, el
+  **100 %** de los resultados de la historia tiene el mismo valor, unidad,
+  rango y bandera que el informe vigente de su orden
+  (`GET /v1/orders/:id/reports`), y ninguno es de otra persona (PA-055).
 
 ## Supuestos
 
@@ -1974,6 +2017,122 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   atención abierta en otra pantalla, la atención DEBERÁ reflejarlo al volver a
   leer la escucha (al enfocar la ventana o tras detener), sin recargar.
 
+### 42. La historia del paciente, sin modelo (B1, P7)
+
+- **AS-200** — CUANDO alguien con `record:read` pida la historia de una ficha
+  (`GET /v1/patients/:patientId/clinical-history`), el sistema DEBERÁ
+  responder con sus resultados de laboratorio, sus medicamentos y su línea de
+  tiempo leídos de la ficha **y de las que absorbió** (`chartScope`, PA-055),
+  sólo de las atenciones de las sedes de su alcance (EN-121) y nunca de una
+  atención anulada; SI la ficha no existe o fue absorbida, ENTONCES DEBERÁ
+  rechazarlo con `CLINICAL_HISTORY_CHART_NOT_OPEN` (409) sin dejar rastro en
+  la bitácora, porque no se reveló nada (PA-024). La ruta NO DEBERÁ depender
+  de `ASSISTANT_ENABLED` ni de `assistant:use`: no llama a ningún modelo ni
+  saca nada de la base (D-256 §1, como AS-118).
+  > La respuesta dice si la ficha tiene atenciones en sedes que quien mira no
+  > atiende (`hasEntriesOutsideScope`), sin contarlas (D-214 §5, EN-276): de
+  > ellas cuelgan los resultados y las recetas que no ve.
+- **AS-201** — Un resultado DEBERÁ venir de una orden de laboratorio emitida
+  y de un informe **vigente** —ni sustituido por una corrección ni
+  cancelado (ORD-151, ORD-152)— y DEBERÁ llevar su determinación, su valor
+  (número, código o texto), su unidad, el rango de referencia y la bandera
+  **congelados en el informe** (ORD-037, ORD-122), cuándo se observó, la
+  orden y la atención de las que sale, si su informe es una **corrección**
+  de otro (ORD-151: la pantalla dice «Corregido») y si viene de una ficha
+  absorbida (EN-275); los más recientes primero.
+- **AS-202** — La bandera de un resultado DEBERÁ ser la que el informe
+  guardó, **nunca recalculada** con la edad, el sexo o los rangos de hoy: un
+  informe de hace tres años se lee con los rangos de hace tres años. Un
+  resultado sin bandera DEBERÁ decirse «sin rango de referencia» y NO DEBERÁ
+  contarse como normal ni como fuera de rango (ORD-038).
+- **AS-203** — Cada medicamento recetado en una receta **emitida** —ni
+  borrador, ni descartada, ni anulada— DEBERÁ salir una vez **por
+  presentación**: su concepto del CNMB (o, sin él, su nombre genérico) con su
+  concentración, su forma y su vía —el CNMB tiene un concepto por código ATC,
+  y prednisona de 20 mg y de 5 mg, o enalapril oral e intravenoso, NO DEBERÁN
+  juntarse—, con cuándo se recetó la primera y la última vez, cuántas veces,
+  **todas** las dosis y frecuencias que su última receta escribe para esa
+  presentación (una pauta en dos líneas son dos dosis) y, si la última
+  receta dice cuántos días, hasta qué
+  día del calendario de Guayaquil dura: el más lejano que alcanza alguna de
+  sus recetas (el día de la emisión es el primero), para que una de cinco
+  días escrita mientras corre una de treinta no la acorte.
+- **AS-204** — El estado de un medicamento DEBERÁ ser «activo» MIENTRAS el día
+  de hoy —por el reloj de la aplicación, en `America/Guayaquil`— no pase del
+  último día de su última receta; «terminado» cuando ya pasó; y «sin duración
+  escrita» SI su última receta no dice cuántos días, que NO DEBERÁ leerse ni
+  como activo ni como terminado. Una receta que **no** lo incluye NO DEBERÁ
+  terminarlo (D-256 §2): la receta de un catarro no suspende el enalapril.
+- **AS-205** — La línea de tiempo DEBERÁ agrupar por día del calendario de
+  Guayaquil, del más reciente al más antiguo: cada visita (el motivo que se
+  tomó en la preparación, o «Consulta», con sus diagnósticos vigentes por
+  rango, y su sede); cada medicamento el día que empieza —la primera vez, o
+  de nuevo tras haber terminado— y el día que termina, si ya pasó y nadie lo
+  volvió a recetar antes; y cada resultado **fuera de rango** —bajo, alto o
+  crítico— con su valor y su bandera. Lo que se repite NO DEBERÁ escribirse
+  otra vez: un medicamento renovado antes de terminar, o hasta **7 días**
+  después de su último día, sigue, sin línea nueva (D-256 §2): la receta
+  mensual recogida un día tarde no es un tratamiento que se suspende.
+  «Termina» DEBERÁ nombrar el curso que terminó, y cada línea de un
+  medicamento DEBERÁ decir si su receta es de una ficha absorbida. SI las
+  recetas leídas se cortaron por el tope (AS-207), ENTONCES la más antigua
+  leída de cada medicamento NO DEBERÁ escribir «Empieza»: pudo empezar
+  antes.
+- **AS-206** — Las tendencias DEBERÁN poder dibujarse sin juntar lo que no se
+  compara: cada resultado numérico DEBERÁ llevar la clave de su serie
+  (`seriesKey`: la determinación del catálogo, o su nombre, **con su unidad**),
+  de modo que la misma determinación en dos unidades sean dos series.
+- **AS-207** — La lectura DEBERÁ dejar **una** entrada en la bitácora de
+  accesos, de tipo `patient_clinical_history`, antes de devolver nada, y
+  nunca una por resultado (EN-123); y DEBERÁ acotarse sin parámetro de la
+  petición: los 300 resultados, las 100 visitas y las 200 recetas más
+  recientes; cada lista DEBERÁ llevar su total, su tope y, si se cortó, el
+  día del más antiguo leído, para que la pantalla diga «300 de 412, desde el
+  …» sin conocer el tope.
+
+### 43. En la pestaña Historia (solo interfaz)
+
+- **AS-210** — La pestaña Historia de la consulta DEBERÁ abrir por «Línea de
+  tiempo», que pinta los días de AS-205 con la fecha y, en cada línea, qué es
+  (visita, empieza, termina, resultado); un resultado fuera de rango DEBERÁ
+  llevar su bandera en palabras («Alto», «Crítico bajo») y su color, nunca el
+  color solo.
+- **AS-211** — «Laboratorio» DEBERÁ mostrar los resultados **del paciente**
+  (AS-201), por día y orden, con su valor, su rango y su bandera en las mismas
+  palabras y tonos que el informe de la orden (`flagLabel`, `resultTone`);
+  arriba, cuántos fuera de rango tiene el último día con resultados; y NO
+  DEBERÁ decir ya «sólo las de esta atención».
+- **AS-212** — «Medicamentos» DEBERÁ sustituir a «Recetas»: los medicamentos
+  de AS-203 en tres grupos —«Activos» con «hasta el …», «Sin duración
+  escrita» y «Terminados» con «terminó el …»—, cada uno con la última dosis y
+  frecuencia y «recetado N veces desde …». Las recetas de esta atención
+  siguen en la pestaña Receta, y no se repiten aquí.
+- **AS-213** — Cada pestaña DEBERÁ decir, cuando aplique, «Hay … en otras
+  sedes que usted no atiende» (AS-200), lo que el tope cortó y desde qué día
+  (AS-207) —la línea de tiempo, de cada lista que se cortó—, marcar lo que
+  viene de una ficha unificada y lo corregido; mientras la historia no ha
+  llegado DEBERÁ verse que carga, y NO DEBERÁ decir «no hay» (la regla de
+  `PatientRecordTabs`); sin `record:read` DEBERÁ decir que no tiene acceso,
+  nunca cargar sin fin.
+- **AS-214** — Con más de cuatro pestañas, Historia DEBERÁ usar la pieza de
+  pestañas compartida (PA-083, ESTANDAR-UI §12.6 bis), y a 375 px nada DEBERÁ
+  desbordar en horizontal.
+
+### 44. En Evolución, las tendencias de los exámenes (solo interfaz)
+
+- **AS-215** — La pestaña Evolución —de la ficha y de la consulta— DEBERÁ
+  dibujar, **debajo** de los signos y con la misma gráfica (`VitalsChart`),
+  una tendencia por cada serie de AS-206 con **dos o más** valores, en el
+  mismo periodo elegido (EN-277); el tooltip de cada punto DEBERÁ decir el
+  valor con su unidad, la fecha y la bandera en palabras; y un punto fuera de
+  rango DEBERÁ distinguirse sin depender del color; la misma determinación
+  en dos unidades DEBERÁ titularse con su unidad; y SI los resultados se
+  cortaron, ENTONCES DEBERÁ decir desde qué día se dibujan. NO DEBERÁ repetir una
+  cifra que ya es un signo (la hemoglobina tomada en preparación sigue en
+  signos; la del laboratorio, aquí).
+- **AS-216** — Las tendencias de los exámenes DEBERÁN pedirse sólo al abrir
+  Evolución, y sin resultados numéricos repetidos la sección NO DEBERÁ
+  mostrarse.
 ### 48. Dictar los signos (B2)
 
 - **AS-180** — CUANDO alguien con `assistant:dictate-vitals` y `vitals:write`
@@ -2145,6 +2304,64 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `SUGGESTION_PRESCRIPTION_MISMATCH`      | `ValidationError`      | 422       | La receta con que se enlaza no es de la atención, está descartada o no tiene esa línea (AS-074)                                               |
 | `SUGGESTION_ORDER_MISMATCH`             | `ValidationError`      | 422       | La orden con que se enlaza no es de la atención, está descartada, no tiene ese examen o el examen no es un candidato de la propuesta (AS-109) |
 
+| `ASSISTANT_TRANSCRIPT_EMPTY`         | `ValidationError`      | 422       | No hay transcripción de la que redactar el borrador (AS-086) |
+| `ASSISTANT_NOTE_NOT_OPEN`            | `ConflictError`        | 409       | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
+| `ASSISTANT_DRAFT_INTERRUPTED`        | `ExternalServiceError` | 503       | La API se reinició mientras redactaba el borrador (AS-093) |
+| `ASSISTANT_DRAFT_FAILED`             | `ExternalServiceError` | 503       | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
+| `ASSISTANT_DRAFT_RETRY_LIMIT`        | `QuotaExceededError`   | 429       | «Volver a pedir» sobre un tramo que ya falló tres veces (AS-093) |
+| `ASSISTANT_DRAFT_CANCELLED`          | `ConflictError`        | 409       | El borrador se canceló: se firmó la nota o el médico dejó de esperarlo (AS-143, AS-147) |
+| `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
+| `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
+| `CLINICAL_HISTORY_CHART_NOT_OPEN`    | `ConflictError`        | 409       | La ficha de la historia no existe o la absorbió una unificación (AS-200)     |
+
+## Niveles de prueba
+
+| Requisito                              | Nivel                                                                |
+| -------------------------------------- | -------------------------------------------------------------------- |
+| AS-001                                 | Tipos (`@ts-expect-error`, lo comprueba `tsc`) y recorrido de `src/` |
+| AS-002 a AS-010                        | Unitario, con `fetch` y proveedores falsos                           |
+| AS-015 (al arrancar y cada día)        | Unitario del módulo con reloj falso                                  |
+| AS-011, AS-012, AS-014, AS-015, AS-017 | Integración contra PostgreSQL, con control positivo                  |
+| AS-020 a AS-024 (la base)              | Integración contra PostgreSQL, con control positivo                  |
+| AS-022 (el cálculo)                    | Unitario del dominio                                                 |
+| AS-013, AS-016, AS-018, AS-019         | Unitario (AS-018 sobre `pruneToAllowlist`)                           |
+| AS-025, AS-028, AS-035, AS-036, AS-039, AS-040, AS-041 | Unitario con seudonimizador y proveedor falsos |
+| AS-026, AS-027, AS-036, AS-037, AS-038 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-042 | Arnés (`eval/`), fuera del verify |
+| AS-043, AS-044 | Componente de la pestaña y recorrido F-04 |
+| AS-045, AS-046, AS-047, AS-056 | Integración HTTP y del canal contra PostgreSQL, con control positivo |
+| AS-048, AS-049, AS-050, AS-051, AS-054, AS-055, AS-058 | Unitario con reconocedor y reloj falsos; AS-051 también de punta a punta en la integración |
+| AS-052, AS-053 (la base), AS-057 | Integración contra PostgreSQL, con control positivo |
+| AS-053 (el código) | Recorrido de los archivos de la escucha |
+| AS-059, AS-060, AS-061 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-062 | Guion contra la API y `clinica-ai` en marcha, fuera del verify |
+| AS-086 (la base), AS-090, AS-094, AS-096, AS-097 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-087, AS-088, AS-089, AS-091, AS-092, AS-093, AS-095, AS-099 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
+| AS-098 | Arnés (`eval/`), fuera del verify |
+| AS-100, AS-101, AS-102 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-119 a AS-125 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
+| AS-119, AS-121 (la base), AS-122, AS-123, AS-125 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-126 | Arnés (`eval/`), fuera del verify |
+| AS-127 | Unitario del proveedor de demostración |
+| AS-118, AS-128 a AS-133 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-200 a AS-207 (la base) | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-203, AS-204, AS-205, AS-206 (el cálculo) | Unitario del dominio con el día de hoy inyectado |
+| SC-097 | Guion contra la API de la rama en marcha, fuera del verify |
+| AS-210 a AS-216 | Componente; recorrido F-04 |
+| AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
+| AS-063 a AS-073, AS-077, AS-078 | Unitario con seudonimizador, proveedor y lector de alergias falsos |
+| AS-064, AS-069, AS-070, AS-072 a AS-076 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-079 | Arnés (`eval/`), fuera del verify |
+| AS-080 a AS-082 | Componente de la pestaña y recorrido F-05 |
+| AS-103 a AS-108, AS-110, AS-112, AS-113 | Unitario con seudonimizador, proveedor y catálogo falsos |
+| AS-104, AS-106, AS-107, AS-109 a AS-111 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-109 (la base) | Integración contra PostgreSQL, con control positivo |
+| AS-114 | Arnés (`eval/`), fuera del verify |
+| AS-115 a AS-117 | Componente de la pestaña y recorrido F-05 |
+| AS-140 a AS-142, AS-144, AS-147 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-143, AS-146, AS-151 | Unitario con almacenes, reloj, reconocedor y proveedor falsos |
+| AS-145 | Integración contra PostgreSQL, con control positivo |
+| AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
 | `ASSISTANT_TRANSCRIPT_EMPTY` | `ValidationError` | 422 | No hay transcripción de la que redactar el borrador (AS-086) |
 | `ASSISTANT_NOTE_NOT_OPEN` | `ConflictError` | 409 | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
 | `ASSISTANT_DRAFT_INTERRUPTED` | `ExternalServiceError` | 503 | La API se reinició mientras redactaba el borrador (AS-093) |

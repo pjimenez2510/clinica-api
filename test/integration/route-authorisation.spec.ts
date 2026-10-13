@@ -442,7 +442,7 @@ describe('every route declares its protection', () => {
     ).toEqual([]);
   });
 
-  it('PA-051 EN-269 declara alcance global en todas las rutas del registro, y sólo las tomas de signos acotan por sede', () => {
+  it('PA-051 EN-269 AS-200 declara alcance global en todas las rutas del registro, y sólo las tomas de signos y la historia acotan por sede', () => {
     /**
      * ES UNA DECISIÓN, NO UN OLVIDO, y esta prueba es donde se lee. La persona
      * registrada en la sede norte es la misma que entra por la sur, y acotar el
@@ -465,7 +465,12 @@ describe('every route declares its protection', () => {
      * `GET /encounters?patientId=`. La ficha sigue siendo global; la lista es
      * exacta para que otra excepción sea una decisión escrita en un diff.
      */
-    const SITE_SCOPED_UNDER_PATIENTS = ['PatientVitalsController.list'];
+    // AS-200, la misma regla: los resultados, las recetas y las visitas de la
+    // historia cuelgan de atenciones, y van acotados como las tomas.
+    const SITE_SCOPED_UNDER_PATIENTS = [
+      'AssistantHistoryController.read',
+      'PatientVitalsController.list',
+    ];
     expect(
       rutas
         .filter((r) => r.siteScope !== 'global')
