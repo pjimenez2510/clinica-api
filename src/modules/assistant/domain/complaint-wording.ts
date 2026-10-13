@@ -14,9 +14,8 @@ import { spokenNumberRuns } from './vitals-dictation';
 
 /** What a wording may add to tie the patient's words: never a finding of its own. */
 const LINKING = new Set([
-  'a', 'al', 'con', 'de', 'del', 'desde', 'e', 'el', 'en', 'hace', 'la',
-  'las', 'lo', 'los', 'para', 'por', 'que', 'se', 'su', 'sus', 'u', 'un',
-  'una', 'unas', 'unos', 'y',
+  'a', 'con', 'de', 'del', 'desde', 'e', 'el', 'en', 'hace', 'la', 'las',
+  'lo', 'los', 'que', 'se', 'su', 'sus', 'u', 'un', 'una', 'y',
   'acude', 'asociada', 'asociado', 'cuadro', 'paciente', 'presenta',
   'refiere', 'sensacion',
 ]); // prettier-ignore
@@ -25,23 +24,34 @@ const LINKING = new Set([
 const DROPPABLE = new Set([
   'ay', 'bueno', 'pues', 'mire', 'oiga', 'este', 'senorita', 'senora',
   'senor', 'doctor', 'doctora', 'doctorita', 'licenciada', 'enfermera',
-  'mijo', 'mija', 'yo', 'me', 'mi', 'mis', 'tengo', 'tenia', 'tiene',
-  'siento', 'sentia', 'siente', 'estoy', 'estaba', 'esta', 'es', 'vengo',
+  'mijo', 'mija', 'yo', 'me', 'mi', 'mis', 'tengo', 'tiene', 'siento',
+  'siente', 'estoy', 'esta', 'es', 'vengo',
   'vine', 'acudo', 'ando', 'da', 'dan', 'hay', 'ya', 'como', 'solo',
   'porque', 'pero', 'eso', 'algo',
 ]); // prettier-ignore
 
 const DENIAL = new Set(['no', 'sin', 'ni', 'nunca', 'niega', 'niegan', 'tampoco', 'nada', 'ningun', 'ninguna', 'ninguno']); // prettier-ignore
 
-/** Someone else's complaint: a companion or a relative (D-260 §16). */
-const SOMEONE_ELSE = /(^| )(mi|mis|su|sus) (mama|papa|madre|padre|hij[oa]s?|espos[oa]|marido|herman[oa]s?|abuel[oa]s?|nin[oa]s?|bebe|ti[oa]|prim[oa]|niet[oa]s?|suegr[oa])( |$)/; // prettier-ignore
+/**
+ * Someone else's complaint: a companion or a relative (D-260 §16), with its diminutives and the
+ * words of the sierra («guagua»), or what hurts someone else («le duele», «a ella»).
+ */
+const SOMEONE_ELSE = /(^| )((mi|mis|su|sus) (mam\w*|pap\w*|madre|padre|hij\w*|espos\w*|marido|senor\w*|mujer|pareja|novi\w*|herman\w*|abuel\w*|nin\w*|nen\w*|beb\w*|guagu\w*|wawa\w*|ti[oa]s?|prim\w*|niet\w*|suegr\w*|cunad\w*|vecin\w*|amig\w*)|le (duele|duelen|dolia|pica|arde)|a (el|ella|ellos|ellas)|les? (da|dio|pasa|paso))( |$)/; // prettier-ignore
+
+/** How much of a duration: «un día» is not «unos días» (second clinical review). */
+const QUANTITY = new Set(['unos', 'unas', 'varios', 'varias', 'algunos', 'algunas', 'pocos', 'pocas', 'muchos', 'muchas']); // prettier-ignore
 
 const DURATION = /^(minutos?|horas?|dias?|semanas?|mes|meses|anos?)$/;
 
-/** «dolor» is how a nurse writes «me duele»; «mareo», «me siento mareada». */
+/**
+ * «dolor» is how a nurse writes «me duele»; «mareo», «me siento mareada»; «se siente», «me
+ * siento». The only words compared other than whole: never by a shared root, which made
+ * «estrés» of «estreñimiento» (second clinical review).
+ */
 const LEMMAS: readonly [RegExp, string][] = [
-  [/^(duel|dol)/, 'dolor'],
+  [/^(duel|dol[eoi])/, 'dolor'],
   [/^mare[oa]/, 'mareo'],
+  [/^(sient|senti)/, 'sentir'],
 ];
 
 const lemmaOf = (word: string) =>
@@ -54,27 +64,36 @@ const bare = (word: string) =>
     .replace(/(?<=[^aeiou])es$/, '')
     .replace(/[ao]$/, '');
 
-/** The same word: by its lemma, whole or with another gender or number, or a long one by its root. */
+/** The same word: by its lemma, or whole, or with another gender or number. */
 function same(a: string, b: string): boolean {
   const lemma = lemmaOf(a);
   if (lemma !== null || lemmaOf(b) !== null) return lemma === lemmaOf(b);
-  if (a === b) return true;
-  if (Math.min(a.length, b.length) <= 5) return bare(a) === bare(b);
-  return a.slice(0, 5) === b.slice(0, 5);
+  if (QUANTITY.has(a) || QUANTITY.has(b)) return a === b;
+  return a === b || bare(a) === bare(b);
 }
 
-/** The phrase without the «no sé» and the «¿no?» at its end, which deny nothing. */
+/**
+ * The phrase without the «no sé» that hesitates —at an end, or before «qué», «si», «cómo»— and
+ * the «¿no?» at its end, which deny nothing; «no sé caminar» does.
+ */
 function spoken(text: string): string {
   return text
-    .replace(/(^|[^\p{L}])no,?\s+sé(?!\p{L})/giu, '$1 ')
+    .replace(
+      /(^|[^\p{L}])no,?\s+sé(?=\s*([,.;:!?]|$|qu[eé]\b|por\s+qu[eé]\b|si\b|c[oó]mo\b))/giu,
+      '$1 ',
+    )
     .replace(/,?\s*¿?\s*no\s*\?[\s.!]*$/iu, '');
 }
 
 const wordsOf = (text: string): string[] =>
   foldText(text).match(/\p{L}+/gu) ?? [];
 
+/** «un día», «una semana»: one of it, counted as a number. */
+const counted = (text: string) =>
+  text.replace(/(^|[^\p{L}])(un|una)\s+(minuto|hora|d[ií]a|semana|mes|año)(?!\p{L})/giu, '$1 1 $3'); // prettier-ignore
+
 const numbersOf = (text: string) =>
-  spokenNumberRuns(text)
+  spokenNumberRuns(counted(text))
     .flatMap((run) => run.map((number) => number.value))
     .sort((a, b) => a - b);
 
@@ -93,11 +112,17 @@ export function groundedWording(written: string, source: string): boolean {
   if (new Set(said.filter((word) => DURATION.test(word)).map(bare)).size > 1) return false; // prettier-ignore
   if (numbers.length > 1) return false;
 
-  // Nothing the patient did not say.
+  // Nothing the patient did not say, and in the order it was said: an onset,
+  // a side or how strong it is stays with its symptom (second clinical review).
   if (words.some((word) => DENIAL.has(word))) return false;
-  const grounded = words.every(
-    (word) => LINKING.has(word) || said.some((each) => same(word, each)),
-  );
+  let at = 0;
+  const grounded = words.every((word) => {
+    if (LINKING.has(word)) return true;
+    const found = said.findIndex((each, index) => index >= at && same(word, each)); // prettier-ignore
+    if (found < 0) return false;
+    at = found;
+    return true;
+  });
   // And nothing the patient said left out.
   const covered = said.every(
     (each) =>

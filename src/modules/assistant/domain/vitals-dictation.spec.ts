@@ -206,6 +206,11 @@ describe('AS-280 a tens or hundreds in figures, «y» and one unit is one number
     expect(interpretDictation('Perímetro cefálico 40 y 5').signs.headCircumferenceCm).toBe(40.5); // prettier-ignore
     expect(interpretDictation('Hemoglobina 20 y 5').signs.hemoglobinGDl).toBe(20.5); // prettier-ignore
     expect(interpretDictation('Peso 70 y 5').signs.weightKg).toBeUndefined();
+    // A newborn's length is said to the millimetre: below 110, never joined.
+    expect(interpretDictation('Talla 50 y 5').signs.heightCm).toBeUndefined();
+    expect(interpretDictation('Talla 70 y 5 centímetros').signs.heightCm).toBeUndefined(); // prettier-ignore
+    expect(interpretDictation('Saturación 90 y 3 l').signs.oxygenSaturation).toBeUndefined(); // prettier-ignore
+    expect(interpretDictation('Saturación 90 y 3 lpm').signs.oxygenSaturation).toBeUndefined(); // prettier-ignore
     expect(interpretDictation('Presión 130 y 5 sobre 80 y 5, saturación 90 y 4').signs).toMatchObject({ systolic: 135, diastolic: 85, oxygenSaturation: 94 }); // prettier-ignore
   });
 });

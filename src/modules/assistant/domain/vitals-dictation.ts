@@ -279,12 +279,16 @@ function positionIn(tokens: Token[]): HeightPosition | null {
  */
 export function spokenNumberRuns(
   text: string,
-  options: { tensAndUnit?: boolean } = {},
+  /** AS-280. The least tens joined, or false: none. */
+  options: { tensAndUnit?: number | false } = {},
 ): { value: number; raw: string }[][] {
   const runs: { value: number; raw: string }[][] = [];
   let run: { value: number; raw: string }[] = [];
   const tokens = tokenize(text);
-  for (const token of options.tensAndUnit ? withTensAndUnit(tokens) : tokens) {
+  const { tensAndUnit = false } = options;
+  for (const token of tensAndUnit === false
+    ? tokens
+    : withTensAndUnit(tokens, tensAndUnit)) {
     if (token.kind === 'number') {
       run.push({ value: token.value, raw: token.raw });
       continue;
@@ -333,7 +337,7 @@ export function ownersOf(text: string, said: number): SaidOwner[] {
   const near = (value: number) => Math.abs(value - said) < 1e-9;
   const tokens = tokenize(text);
   const owned = topicsIn(tokens, true).flatMap((span) => {
-    const body = TENS_AND_UNIT.has(span.topic) ? withTensAndUnit(span.body) : span.body; // prettier-ignore
+    const body = TENS_AND_UNIT.has(span.topic) ? withTensAndUnit(span.body, leastTens(span.topic)) : span.body; // prettier-ignore
     let last = -1;
     body.forEach((token, at) => {
       if (token.kind !== 'number') return;
@@ -469,15 +473,22 @@ function withSpokenNumbers(tokens: Token[]): Token[] {
  */
 const TENS_AND_UNIT = new Set<Topic>(['pressure', 'systolic', 'diastolic', 'heartRate', 'respiratoryRate', 'oxygenSaturation', 'heightCm']); // prettier-ignore
 
+/**
+ * AS-280. A newborn's length is said to the millimetre («50 y 5» is 50.5): a height joins only
+ * from 110 (second clinical review).
+ */
+export const HEIGHT_LEAST_TENS = 110;
+const leastTens = (topic: Topic) => (topic === 'heightCm' ? HEIGHT_LEAST_TENS : 20); // prettier-ignore
+
 /** AS-280. What a unit may count instead: «saturación 90 y 3 litros» is not 93 (revisión m1). */
-const COUNTED = /^(litros?|veces|vez|horas?|dias?|semanas?|meses|mes|anos?|minutos?|respiraciones|latidos)$/; // prettier-ignore
+const COUNTED = /^(litros?|l|lts?|lpm|veces|vez|horas?|dias?|semanas?|meses|mes|anos?|minutos?|respiraciones|latidos)$/; // prettier-ignore
 
 /**
  * AS-280. «150 y 8» is 158: whisper writes «ciento cincuenta y ocho» that way. Only a tens or a
  * hundreds in figures (20…90, 110…190, never 100 or 200) and one unit from 1 to 9, so «120 y 80»,
  * «18 y 97» and «36 y medio» stay what they are.
  */
-function withTensAndUnit(tokens: Token[]): Token[] {
+function withTensAndUnit(tokens: Token[], from = 20): Token[] {
   const out: Token[] = [];
   for (let at = 0; at < tokens.length; at++) {
     const token = tokens[at]!;
@@ -485,7 +496,7 @@ function withTensAndUnit(tokens: Token[]): Token[] {
     if (
       token.kind === 'number' &&
       /^\d+$/.test(token.raw) &&
-      token.value >= 20 &&
+      token.value >= from &&
       token.value % 10 === 0 &&
       token.value % 100 !== 0 &&
       wordAt(tokens, at + 1) === 'y' &&
@@ -755,7 +766,7 @@ function readTopic(topic: Topic, said: Token[]): number[] | null {
   }
 
   const corrected = afterLastCorrection(said);
-  const body = TENS_AND_UNIT.has(topic) ? withTensAndUnit(corrected) : corrected; // prettier-ignore
+  const body = TENS_AND_UNIT.has(topic) ? withTensAndUnit(corrected, leastTens(topic)) : corrected; // prettier-ignore
   const numbers = body.filter(
     (token): token is NumberToken => token.kind === 'number',
   );

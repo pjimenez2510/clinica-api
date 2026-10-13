@@ -2737,16 +2737,17 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   barrera de AS-247) DEBERÁ leer como **un solo número**, en la talla y en
   las medidas que se dicen enteras (presión, pulso, frecuencia
   respiratoria, saturación), una decena o una centena escrita en cifras
-  (20, 30… 90, 110… 190, 210…; nunca 100, 200 ni un número que no termine
-  en cero) seguida de «y» y de una sola unidad del 1 al 9, en cifras o en
-  palabras, que no cuente otra cosa («litros», «veces», «días»…): «talla
+  (20, 30… 90, 110… 190, 210…; en la talla, sólo desde 110; nunca 100, 200
+  ni un número que no termine en cero) seguida de «y» y de una sola unidad
+  del 1 al 9, en cifras o en palabras, que no cuente otra cosa («litros»,
+  «l», «lpm», «veces», «días»…): «talla
   150 y 8» es 158, «saturación 90 y 4» es 94, «talla 150 y ocho» es 158; y
   «ciento cincuenta y ocho», como hasta hoy, 158. La frase citada DEBERÁ
   seguir siendo la dicha. NO DEBERÁ unir lo que no es esa forma —«presión
   120 y 80», «36 y medio», «18 y 97», «70 y 2.5», «saturación 90 y 3
   litros»— ni nada en la temperatura, los perímetros, la hemoglobina y el
-  peso, que siguen como antes («temperatura 40 y 2» es 40,2; «peso 70 y 5»
-  no se propone; D-263 §3). En esos campos, la barrera de AS-247 NO DEBERÁ
+  peso, ni en una talla bajo 110, que siguen como antes («temperatura 40 y
+  2» es 40,2; «peso 70 y 5» y «talla 50 y 5» no se proponen; D-263 §3). En esos campos, la barrera de AS-247 NO DEBERÁ
   proponer ninguno de los dos números de un «X y U»: «peso 80 y 3» no es
   un peso de 3.
   > Whisper escribe así lo que se dice «ciento cincuenta y ocho»; es la
@@ -2761,16 +2762,19 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-282** — El motivo propuesto DEBERÁ ser la redacción SÓLO SI, frente
   a la frase entera de AS-249 (su **fuente**): (a) no es más larga que
   ella ni que 500 caracteres; (b) cada palabra suya la dijo el paciente
-  —comparadas sin mayúsculas, tildes ni signos: la misma palabra o con otro
-  género o número, las de seis letras o más por sus cinco primeras, y
-  «dolor» por «duele», «mareo» por «mareada»—, salvo las de enlace y de
-  redacción («de», «con», «desde», «hace», «sensación», «refiere»…); (c)
-  cada palabra con contenido que dijo el paciente está en ella, salvo
-  muletillas, vocativos, la primera persona y verbos de apoyo («tengo»,
-  «me siento», «vengo»); (d) dice los mismos números que la fuente; y (e)
-  no niega nada. Y NO DEBERÁ creerse ninguna redacción si la fuente niega
-  algo (sin contar «no sé» ni el «¿no?» final), nombra a otra persona («mi
-  mamá», «mi hijo», «mi esposo»…), dice derecha e izquierda, o trae más de
+  **en el mismo orden** —comparadas sin mayúsculas, tildes ni signos: la
+  misma palabra o con otro género o número, nunca por una raíz común, y
+  «dolor» por «duele», «mareo» por «mareada», «siente» por «siento»—, salvo
+  las de enlace y de redacción («de», «con», «desde», «hace», «sensación»,
+  «refiere»…; nunca «al», «por» ni «para», que añaden una causa, ni
+  «unos», «varios», que cambian una cantidad); (c) cada palabra con
+  contenido que dijo el paciente está en ella, salvo muletillas,
+  vocativos, la primera persona y verbos de apoyo en presente («tengo»,
+  «me siento», «vengo»); (d) dice los mismos números que la fuente, «un
+  día» como 1; y (e) no niega nada. Y NO DEBERÁ creerse ninguna redacción si la fuente niega
+  algo (sin contar el «no sé» que duda ni el «¿no?» final), nombra a otra
+  persona («mi mamá», «mi hijito», «mi señora», «mi guagua», «le duele»,
+  «a ella»…), dice derecha e izquierda, o trae más de
   una duración o más de un número: lo que una comparación palabra por
   palabra no distingue. SI no las pasa, o el modelo no la da, ENTONCES el
   motivo DEBERÁ ser la frase entera, como AS-249. La respuesta DEBERÁ

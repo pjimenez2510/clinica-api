@@ -97,6 +97,70 @@ describe('AS-282 a reason worded only from what the patient said', () => {
     ).toEqual(Array(10).fill(false));
   });
 
+  it('AS-282 a wording that moves an attribute from one symptom to another is not believed (second review)', () => {
+    expect(
+      changed([
+        [
+          'Me duele la cabeza desde ayer y el estómago desde hoy.',
+          'Dolor de estómago desde ayer y de cabeza desde hoy.',
+        ],
+        [
+          'Tengo fiebre desde el lunes y me duele la cabeza desde el martes',
+          'Dolor de cabeza desde el lunes, fiebre desde el martes',
+        ],
+        [
+          'Me duele el brazo izquierdo y la pierna',
+          'Dolor de pierna izquierda y brazo',
+        ],
+        [
+          'Me duele leve la cabeza y fuerte el estómago',
+          'Dolor fuerte de cabeza y leve de estómago',
+        ],
+        [
+          'Se me quitó el dolor de cabeza pero sigo con tos',
+          'Sigo con dolor de cabeza, se quitó la tos',
+        ],
+      ]),
+    ).toEqual(Array(5).fill(false));
+  });
+
+  it('AS-282 someone else named in other words keeps the patient’s own words', () => {
+    expect(
+      changed([
+        ['Mi señora tiene fiebre y yo tengo tos', 'Fiebre y tos'],
+        [
+          'Mi señor tiene fiebre y a mí me duele la cabeza',
+          'Dolor de cabeza y fiebre',
+        ],
+        ['Mi hijito tiene tos y yo tengo fiebre', 'Hijito con tos y fiebre'],
+        ['Mi guagua tiene fiebre', 'Guagua con fiebre'],
+        ['A ella le duele la cabeza', 'Dolor de cabeza'],
+      ]),
+    ).toEqual(Array(5).fill(false));
+  });
+
+  it('AS-282 a root, a cause, an amount or a tense the patient did not say is not believed', () => {
+    expect(
+      changed([
+        [
+          'Ay, señorita, tengo estrés desde hace días',
+          'Estreñimiento desde hace días',
+        ],
+        ['Ay señorita tengo pesadillas desde ayer', 'Pesadez desde ayer'],
+        ['Me duele el pecho y camino', 'Dolor de pecho al caminar'],
+        ['Me duele el pecho y tengo tos', 'Dolor de pecho por la tos'],
+        [
+          'Ay señorita, fiebre desde hace un día',
+          'Fiebre desde hace unos días',
+        ],
+        ['Tos desde hace una semana', 'Tos desde hace unas semanas'],
+        ['Tenía fiebre', 'Fiebre'],
+        ['Desde ayer no sé caminar bien', 'Camina bien desde ayer'],
+      ]),
+    ).toEqual(Array(8).fill(false));
+    expect(groundedWording('Fiebre desde hace un día', 'Ay señorita, tengo fiebre desde hace un día')).toBe(true); // prettier-ignore
+  });
+
   it('AS-282 an empty wording, or one longer than the phrase, is not believed', () => {
     expect(groundedWording('', ROSA)).toBe(false);
     expect(groundedWording('   ', ROSA)).toBe(false);

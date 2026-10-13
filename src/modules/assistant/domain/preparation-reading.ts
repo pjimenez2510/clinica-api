@@ -7,6 +7,7 @@ import {
 import { lineOf, type TranscriptLine } from './note-draft';
 import { foldText } from './problem-coding';
 import {
+  HEIGHT_LEAST_TENS,
   joinedNumbers,
   ownersOf,
   spokenNumberRuns,
@@ -138,7 +139,7 @@ const POSITION_WORDS: Readonly<Record<HeightPosition, RegExp>> = {
 export function saidIn(phrase: string, field?: DictatedVitalField): number[] {
   const said: number[] = [];
   // AS-280. «150 y 8» is 158 only for a reading said whole, or a height.
-  const tensAndUnit = field !== undefined && (WHOLE.has(field) || field === 'heightCm'); // prettier-ignore
+  const tensAndUnit = field === 'heightCm' ? HEIGHT_LEAST_TENS : field !== undefined && WHOLE.has(field) ? 20 : false; // prettier-ignore
   for (const run of spokenNumberRuns(phrase, { tensAndUnit })) {
     run.forEach((number, at) => {
       said.push(number.value);
@@ -287,7 +288,7 @@ function says(quote: string, said: number, field: DictatedVitalField): boolean {
   const apart = spokenNumberRuns(quote)
     .flat()
     .map((each) => each.value);
-  const joined = spokenNumberRuns(quote, { tensAndUnit: true }).flat().map((each) => each.value); // prettier-ignore
+  const joined = spokenNumberRuns(quote, { tensAndUnit: 20 }).flat().map((each) => each.value); // prettier-ignore
   return !apart.some(near) || joined.some(near);
 }
 
