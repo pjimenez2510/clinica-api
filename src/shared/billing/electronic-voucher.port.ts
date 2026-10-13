@@ -52,7 +52,9 @@ export type ElectronicVoucherState =
   | 'RECEIVED'
   | 'AUTHORISED'
   | 'RETURNED'
-  | 'NOT_AUTHORISED';
+  | 'NOT_AUTHORISED'
+  /** SRI-109. Replaced by a renumbering; never the current one of a document. */
+  | 'SUPERSEDED';
 
 export interface ElectronicVoucherSummary {
   voucherId: string;
@@ -65,6 +67,15 @@ export interface ElectronicVoucherSummary {
   deliveryStatus: string | null;
   /** The SRI's last message, for the screen. */
   lastMessage: { identifier: string; message: string } | null;
+  /** SRI-108. Returned only with the 45 and never authorised: renumber it. */
+  renumberable: boolean;
+  /** SRI-109. The numbers the SRI already held, oldest first. */
+  renumberedFrom: {
+    documentNumber: string;
+    at: Date;
+    byName: string;
+    sriMessage: string;
+  }[];
 }
 
 export interface ElectronicVoucherStatusReader {

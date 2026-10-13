@@ -36,6 +36,22 @@ export class ElectronicVoucherNotRetriableError extends ConflictError {
   }
 }
 
+/**
+ * SRI-110. Only a voucher returned ONLY with the 45 and never authorised gets
+ * another number: anything else is corrected, re-sent or credited as before.
+ */
+export class ElectronicVoucherNotRenumberableError extends ConflictError {
+  readonly code = 'SRI_VOUCHER_NOT_RENUMBERABLE';
+  override readonly userTitle =
+    'Ese comprobante no se renumera: sólo el que el SRI devolvió con «secuencial registrado» y nunca autorizó';
+
+  constructor() {
+    super(
+      'Only a voucher returned only with error 45 and never authorised is renumbered',
+    );
+  }
+}
+
 /** SRI-096. Only what the SRI authorised is e-mailed: there is no RIDE to send. */
 export class ElectronicVoucherNotAuthorisedError extends ConflictError {
   readonly code = 'SRI_VOUCHER_NOT_AUTHORISED';

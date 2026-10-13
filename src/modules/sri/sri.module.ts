@@ -15,6 +15,7 @@ import { MAILER } from '../../shared/mail/mail.port';
 
 import { SigningCertificateService } from './application/signing-certificate.service';
 import { VoucherDispatchService } from './application/voucher-dispatch.service';
+import { VoucherRenumberingService } from './application/voucher-renumbering.service';
 import { VoucherMonitorService } from './application/voucher-monitor.service';
 import { VoucherPreparationService } from './application/voucher-preparation.service';
 import {
@@ -65,6 +66,8 @@ import {
     VoucherPreparationService,
     VoucherDispatchService,
     VoucherMonitorService,
+    // SRI-108 to SRI-114 (D-262). The voucher returned with the 45.
+    VoucherRenumberingService,
     SigningCertificateService,
     CurrentUserService,
     SriQueues,

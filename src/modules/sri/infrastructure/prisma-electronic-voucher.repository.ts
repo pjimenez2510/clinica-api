@@ -21,6 +21,9 @@ import {
   type VoucherRecord,
   type VoucherDocument,
   type VoucherMailing,
+  type RenumberCandidate,
+  type Renumbered,
+  type RenumberingView,
   type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
@@ -156,6 +159,18 @@ function totalsOf(row: {
   };
 }
 
+/**
+ * SRI-108. Whether the SRI ever authorised a voucher: its number, or any
+ * attempt answered `AUTORIZADO` (the number is written with the status, so an
+ * attempt alone would be a voucher left half-way).
+ */
+const EVER_AUTHORISED_SELECT = {
+  authorisationNumber: true,
+  _count: {
+    select: { attempts: { where: { outcome: 'AUTORIZADO' } } },
+  },
+} satisfies Prisma.ElectronicVoucherSelect;
+
 /** SRI-060, SRI-088. What `billing` shows beside each document. */
 const STATUS_SELECT = {
   id: true,
@@ -167,6 +182,7 @@ const STATUS_SELECT = {
   authorisedAt: true,
   deliveryStatus: true,
   lastMessages: true,
+  ...EVER_AUTHORISED_SELECT,
 } satisfies Prisma.ElectronicVoucherSelect;
 
 function toStatusView(
@@ -182,6 +198,8 @@ function toStatusView(
     authorisedAt: row.authorisedAt,
     deliveryStatus: row.deliveryStatus as DeliveryStatus | null,
     lastMessages: messagesOf(row.lastMessages),
+    authorisationNumber: row.authorisationNumber,
+    everAuthorised: row._count.attempts > 0,
   };
 }
 
@@ -211,6 +229,7 @@ const MONITOR_VOUCHER_SELECT = {
     take: 1,
     select: { startedAt: true },
   },
+  ...EVER_AUTHORISED_SELECT,
 } satisfies Prisma.ElectronicVoucherSelect;
 
 type MonitorVoucherRow = Prisma.ElectronicVoucherGetPayload<{
@@ -440,8 +459,10 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
   }
 
   async findById(id: string): Promise<VoucherRecord | null> {
-    const row = await this.prisma.electronicVoucher.findUnique({
-      where: { id },
+    // SRI-112. A SUPERSEDED voucher belongs to no document: for the queue and
+    // the routes it is not there, so a job that finds it ends untouched.
+    const row = await this.prisma.electronicVoucher.findFirst({
+      where: { id, status: { not: 'SUPERSEDED' } },
       select: VOUCHER_SELECT,
     });
     return row ? toRecord(row) : null;
@@ -468,10 +489,22 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     sites: readonly string[] | 'all',
   ): Promise<VoucherRecord | null> {
     const row = await this.prisma.electronicVoucher.findFirst({
-      where: { id, ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }) },
+      where: {
+        id,
+        status: { not: 'SUPERSEDED' },
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+      },
       select: VOUCHER_SELECT,
     });
     return row ? toRecord(row) : null;
+  }
+
+  async siteOf(id: string): Promise<string | null> {
+    const row = await this.prisma.electronicVoucher.findUnique({
+      where: { id },
+      select: { siteId: true },
+    });
+    return row?.siteId ?? null;
   }
 
   async block(id: string, reason: BlockedReason): Promise<void> {
@@ -555,6 +588,138 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         });
       }
       return true;
+    });
+  }
+
+  async renumber(
+    id: string,
+    by: { userId: string; at: Date },
+    admits: (voucher: RenumberCandidate) => boolean,
+  ): Promise<Renumbered | null> {
+    return this.prisma.$transaction(async (tx) => {
+      // The voucher first, then its document: the same order as `reopen`, so
+      // a «Reintentar» and a «Renumerar» at once wait for each other.
+      const [voucher] = await tx.$queryRaw<
+        {
+          id: string;
+          invoice_id: string | null;
+          credit_note_id: string | null;
+          site_id: string;
+          status: string;
+          authorisation_number: string | null;
+          access_key: string;
+          last_messages: unknown;
+        }[]
+      >`
+        SELECT "id", "invoice_id", "credit_note_id", "site_id", "status",
+               "authorisation_number", "access_key", "last_messages"
+          FROM "electronic_voucher" WHERE "id" = ${id}::uuid FOR UPDATE`;
+      if (!voucher) return null;
+      if (voucher.invoice_id === null && voucher.credit_note_id === null) {
+        return null; // Already SUPERSEDED: somebody renumbered it first.
+      }
+      const document = documentOf({
+        id: voucher.id,
+        invoiceId: voucher.invoice_id,
+        creditNoteId: voucher.credit_note_id,
+      });
+      const [current] =
+        document.kind === 'INVOICE'
+          ? await tx.$queryRaw<
+              {
+                status: string;
+                sequential: string;
+                emission_point_id: string;
+              }[]
+            >`
+              SELECT "status", "sequential", "emission_point_id" FROM "invoice"
+               WHERE "id" = ${document.invoiceId}::uuid FOR UPDATE`
+          : await tx.$queryRaw<
+              {
+                status: string;
+                sequential: string;
+                emission_point_id: string;
+              }[]
+            >`
+              SELECT "status", "sequential", "emission_point_id" FROM "credit_note"
+               WHERE "id" = ${document.creditNoteId}::uuid FOR UPDATE`;
+      if (!current) return null;
+      const authorisedAttempts = await tx.electronicVoucherAttempt.count({
+        where: { voucherId: id, outcome: 'AUTORIZADO' },
+      });
+      const lastMessages = messagesOf(
+        voucher.last_messages as Prisma.JsonValue,
+      );
+      if (
+        !admits({
+          status: voucher.status as VoucherStatus,
+          authorisationNumber: voucher.authorisation_number,
+          everAuthorised: authorisedAttempts > 0,
+          lastMessages,
+          documentStatus: current.status,
+        })
+      ) {
+        return null;
+      }
+
+      const [{ sequential }] = await tx.$queryRaw<[{ sequential: string }]>`
+        SELECT next_voucher_sequential(
+                 ${current.emission_point_id}::uuid,
+                 ${documentTypeOf(document)}::char(2)) AS "sequential"`;
+      // What the SRI said, as it said it: the reason the number is a hole.
+      const sriMessage = lastMessages
+        .map((m) =>
+          [m.identifier, m.message, m.additionalInformation]
+            .filter(Boolean)
+            .join(' · '),
+        )
+        .join(' | ')
+        .slice(0, 1000);
+
+      await tx.voucherRenumbering.create({
+        data: {
+          supersededVoucherId: voucher.id,
+          previousAccessKey: voucher.access_key,
+          invoiceId: document.kind === 'INVOICE' ? document.invoiceId : null,
+          creditNoteId:
+            document.kind === 'CREDIT_NOTE' ? document.creditNoteId : null,
+          emissionPointId: current.emission_point_id,
+          previousSequential: current.sequential,
+          newSequential: sequential,
+          sriMessage,
+          renumberedById: by.userId,
+          renumberedAt: by.at,
+        },
+      });
+      // SRI-111. The document first: it stops naming the old key, so the
+      // voucher can let go of it.
+      if (document.kind === 'INVOICE') {
+        await tx.invoice.update({
+          where: { id: document.invoiceId },
+          data: { sequential, accessKey: null, status: 'ISSUED' },
+        });
+      } else {
+        await tx.creditNote.update({
+          where: { id: document.creditNoteId },
+          data: { sequential, accessKey: null, status: 'ISSUED' },
+        });
+      }
+      await tx.electronicVoucher.update({
+        where: { id },
+        data: {
+          status: 'SUPERSEDED',
+          invoiceId: null,
+          creditNoteId: null,
+          nextAttemptAt: null,
+        },
+      });
+
+      return {
+        document,
+        siteId: voucher.site_id,
+        previousSequential: current.sequential,
+        newSequential: sequential,
+      };
     });
   }
 
@@ -919,6 +1084,8 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       | 'nextAttemptAt'
       | 'receivedAt'
       | 'lastTransportFailure'
+      | 'authorisationNumber'
+      | 'everAuthorised'
     > => ({
       voucherId: voucher?.id ?? null,
       status: (voucher?.status ?? 'NO_VOUCHER') as MonitorRow['status'],
@@ -929,6 +1096,8 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       nextAttemptAt: voucher?.nextAttemptAt ?? null,
       receivedAt: voucher?.attempts[0]?.startedAt ?? null,
       lastTransportFailure: (voucher && failures.get(voucher.id)) ?? null,
+      authorisationNumber: voucher?.authorisationNumber ?? null,
+      everAuthorised: (voucher?._count.attempts ?? 0) > 0,
     });
 
     return [
@@ -1080,6 +1249,48 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       select: STATUS_SELECT,
     });
     return rows.map((row) => toStatusView(row, invoiceIdOf(row)));
+  }
+
+  /** SRI-109. Oldest first, of the invoices and the credit notes asked. */
+  async renumberingsOf(documents: {
+    invoiceIds: readonly string[];
+    creditNoteIds: readonly string[];
+  }): Promise<RenumberingView[]> {
+    if (documents.invoiceIds.length + documents.creditNoteIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.voucherRenumbering.findMany({
+      where: {
+        OR: [
+          { invoiceId: { in: [...documents.invoiceIds] } },
+          { creditNoteId: { in: [...documents.creditNoteIds] } },
+        ],
+      },
+      orderBy: { renumberedAt: 'asc' },
+      select: {
+        invoiceId: true,
+        creditNoteId: true,
+        previousAccessKey: true,
+        newSequential: true,
+        renumberedAt: true,
+        sriMessage: true,
+        renumberedBy: { select: { firstName: true, lastName: true } },
+      },
+    });
+    return rows.map((row) => ({
+      documentId: (row.invoiceId ?? row.creditNoteId)!,
+      // The number the SRI held is the one of the key it returned.
+      previousNumber: invoiceDocumentNumber({
+        accessKey: row.previousAccessKey,
+        establishmentCode: null,
+        emissionPointCode: '',
+        sequential: '',
+      }),
+      newSequential: row.newSequential,
+      renumberedAt: row.renumberedAt,
+      renumberedByName: `${row.renumberedBy.firstName} ${row.renumberedBy.lastName}`,
+      sriMessage: row.sriMessage,
+    }));
   }
 
   async statusOfCreditNotes(

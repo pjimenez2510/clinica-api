@@ -1069,6 +1069,7 @@ export const electronicStateSchema = z.object({
     'AUTHORISED',
     'RETURNED',
     'NOT_AUTHORISED',
+    'SUPERSEDED',
   ]),
   blockedReason: z.string().nullable(),
   accessKey: z.string(),
@@ -1077,6 +1078,17 @@ export const electronicStateSchema = z.object({
   lastMessage: z
     .object({ identifier: z.string(), message: z.string() })
     .nullable(),
+  /** SRI-108. Returned only with the 45 and never authorised: renumber it. */
+  renumberable: z.boolean(),
+  /** SRI-109. The numbers the SRI already held, oldest first. */
+  renumberedFrom: z.array(
+    z.object({
+      documentNumber: z.string(),
+      at: z.iso.datetime(),
+      byName: z.string(),
+      sriMessage: z.string(),
+    }),
+  ),
 });
 
 const invoiceResponseSchema = z.object({

@@ -13,6 +13,7 @@ import {
   ELECTRONIC_VOUCHER_REPOSITORY,
   type ElectronicVoucherRepository,
   type MonitorRow,
+  type RenumberingView,
   type StalledDeliveries,
   type TransportFailureDetail,
   type VoucherRecord,
@@ -33,6 +34,7 @@ import {
   type SriWebService,
 } from '../domain/sri-web-service';
 import {
+  isRenumberable,
   isRetriableByAPerson,
   needsAPerson,
 } from '../domain/voucher-lifecycle';
@@ -65,6 +67,10 @@ export interface MonitorView {
     missingData: string[];
     /** SRI-055, D-102. Its key is of the environment not configured. */
     environmentMismatch: boolean;
+    /** SRI-108. Returned only with the 45 and never authorised. */
+    renumberable: boolean;
+    /** SRI-109. The numbers the SRI already held, oldest first. */
+    renumberedFrom: RenumberingView[];
   })[];
   certificate: CertificateHealth;
   /** SRI-054. The web service is not declared: vouchers wait signed. */
@@ -96,8 +102,17 @@ export class VoucherMonitorService
   /** SRI-061, SRI-062. People first, the queue's own work after. */
   async monitor(sites: Requester['sites']): Promise<MonitorView> {
     const now = this.clock();
+    const listed = await this.vouchers.monitor(sites);
+    const renumberings = await this.vouchers.renumberingsOf({
+      invoiceIds: listed.flatMap((row) =>
+        row.creditNoteId === null ? [row.invoiceId] : [],
+      ),
+      creditNoteIds: listed.flatMap((row) =>
+        row.creditNoteId === null ? [] : [row.creditNoteId],
+      ),
+    });
     const rows = await Promise.all(
-      (await this.vouchers.monitor(sites)).map(async (row) => {
+      listed.map(async (row) => {
         // The 24th digit of the key is its environment (SRI-070).
         const environmentMismatch =
           row.accessKey !== null &&
@@ -111,6 +126,13 @@ export class VoucherMonitorService
           // SRI-008. An invoice without a voucher says which datum it lacks.
           missingData:
             row.status === 'NO_VOUCHER' ? await this.missingDataOf(row) : [],
+          renumberable:
+            row.status !== 'NO_VOUCHER' &&
+            isRenumberable({ ...row, status: row.status }),
+          renumberedFrom: renumberings.filter(
+            (renumbering) =>
+              renumbering.documentId === (row.creditNoteId ?? row.invoiceId),
+          ),
         };
       }),
     );
@@ -299,19 +321,26 @@ export class VoucherMonitorService
   async summariesOf(
     invoiceIds: readonly string[],
   ): Promise<Map<string, ElectronicVoucherSummary>> {
-    return summaries(await this.vouchers.statusOfInvoices(invoiceIds));
+    return summaries(
+      await this.vouchers.statusOfInvoices(invoiceIds),
+      await this.vouchers.renumberingsOf({ invoiceIds, creditNoteIds: [] }),
+    );
   }
 
   /** SRI-088. The same beside each credit note. */
   async summariesOfCreditNotes(
     creditNoteIds: readonly string[],
   ): Promise<Map<string, ElectronicVoucherSummary>> {
-    return summaries(await this.vouchers.statusOfCreditNotes(creditNoteIds));
+    return summaries(
+      await this.vouchers.statusOfCreditNotes(creditNoteIds),
+      await this.vouchers.renumberingsOf({ invoiceIds: [], creditNoteIds }),
+    );
   }
 }
 
 function summaries(
   views: readonly VoucherStatusView[],
+  renumberings: readonly RenumberingView[],
 ): Map<string, ElectronicVoucherSummary> {
   return new Map(
     views.map((view) => {
@@ -328,6 +357,15 @@ function summaries(
           lastMessage: last
             ? { identifier: last.identifier, message: last.message }
             : null,
+          renumberable: isRenumberable(view),
+          renumberedFrom: renumberings
+            .filter((renumbering) => renumbering.documentId === view.documentId)
+            .map((renumbering) => ({
+              documentNumber: renumbering.previousNumber,
+              at: renumbering.renumberedAt,
+              byName: renumbering.renumberedByName,
+              sriMessage: renumbering.sriMessage,
+            })),
         },
       ];
     }),

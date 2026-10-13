@@ -433,6 +433,9 @@ export const DOMAIN_ERROR_CODES = [
   'SRI_VOUCHER_NOT_AUTHORISED',
   'SRI_VOUCHER_NOT_FOUND',
   'SRI_VOUCHER_NOT_RETRIABLE',
+  // SRI-110 (D-262). Sólo se renumera lo devuelto únicamente con el 45 y
+  // nunca autorizado (409).
+  'SRI_VOUCHER_NOT_RENUMBERABLE',
   'SITE_IN_USE',
   // OR-032. La sede nace con su establecimiento: sin él, no hay sede.
   'SITE_ESTABLISHMENT_REQUIRED',

@@ -25,7 +25,13 @@ import { PrismaDocumentSourceReader } from '../../src/modules/documents/infrastr
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { SigningCertificateService } from '../../src/modules/sri/application/signing-certificate.service';
 import { VoucherDispatchService } from '../../src/modules/sri/application/voucher-dispatch.service';
+import { VoucherMonitorService } from '../../src/modules/sri/application/voucher-monitor.service';
 import { VoucherPreparationService } from '../../src/modules/sri/application/voucher-preparation.service';
+import { VoucherRenumberingService } from '../../src/modules/sri/application/voucher-renumbering.service';
+import {
+  ElectronicVoucherNotFoundError,
+  ElectronicVoucherNotRenumberableError,
+} from '../../src/modules/sri/domain/sri.errors';
 import type { SriSettings } from '../../src/modules/sri/domain/sri-web-service';
 import { AesGcmCertificateCipher } from '../../src/modules/sri/infrastructure/aes-gcm-certificate.cipher';
 import { EcSriXadesSigner } from '../../src/modules/sri/infrastructure/ec-sri-xades.signer';
@@ -1300,5 +1306,332 @@ describe('SRI-085, SRI-087 la nota de crédito por el camino de la factura', () 
       where: { creditNoteId },
     });
     expect(stored.status).toBe('SIGNED');
+  });
+});
+
+/**
+ * sri/S12 (D-262). The voucher the SRI returned with the 45 —it already holds
+ * that number, from another database or another system with the same RUC— is
+ * given the next number and a new key, and goes out again. The 45 comes from
+ * the double, which is told the number is taken (SRI-115).
+ */
+describe('SRI-108 a SRI-114 renumerar lo devuelto con «secuencial registrado»', () => {
+  const requester = (sites: readonly string[] | 'all' = 'all') => ({
+    userId,
+    sites,
+  });
+
+  function renumbering() {
+    const service = prisma as unknown as PrismaService;
+    return new VoucherRenumberingService(
+      new PrismaElectronicVoucherRepository(service),
+      { record: () => Promise.resolve() },
+      preparation,
+      NOW,
+    );
+  }
+
+  function summaries() {
+    const service = prisma as unknown as PrismaService;
+    const vouchers = new PrismaElectronicVoucherRepository(service);
+    return new VoucherMonitorService(
+      vouchers,
+      new FetchSriWebService(config),
+      { record: () => Promise.resolve() },
+      preparation,
+      certificates,
+      NOW,
+      settings,
+      dispatch,
+    );
+  }
+
+  /** The number this voucher carries, declared taken at the SRI. */
+  function takenAtTheSri(sequential: string) {
+    double.takeSequential({
+      documentType: '01',
+      establishmentCode: '001',
+      emissionPointCode: '001',
+      sequential,
+    });
+  }
+
+  async function aReturned45() {
+    const { invoice, voucher } = await aSignedVoucher();
+    takenAtTheSri(invoice.sequential);
+    await dispatch.run('SEND', voucher.id);
+    expect((await voucherOf(invoice.id)).status).toBe('RETURNED');
+    expect((await invoiceRow(invoice.id)).status).toBe('REJECTED');
+    return { invoice, voucher };
+  }
+
+  it('SRI-108 SRI-109 la devuelta con el 45 se renumera con el siguiente, otra clave, y queda autorizada con su rastro', async () => {
+    const { invoice, voucher } = await aReturned45();
+    const before = await prisma.chargeItem.findMany({
+      where: { invoiceId: invoice.id },
+      select: { id: true, status: true },
+    });
+
+    // SRI-108. The summary says it can be renumbered, and why.
+    const summary = (await summaries().summariesOf([invoice.id])).get(
+      invoice.id,
+    )!;
+    expect(summary).toMatchObject({
+      state: 'RETURNED',
+      renumberable: true,
+      lastMessage: { identifier: '45' },
+    });
+
+    const renumbered = await renumbering().renumber(voucher.id, requester());
+    expect(renumbered).toMatchObject({
+      previousSequential: invoice.sequential,
+      newSequential: '000000002',
+    });
+
+    // The new voucher: another key with the new number, signed.
+    const fresh = await voucherOf(invoice.id);
+    expect(fresh.id).not.toBe(voucher.id);
+    expect(fresh.accessKey).not.toBe(voucher.accessKey);
+    expect(fresh.accessKey.slice(30, 39)).toBe('000000002');
+    expect(fresh.numericCode).not.toBe(voucher.numericCode);
+    // Same date of issuance: the key's first eight digits.
+    expect(fresh.accessKey.slice(0, 8)).toBe(voucher.accessKey.slice(0, 8));
+    expect(fresh.status).toBe('SIGNED');
+
+    const row = await invoiceRow(invoice.id);
+    expect(row).toMatchObject({
+      sequential: '000000002',
+      accessKey: fresh.accessKey,
+      status: 'ISSUED',
+      buyerEmail: 'maria@example.com',
+    });
+
+    // The old one: kept with its attempt, attached to nothing.
+    const old = await prisma.electronicVoucher.findUniqueOrThrow({
+      where: { id: voucher.id },
+      include: { attempts: true },
+    });
+    expect(old).toMatchObject({ status: 'SUPERSEDED', invoiceId: null });
+    expect(old.attempts).toHaveLength(1);
+
+    const trail = await prisma.voucherRenumbering.findFirstOrThrow({
+      where: { invoiceId: invoice.id },
+    });
+    expect(trail).toMatchObject({
+      supersededVoucherId: voucher.id,
+      previousAccessKey: voucher.accessKey,
+      previousSequential: invoice.sequential,
+      newSequential: '000000002',
+      renumberedById: userId,
+    });
+    expect(trail.sriMessage).toContain('45');
+
+    // The account does not notice: the same charges, billed by it.
+    expect(
+      await prisma.chargeItem.findMany({
+        where: { invoiceId: invoice.id },
+        select: { id: true, status: true },
+      }),
+    ).toEqual(before);
+
+    // And the SRI authorises it.
+    await dispatch.run('SEND', fresh.id);
+    await dispatch.run('AUTHORISE', fresh.id);
+    expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
+
+    const after = (await summaries().summariesOf([invoice.id])).get(
+      invoice.id,
+    )!;
+    expect(after.renumberable).toBe(false);
+    expect(after.renumberedFrom).toEqual([
+      expect.objectContaining({
+        documentNumber: `001-001-${invoice.sequential}`,
+        sriMessage: trail.sriMessage,
+      }),
+    ]);
+  });
+
+  it('SRI-112 el comprobante reemplazado no vuelve al SRI ni al monitor', async () => {
+    const { invoice, voucher } = await aReturned45();
+    await renumbering().renumber(voucher.id, requester());
+
+    // A job of the old voucher still in the queue ends without a call.
+    const calls = double.callsFor(voucher.accessKey).length;
+    await dispatch.run('SEND', voucher.id);
+    await dispatch.run('AUTHORISE', voucher.id);
+    expect(double.callsFor(voucher.accessKey)).toHaveLength(calls);
+
+    const monitor = await summaries().monitor('all');
+    const rows = monitor.rows.filter((row) => row.invoiceId === invoice.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: 'SIGNED',
+      renumberable: false,
+      renumberedFrom: [expect.objectContaining({ newSequential: '000000002' })],
+    });
+  });
+
+  it('SRI-114 si la renumerada vuelve con el 45, se ofrece otra vez y sale con la siguiente', async () => {
+    const { invoice, voucher } = await aReturned45();
+    takenAtTheSri('000000002');
+
+    await renumbering().renumber(voucher.id, requester());
+    const second = await voucherOf(invoice.id);
+    await dispatch.run('SEND', second.id);
+    expect((await voucherOf(invoice.id)).status).toBe('RETURNED');
+    expect(
+      (await summaries().summariesOf([invoice.id])).get(invoice.id)!
+        .renumberable,
+    ).toBe(true);
+
+    const again = await renumbering().renumber(second.id, requester());
+    expect(again.newSequential).toBe('000000003');
+    const third = await voucherOf(invoice.id);
+    await dispatch.run('SEND', third.id);
+    await dispatch.run('AUTHORISE', third.id);
+    expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
+    expect(
+      await prisma.voucherRenumbering.count({
+        where: { invoiceId: invoice.id },
+      }),
+    ).toBe(2);
+  });
+
+  it('SRI-110 una devuelta por otro error, una autorizada o una ya renumerada no se renumera, y no cambia nada', async () => {
+    const { invoice, voucher } = await aSignedVoucher();
+    double.setScenario(voucher.accessKey, 'RETURNED_35');
+    await dispatch.run('SEND', voucher.id);
+
+    await expect(
+      renumbering().renumber(voucher.id, requester()),
+    ).rejects.toBeInstanceOf(ElectronicVoucherNotRenumberableError);
+    expect(await invoiceRow(invoice.id)).toMatchObject({
+      sequential: invoice.sequential,
+      accessKey: voucher.accessKey,
+      status: 'REJECTED',
+    });
+
+    const authorised = await aSignedVoucher();
+    await dispatch.run('SEND', authorised.voucher.id);
+    await dispatch.run('AUTHORISE', authorised.voucher.id);
+    await expect(
+      renumbering().renumber(authorised.voucher.id, requester()),
+    ).rejects.toBeInstanceOf(ElectronicVoucherNotRenumberableError);
+
+    // Positive control on the same path, and then the second time: refused.
+    const returned = await aReturned45();
+    await renumbering().renumber(returned.voucher.id, requester());
+    await expect(
+      renumbering().renumber(returned.voucher.id, requester()),
+    ).rejects.toBeInstanceOf(ElectronicVoucherNotRenumberableError);
+    expect(await prisma.voucherRenumbering.count()).toBe(1);
+  });
+
+  it('SRI-110 fuera de las sedes de quien pide, no existe', async () => {
+    const { voucher } = await aReturned45();
+    await expect(
+      renumbering().renumber(voucher.id, requester([])),
+    ).rejects.toBeInstanceOf(ElectronicVoucherNotFoundError);
+    expect(await prisma.voucherRenumbering.count()).toBe(0);
+  });
+
+  it('SRI-109 dos pedidos a la vez: uno renumera, el otro se rechaza, y sale un solo número', async () => {
+    const { invoice, voucher } = await aReturned45();
+
+    const results = await Promise.allSettled([
+      renumbering().renumber(voucher.id, requester()),
+      renumbering().renumber(voucher.id, requester()),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.find((r) => r.status === 'rejected');
+    expect(refused?.reason).toBeInstanceOf(
+      ElectronicVoucherNotRenumberableError,
+    );
+    expect(await prisma.voucherRenumbering.count()).toBe(1);
+    expect((await invoiceRow(invoice.id)).sequential).toBe('000000002');
+  });
+
+  it('SRI-109 una nota de crédito devuelta con el 45 se renumera en su propia serie', async () => {
+    const { invoice, voucher } = await aSignedVoucher();
+    await dispatch.run('SEND', voucher.id);
+    await dispatch.run('AUTHORISE', voucher.id);
+
+    const [charge] = await prisma.chargeItem.findMany({
+      where: { invoiceId: invoice.id },
+    });
+    const creditNoteId = await prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
+        INSERT INTO "credit_note"
+          ("invoice_id", "site_id", "emission_point_id", "sequential",
+           "reason_code", "reason",
+           "buyer_identification_type", "buyer_identification", "buyer_name",
+           "buyer_email",
+           "subtotal_taxed", "subtotal_untaxed", "discount_total", "tax_total",
+           "amount", "status", "issued_by_id", "issued_at", "updated_at")
+        VALUES (${invoice.id}::uuid, ${siteId}::uuid, ${emissionPointId}::uuid,
+                '000000001', 'RECEIVER_DATA', 'Error en los datos del receptor',
+                '05', '1710034065', 'Guamán Andrade, María José',
+                'maria@example.com', 0, ${charge!.unitAmount}, 0, 0,
+                ${charge!.unitAmount}, 'ISSUED', ${userId}::uuid,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING "id"`;
+      await tx.$executeRaw`
+        INSERT INTO "credit_note_line"
+          ("credit_note_id", "charge_item_id", "service_code", "description",
+           "quantity", "unit_amount", "discount_amount", "tax_sri_code",
+           "tax_percentage", "net_amount", "tax_amount")
+        VALUES (${row!.id}::uuid, ${charge!.id}::uuid, 'CONS-MG-PV',
+                ${charge!.serviceDisplay}, 1, ${charge!.unitAmount}, 0,
+                ${charge!.taxSriCode}, ${charge!.taxPercentage},
+                ${charge!.unitAmount}, 0)`;
+      return row!.id;
+    });
+    const note = (await preparation.prepareCreditNoteVoucher(creditNoteId))!;
+    double.takeSequential({
+      documentType: '04',
+      establishmentCode: '001',
+      emissionPointCode: '001',
+      sequential: '1',
+    });
+    await dispatch.run('SEND', note.id);
+
+    const renumbered = await renumbering().renumber(note.id, requester());
+    expect(renumbered).toMatchObject({
+      document: { kind: 'CREDIT_NOTE', creditNoteId },
+      newSequential: '000000002',
+    });
+    const fresh = await prisma.electronicVoucher.findUniqueOrThrow({
+      where: { creditNoteId },
+    });
+    expect(fresh.accessKey.slice(8, 10)).toBe('04');
+    expect(fresh.accessKey.slice(30, 39)).toBe('000000002');
+
+    await dispatch.run('SEND', fresh.id);
+    await dispatch.run('AUTHORISE', fresh.id);
+    expect(
+      (
+        await prisma.creditNote.findUniqueOrThrow({
+          where: { id: creditNoteId },
+        })
+      ).status,
+    ).toBe('AUTHORISED');
+  });
+
+  it('SRI-109 el RIDE de la renumerada imprime el número nuevo', async () => {
+    const { invoice, voucher } = await aReturned45();
+    await renumbering().renumber(voucher.id, requester());
+
+    const reader = new PrismaDocumentSourceReader(
+      prisma as unknown as PrismaService,
+      'https://clinica.example/verificar',
+    );
+    const subject = await reader.findSubject({
+      kind: 'INVOICE_RIDE',
+      subjectId: invoice.id,
+      sites: 'all',
+    });
+    if (subject?.kind !== 'INVOICE_RIDE') throw new Error('no RIDE subject');
+    expect(subject.data.documentNumber).toBe('001-001-000000002');
   });
 });

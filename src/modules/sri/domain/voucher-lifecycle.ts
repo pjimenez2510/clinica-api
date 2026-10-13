@@ -26,7 +26,12 @@ export type VoucherStatus =
   | 'RECEIVED'
   | 'AUTHORISED'
   | 'RETURNED'
-  | 'NOT_AUTHORISED';
+  | 'NOT_AUTHORISED'
+  /**
+   * SRI-109. Returned with the 45 and renumbered: kept with its attempts and
+   * its signed XML, attached to no document, never sent again.
+   */
+  | 'SUPERSEDED';
 
 /** Why a PREPARED voucher is not moving: a local reason, never the SRI's. */
 export type BlockedReason =
@@ -126,6 +131,20 @@ export type QueueStep = 'SEND' | 'AUTHORISE' | 'DELIVER';
 /** The SRI's two «already sent» codes (ADR-004 §3). */
 export const ALREADY_SENT_CODES = new Set(['43', '70']);
 const IN_PROCESS_CODE = '70';
+/** SRI-108. «Secuencial registrado»: the SRI already holds this number. */
+export const SEQUENTIAL_REGISTERED_CODE = '45';
+
+/**
+ * What the SRI objected to: its errors, when it marked any; otherwise every
+ * message. A warning or an informative message beside an error does not make
+ * the answer about something else.
+ */
+function decisiveCodes(messages: readonly SriMessage[]): Set<string> {
+  const errors = messages.filter((m) => m.type.toUpperCase() === 'ERROR');
+  return new Set(
+    (errors.length > 0 ? errors : messages).map((m) => m.identifier),
+  );
+}
 
 /** What an answer changes, for the repository to apply in one transaction. */
 export interface VoucherTransition {
@@ -173,11 +192,7 @@ export function afterReception(
     case 'DEVUELTA': {
       // A warning or an informative message beside a 43 does not make it a
       // rejection: decide on the errors, when the SRI marked any.
-      const errors = answer.messages.filter(
-        (m) => m.type.toUpperCase() === 'ERROR',
-      );
-      const decisive = errors.length > 0 ? errors : answer.messages;
-      const codes = new Set(decisive.map((m) => m.identifier));
+      const codes = decisiveCodes(answer.messages);
       const onlyAlreadySent =
         codes.size > 0 &&
         [...codes].every((code) => ALREADY_SENT_CODES.has(code));
@@ -337,6 +352,29 @@ function refusesAnotherVoucher(
 /** SRI-058. Only what the SRI returned or refused is retried by a person. */
 export function isRetriableByAPerson(status: VoucherStatus): boolean {
   return status === 'RETURNED' || status === 'NOT_AUTHORISED';
+}
+
+/**
+ * SRI-108. A voucher the SRI returned ONLY because it already holds its number
+ * (45), and that the SRI never authorised: the only one that is given another
+ * number. With another error beside the 45, renumbering would hide it.
+ */
+export function isRenumberable(voucher: {
+  status: VoucherStatus;
+  authorisationNumber: string | null;
+  /** Any attempt of it answered `AUTORIZADO`. */
+  everAuthorised: boolean;
+  lastMessages: readonly SriMessage[];
+}): boolean {
+  if (
+    voucher.status !== 'RETURNED' ||
+    voucher.authorisationNumber !== null ||
+    voucher.everAuthorised
+  ) {
+    return false;
+  }
+  const codes = decisiveCodes(voucher.lastMessages);
+  return codes.size === 1 && codes.has(SEQUENTIAL_REGISTERED_CODE);
 }
 
 /** SRI-062, D-102. A day received and no answer is no longer the queue's. */
