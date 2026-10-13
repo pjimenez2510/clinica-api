@@ -252,8 +252,20 @@ export const noKnownAllergiesSchema = z.object({
   assertedByName: z.string(),
   assertedAt: z.iso.datetime(),
 });
-/** Response of POST /patients/:patientId/allergies/none-known. */
+/** The band's view of the assertion: GET of the list and of the summary. */
 export class NoKnownAllergiesDto extends createZodDto(noKnownAllergiesSchema) {}
+
+/**
+ * Response of POST /patients/:patientId/allergies/none-known: the assertion
+ * and its `id`, by which the assistant's proposal it answers is linked
+ * (AS-265).
+ */
+export const noKnownAllergiesAssertedSchema = noKnownAllergiesSchema.extend({
+  id: z.uuid(),
+});
+export class NoKnownAllergiesAssertedDto extends createZodDto(
+  noKnownAllergiesAssertedSchema,
+) {}
 
 /**
  * EN-082, EN-087. La ficha de alergias entera: la lista y el tercer estado.
@@ -305,6 +317,9 @@ export class AssertRefutingResponseDto extends createZodDto(
 /** Response types inferred from the schemas; `ActiveAllergyResponse` is what `active-allergy.mapper.ts` returns. */
 export type ActiveAllergyResponse = z.infer<typeof activeAllergySchema>;
 export type NoKnownAllergiesResponse = z.infer<typeof noKnownAllergiesSchema>;
+export type NoKnownAllergiesAssertedResponse = z.infer<
+  typeof noKnownAllergiesAssertedSchema
+>;
 export type AssertRefutingResponse = z.infer<
   typeof assertRefutingResponseSchema
 >;

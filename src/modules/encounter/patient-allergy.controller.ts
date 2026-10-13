@@ -36,14 +36,14 @@ import {
   AssertRefutingDto,
   AssertRefutingResponseDto,
   EditAllergyDto,
-  NoKnownAllergiesDto,
+  NoKnownAllergiesAssertedDto,
   RecordAllergyDto,
   RefuteAllergyDto,
   type AllergyListResponse,
   type AllergyResponse,
   type AllergyVersionListResponse,
   type AssertRefutingResponse,
-  type NoKnownAllergiesResponse,
+  type NoKnownAllergiesAssertedResponse,
 } from './dto/patient-allergy.dto';
 
 /**
@@ -217,11 +217,11 @@ export class PatientAllergyController {
   @ApiOperation({
     summary: 'Afirmar que el paciente no tiene alergias conocidas',
   })
-  @ApiCreatedResponse({ type: NoKnownAllergiesDto })
+  @ApiCreatedResponse({ type: NoKnownAllergiesAssertedDto })
   async assertNoKnownAllergies(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Req() req: Request,
-  ): Promise<NoKnownAllergiesResponse> {
+  ): Promise<NoKnownAllergiesAssertedResponse> {
     const assertion = await this.noKnownAllergies.assertNoKnownAllergies(
       patientId,
       // The author is the SESSION and never a field in the body: a caller who
@@ -230,7 +230,8 @@ export class PatientAllergyController {
       this.requester(req, 'record:write'),
     );
 
-    return toNoKnownAllergiesResponse(assertion);
+    // AS-265. Its id: what links the assistant's proposal it answers.
+    return { id: assertion.id, ...toNoKnownAllergiesResponse(assertion) };
   }
 
   /**

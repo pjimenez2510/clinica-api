@@ -167,8 +167,16 @@ export class ChartProposalService {
     requester: ChartRequester,
   ): Promise<ChartOverview> {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
-    const { suggestion, view } = await this.shownOf(encounter, input.suggestionId, requester); // prettier-ignore
-    if (view.conflict !== null) throw new SuggestionChartMismatchError();
+    // The record is made first, so the chart already has it: the proposal is
+    // looked for among the undecided of the reading, not among those shown.
+    const suggestion = await this.pendingOf(encounter, input.suggestionId, requester); // prettier-ignore
+    // AS-264. «Sin alergias» never over an active allergy.
+    if (
+      suggestion.kind === 'chart-no-allergy' &&
+      (await this.allergies.activeForSurvivorOf(encounter.patientId)).length > 0
+    ) {
+      throw new SuggestionChartMismatchError();
+    }
     const record = await this.chart.record(
       CHART_KINDS[suggestion.kind as ChartKind],
       input.recordId,
@@ -255,6 +263,28 @@ export class ChartProposalService {
       : undefined;
     if (!view || !suggestion) throw new SuggestionNotFoundError();
     return { suggestion, view };
+  }
+
+  /** AS-265. An undecided proposal of the current reading, by its id. */
+  private async pendingOf(
+    encounter: CodingEncounter,
+    suggestionId: string,
+    requester: ChartRequester,
+  ): Promise<SuggestionView> {
+    const stored = await this.chartSuggestions(encounter, requester);
+    const latest = stored.reduce<SuggestionView | null>(
+      (last, each) => (last === null || each.proposedAt > last.proposedAt ? each : last), // prettier-ignore
+      null,
+    );
+    const found = stored.find((each) => each.id === suggestionId);
+    if (
+      !found ||
+      found.status !== 'PROPOSED' ||
+      found.aiRunId !== latest?.aiRunId
+    ) {
+      throw new SuggestionNotFoundError();
+    }
+    return found;
   }
 
   private async chartSuggestions(
