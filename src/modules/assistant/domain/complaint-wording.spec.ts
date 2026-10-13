@@ -182,6 +182,7 @@ describe('AS-282 a reason worded only from what the patient said', () => {
         ],
       ]),
     ).toEqual(Array(4).fill(false));
+    expect(groundedWording('Ñaño con fiebre y tos', 'El ñaño con fiebre y tengo tos')).toBe(false); // prettier-ignore
     expect(groundedWording('Dolor de estómago y diarrea', 'Me duele el estómago y estoy con diarrea')).toBe(true); // prettier-ignore
   });
 

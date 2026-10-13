@@ -36,7 +36,7 @@ const DENIAL = new Set(['no', 'sin', 'ni', 'nunca', 'niega', 'niegan', 'tampoco'
  * Someone else's complaint: a companion or a relative (D-260 §16), with its diminutives and the
  * words of the sierra («guagua»), or what hurts someone else («le duele», «a ella»).
  */
-const SOMEONE_ELSE = /(^| )((mi|mis|su|sus) (mam\w*|pap\w*|madre|padre|hij\w*|espos\w*|marido|senor\w*|mujer|pareja|novi\w*|herman\w*|abuel\w*|nin\w*|nen\w*|beb\w*|guagu\w*|wawa\w*|ti[oa]s?|prim\w*|niet\w*|suegr\w*|cunad\w*|vecin\w*|amig\w*)|(el|la|los|las) (nin\w*|guagu\w*|wawa\w*|beb\w*|nen\w*)|le (duele|duelen|dolia|pica|arde)|a (el|ella|ellos|ellas)|les? (da|dio|pasa|paso))( |$)/; // prettier-ignore
+const SOMEONE_ELSE = /(^| )((mi|mis|su|sus) (mam\w*|pap\w*|madre|padre|hij\w*|espos\w*|marido|senor\w*|mujer|pareja|novi\w*|herman\w*|abuel\w*|nin\w*|nen\w*|beb\w*|guagu\w*|wawa\w*|ti[oa]s?|prim\w*|niet\w*|suegr\w*|cunad\w*|vecin\w*|amig\w*)|(el|la|los|las) (nin\w*|guagu\w*|wawa\w*|beb\w*|nen\w*|nan\w*|guambr\w*|taita\w*)|le (duele|duelen|dolia|pica|arde)|a (el|ella|ellos|ellas)|les? (da|dio|pasa|paso))( |$)/; // prettier-ignore
 
 /**
  * Two people in one sentence: «el niño tiene fiebre y yo tengo tos». Which symptom is whose a
