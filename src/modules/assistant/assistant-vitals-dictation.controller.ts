@@ -22,6 +22,10 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 import { Timeout } from '../../shared/http/interceptors/timeout.interceptor';
 
@@ -56,6 +60,8 @@ export class AssistantVitalsDictationController {
     private readonly dictation: VitalsDictationService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-196. Whether «Dictar» is offered here, and for how long it records. */
@@ -68,7 +74,7 @@ export class AssistantVitalsDictationController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
   ): Promise<VitalsDictationLimitsDto> {
     this.requireEnabled();
-    return this.dictation.limits(encounterId, this.requester());
+    return this.dictation.limits(encounterId, await this.requester());
   }
 
   /** AS-180. The recording in the body; the proposal back. Stores nothing. */
@@ -102,7 +108,7 @@ export class AssistantVitalsDictationController {
     return this.dictation.dictate(
       encounterId,
       recording,
-      this.requester(),
+      await this.requester(),
       gone.signal,
     );
   }
@@ -112,7 +118,11 @@ export class AssistantVitalsDictationController {
     if (!this.enabled) throw new NotFoundException();
   }
 
-  private requester(): DictationRequester {
-    return { sites: withDictation(this.currentUser.requirePrincipal()) };
+  /** AS-161. The sites with the assistant on, read on each request. */
+  private async requester(): Promise<DictationRequester> {
+    const enabled = await this.siteSwitch.enabledSites();
+    return {
+      sites: withDictation(this.currentUser.requirePrincipal(), enabled),
+    };
   }
 }

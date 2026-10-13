@@ -73,6 +73,7 @@ describe('los parámetros de operación de una sede', () => {
       unmatchedResultDeadlineHours: 24,
       bpReferenceSystolic: 140,
       bpReferenceDiastolic: 90,
+      assistantEnabled: false,
     });
   });
 
@@ -185,6 +186,7 @@ describe('los parámetros de operación de una sede', () => {
         unmatchedResultDeadlineHours: 24,
         bpReferenceSystolic: 140,
         bpReferenceDiastolic: 90,
+        assistantEnabled: false,
       });
       expect.unreachable('debía rechazarse');
     } catch (error) {
@@ -217,6 +219,7 @@ describe('los parámetros de operación de una sede', () => {
         unmatchedResultDeadlineHours: 24,
         bpReferenceSystolic: 140,
         bpReferenceDiastolic: 90,
+        assistantEnabled: false,
       });
     }).not.toThrow();
   });

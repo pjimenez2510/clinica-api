@@ -144,6 +144,11 @@ export interface SiteParameters {
    */
   bpReferenceSystolic: number;
   bpReferenceDiastolic: number;
+  /**
+   * AS-160 (A3, D-254). The assistant at this site. Off for a new site (P7 of
+   * the assistant's plan); the sites that existed at the migration are on.
+   */
+  assistantEnabled: boolean;
 }
 
 /** What the administrator may send; anything absent keeps its stored value. */
@@ -331,6 +336,8 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   /** EN-272, D-207 §1 recommendation (ACC/AHA 2017 stage 2), pending a clinician. */
   bpReferenceSystolic: 140,
   bpReferenceDiastolic: 90,
+  /** AS-160, D-254 §2: every function starts off. The column's default. */
+  assistantEnabled: false,
 };
 
 /**

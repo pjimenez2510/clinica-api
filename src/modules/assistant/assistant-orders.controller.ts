@@ -16,6 +16,10 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  ASSISTANT_SITE_SWITCH,
+  type AssistantSiteSwitch,
+} from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -50,6 +54,8 @@ export class AssistantOrdersController {
     private readonly proposals: OrderProposalService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
+    @Inject(ASSISTANT_SITE_SWITCH)
+    private readonly siteSwitch: AssistantSiteSwitch,
   ) {}
 
   /** AS-106, AS-107. The exams of the latest reading, resolved now. */
@@ -63,7 +69,7 @@ export class AssistantOrdersController {
   ): Promise<OrderProposalOverviewDto> {
     this.requireEnabled();
     return toResponse(
-      await this.proposals.overview(encounterId, assistantRequester(this.currentUser, req)), // prettier-ignore
+      await this.proposals.overview(encounterId, await assistantRequester(this.currentUser, this.siteSwitch, req)), // prettier-ignore
     );
   }
 
@@ -80,7 +86,7 @@ export class AssistantOrdersController {
     @Req() req: Request,
   ): Promise<OrderProposalReadingDto> {
     this.requireEnabled();
-    const reading = await this.proposals.read(encounterId, assistantRequester(this.currentUser, req)); // prettier-ignore
+    const reading = await this.proposals.read(encounterId, await assistantRequester(this.currentUser, this.siteSwitch, req)); // prettier-ignore
     return {
       ...toResponse(reading),
       found: reading.found,
@@ -103,7 +109,7 @@ export class AssistantOrdersController {
     return toResponse(
       await this.proposals.link(
         { encounterId, serviceOrderId: dto.serviceOrderId, lines: dto.lines },
-        assistantRequester(this.currentUser, req),
+        await assistantRequester(this.currentUser, this.siteSwitch, req),
       ),
     );
   }
@@ -123,7 +129,7 @@ export class AssistantOrdersController {
     return toResponse(
       await this.proposals.discard(
         { encounterId, suggestionId },
-        assistantRequester(this.currentUser, req),
+        await assistantRequester(this.currentUser, this.siteSwitch, req),
       ),
     );
   }

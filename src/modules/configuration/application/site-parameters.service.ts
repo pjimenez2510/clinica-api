@@ -214,6 +214,7 @@ export class SiteParametersService {
         patch.bpReferenceSystolic ?? current.bpReferenceSystolic,
       bpReferenceDiastolic:
         patch.bpReferenceDiastolic ?? current.bpReferenceDiastolic,
+      assistantEnabled: patch.assistantEnabled ?? current.assistantEnabled,
     });
     // EN-272. Judged on the result, like the lead window above.
     assertBpReferenceCoherent({

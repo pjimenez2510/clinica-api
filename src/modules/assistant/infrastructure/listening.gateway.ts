@@ -45,6 +45,12 @@ const LONGEST_CHANNEL_MS = 15 * 60_000;
  * AS-059 (D-247 §7). How often a channel asks whether its attention still
  * takes content: signed with its discharge or annulled, the listening stops.
  */
+/** AS-163, AS-166. Why a listening stops without keeping what is held. */
+const DISCARD_HELD: ReadonlySet<string> = new Set([
+  'ASSISTANT_RECORDING_NOT_AUTHORIZED',
+  'ASSISTANT_ENCOUNTER_NOT_FOUND',
+]);
+
 const LIVE_CHECK_MS = 5_000;
 /** Channels without a ticket yet, per address: what one client may hold open. */
 const UNTICKETED_PER_ADDRESS = 20;
@@ -337,7 +343,12 @@ export class ListeningGateway
       return;
     } catch (error) {
       if (!(error instanceof DomainError)) return;
-      const { offsetMs } = await this.listening.close(grant.encounterId);
+      // AS-163, AS-166. Revoked, or the site switched off: what the
+      // recogniser holds was heard after that, and is dropped.
+      const discardHeld = DISCARD_HELD.has(error.code);
+      const { offsetMs } = await this.listening.close(grant.encounterId, {
+        discardHeld,
+      });
       send(connection.socket, {
         type: 'stopped',
         offsetMs,

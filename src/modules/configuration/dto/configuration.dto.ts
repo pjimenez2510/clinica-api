@@ -263,6 +263,8 @@ export const updateSiteParametersSchema = z
     /** EN-272. mmHg; ranges and order are the domain's. */
     bpReferenceSystolic: parameterSchema.optional(),
     bpReferenceDiastolic: parameterSchema.optional(),
+    /** AS-160 (A3). The assistant at this site. */
+    assistantEnabled: z.boolean().optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un parámetro que cambiar',
@@ -305,9 +307,21 @@ export const siteParametersSchema = z.object({
   /** EN-272. The blood-pressure line of the vitals charts, in mmHg. */
   bpReferenceSystolic: z.number().int(),
   bpReferenceDiastolic: z.number().int(),
+  /** AS-160 (A3). The assistant at this site. */
+  assistantEnabled: z.boolean(),
+  /**
+   * AS-160, AS-026. Whether the installation has the assistant at all
+   * (`ASSISTANT_ENABLED`): without it the screen offers no switch.
+   */
+  assistantAvailable: z.boolean(),
 });
 /** Response of reading and saving a site's parameters: always the whole set. */
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}
+
+/** AS-162 (A3). The sites of the caller's reach with the assistant on. */
+export const assistantSitesSchema = z.object({ siteIds: z.array(z.uuid()) });
+export class AssistantSitesDto extends createZodDto(assistantSitesSchema) {}
+export type AssistantSitesResponse = z.infer<typeof assistantSitesSchema>;
 
 /**
  * EN-032, EN-157, EN-158. How long the clinical record is kept, as the

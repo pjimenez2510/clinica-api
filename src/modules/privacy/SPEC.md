@@ -741,9 +741,12 @@ la fila de bitácora.
 
 - **PD-068** — CUANDO alguien con `patient:write` registre una autorización de
   una ficha, el sistema DEBERÁ guardar la ficha, la finalidad (`REMINDERS`,
-  `MARKETING`, `PHOTOS`, `RESEARCH` o `THIRD_PARTY_SHARING`), el canal
+  `MARKETING`, `PHOTOS`, `RESEARCH`, `THIRD_PARTY_SHARING` o
+  `ASSISTANT_RECORDING`), el canal
   (`WHATSAPP` o `EMAIL`) cuando la finalidad es `REMINDERS` o `MARKETING`, el
   instante y quién la registró.
+  > `ASSISTANT_RECORDING` (grabar la consulta para el asistente) llega con
+  > A3: AS-164 en `assistant/SPEC.md`, que la exige para escuchar (D-254).
 - **PD-069** — El instante y quién la registró —o la revocó— DEBERÁN ser los
   del servidor y la sesión: el sistema NO DEBERÁ aceptarlos del cliente.
 - **PD-070** — SI la finalidad es `REMINDERS` o `MARKETING` y falta el canal,

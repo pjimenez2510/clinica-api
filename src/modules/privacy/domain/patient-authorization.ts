@@ -9,6 +9,9 @@ export const AUTHORIZATION_PURPOSES = [
   'PHOTOS',
   'RESEARCH',
   'THIRD_PARTY_SHARING',
+  // AS-164 (A3, D-254). Recording the consultation for the assistant: no
+  // channel, and the listening asks it (AS-165).
+  'ASSISTANT_RECORDING',
 ] as const;
 export type AuthorizationPurpose = (typeof AUTHORIZATION_PURPOSES)[number];
 

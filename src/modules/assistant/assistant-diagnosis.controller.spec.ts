@@ -10,7 +10,10 @@ import { AssistantDiagnosisController } from './assistant-diagnosis.controller';
 
 const OVERVIEW = { baseline: [], problems: [], readAt: null, demo: false };
 
-function controller(enabled: boolean) {
+function controller(
+  enabled: boolean,
+  enabledSites: string[] = ['site-1', 'site-2', 'site-3'],
+) {
   const proposals = {
     overview: vi.fn(() => Promise.resolve(OVERVIEW)),
     read: vi.fn(() => Promise.resolve({ ...OVERVIEW, dropped: 0 })),
@@ -36,6 +39,7 @@ function controller(enabled: boolean) {
       proposals as unknown as DiagnosisProposalService,
       currentUser,
       enabled,
+      { enabledSites: () => Promise.resolve(enabledSites) },
     ),
   };
 }
@@ -73,5 +77,16 @@ describe('AssistantDiagnosisController', () => {
       ip: '127.0.0.1',
       userAgent: 'test',
     });
+  });
+
+  it('AS-161 a site with the assistant switched off is cut like a site without assistant:use', async () => {
+    const { controller: on, proposals, req } = controller(true, ['site-2']);
+
+    await on.read(ENCOUNTER, req);
+
+    expect(proposals.read).toHaveBeenCalledWith(
+      ENCOUNTER,
+      expect.objectContaining({ readSites: ['site-2'], writeSites: [] }),
+    );
   });
 });

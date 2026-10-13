@@ -23,6 +23,7 @@ import {
   AssistantTranscriptEmptyError,
   LlmCallFailed,
   SuggestionNotFoundError,
+  AssistantRecordingNotAuthorizedError,
 } from '../domain/assistant.errors';
 import type { TranscriptLine } from '../domain/note-draft';
 import {
@@ -275,6 +276,10 @@ class World {
 
   bus = { publish: (event: LiveEvent) => this.events.push(event) } as unknown as LiveEventBus; // prettier-ignore
 
+  /** AS-161, AS-169 (A3). The site switch and the authorization to record. */
+  enabledSites = [SITE];
+  authorized = true;
+
   service(demo = false) {
     return new NoteDraftService(
       this.context,
@@ -288,6 +293,11 @@ class World {
       this.bus,
       () => new Date(this.clock),
       demo,
+      { enabledSites: () => Promise.resolve(this.enabledSites) },
+      {
+        isAuthorized: () => Promise.resolve(this.authorized),
+        grant: () => Promise.resolve(),
+      },
     );
   }
 }
@@ -903,5 +913,64 @@ describe('NoteDraftService — what the reviews found', () => {
 
     const newer = (await service.overview(ENCOUNTER, doctor)).sections.find((each) => each.section === 'enfermedadActual')!; // prettier-ignore
     expect(newer).toMatchObject({ status: 'PROPOSED', acceptedBefore: first.text }); // prettier-ignore
+  });
+});
+
+describe('NoteDraftService — the site switch and the authorization (A3)', () => {
+  it('AS-169 without the authorization to record the draft is refused, calling nobody', async () => {
+    const world = new World();
+    world.authorized = false;
+    const service = world.service();
+
+    await expect(service.request(ENCOUNTER, doctor)).rejects.toBeInstanceOf(
+      AssistantRecordingNotAuthorizedError,
+    );
+    expect(world.drafts).toHaveLength(0);
+    expect(world.prompts).toHaveLength(0);
+  });
+
+  it('AS-161 AS-169 a draft asked for before the site was switched off, or the authorization revoked, reaches no provider', async () => {
+    for (const change of ['site', 'revoked'] as const) {
+      const world = new World();
+      const service = world.service();
+      let release!: () => void;
+      world.gate = new Promise((resolve) => (release = resolve));
+      await service.request(ENCOUNTER, doctor);
+      world.lines = [...SAID, { startMs: 11_000, endMs: 15_000, text: 'Y me duele al tragar.' }]; // prettier-ignore
+      // Asked while the first is in flight: it waits behind it.
+      await service.request(ENCOUNTER, doctor);
+      if (change === 'site') world.enabledSites = [];
+      else world.authorized = false;
+      world.gate = null;
+      release();
+      await service.settled();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await service.settled();
+
+      // Only the first, already with the provider, was sent; the stretch
+      // behind it was never written.
+      expect(world.prompts).toHaveLength(1);
+      expect(world.drafts.slice(1).every((d) => d.status !== 'DONE')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('AS-169 the conversation heard after a revocation asks for no draft', async () => {
+    const world = new World();
+    const service = world.service();
+    world.authorized = false;
+    world.lines = [{ startMs: 0, endMs: 181_000, text: 'Una consulta larga.' }];
+
+    service.transcriptGrew(ENCOUNTER, 181_000);
+    await service.settled();
+
+    expect(world.drafts).toHaveLength(0);
+    expect(world.prompts).toHaveLength(0);
+    // Control: authorized, the same growth asks for one.
+    world.authorized = true;
+    service.transcriptGrew(ENCOUNTER, 181_000);
+    await vi.waitFor(() => expect(world.drafts).toHaveLength(1));
+    await service.settled();
   });
 });
