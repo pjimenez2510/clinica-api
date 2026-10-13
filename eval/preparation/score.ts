@@ -46,10 +46,19 @@ export function literal(
     const pounds = value / POUND_KG;
     said.push(Math.round(pounds), Math.round(pounds * 2) / 2);
   }
+  // A pressure written as one number: «120/80», and «130,80», how the
+  // recogniser writes «130 con 80» (AS-181).
+  const phrases = PRESSURE.has(field)
+    ? [phrase, phrase.replace(/(\d{2,3})[,./](\d{2,3})/g, '$1 $2')]
+    : [phrase];
   return said.some((number) =>
-    spellings(number).some((written) => ` ${phrase} `.includes(` ${written} `)),
+    spellings(number).some((written) =>
+      phrases.some((each) => ` ${each} `.includes(` ${written} `)),
+    ),
   );
 }
+
+const PRESSURE = new Set(['systolicBp', 'diastolicBp']);
 
 /** Folded, with a point or a comma kept only between two figures. */
 const fold = (text: string) =>

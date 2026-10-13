@@ -59,6 +59,7 @@ Opciones:
   --gasto-maximo <usd>           lo más que gasta ESTA corrida en el proveedor (por defecto 0,20; D-241)
   --proveedor gemini             el proveedor medido (por defecto el principal)
   --etiqueta <texto>             nombre de la carpeta de resultados
+  --ids P10:oido,B2-V06:escrito  sólo esos casos y brazos
 
 Sólo casos inventados (EV-1), sin seudonimizador (EV-2). Mira el registro compartido antes de cada intento.`;
 
@@ -105,6 +106,7 @@ async function main(): Promise<void> {
       casos: { type: 'string' },
       'gasto-maximo': { type: 'string', default: '0.20' },
       proveedor: { type: 'string', default: 'gemini' },
+      ids: { type: 'string' },
       etiqueta: { type: 'string' },
       ayuda: { type: 'boolean', default: false },
     },
@@ -166,6 +168,12 @@ async function main(): Promise<void> {
         if (item) runs.push({ item, arm: 'oido', voice: clip.voice, texts: clip.lines }); // prettier-ignore
       }
     }
+  }
+
+  // Only some cases, to measure again what a scoring fix touched.
+  if (values.ids) {
+    const ids = new Set(values.ids.split(','));
+    runs.splice(0, runs.length, ...runs.filter((run) => ids.has(`${run.item.id}:${run.arm}`))); // prettier-ignore
   }
 
   // EV-3, D-241. The provider behind its switch, under its cap in the shared

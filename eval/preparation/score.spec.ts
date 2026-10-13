@@ -36,6 +36,10 @@ describe('AS-255 the scoring of a preparation', () => {
     expect(literal('heightCm', 238, 'hace 2 días con fiebre de 38', fever)).toBe(false); // prettier-ignore
     expect(literal('temperatureC', 36.5, 'treinta y seis y medio', { startMs: 0, endMs: 1, text: 'Temperatura treinta y seis y medio.' })).toBe(true); // prettier-ignore
     expect(literal('heightCm', 160, 'mide uno sesenta', { startMs: 0, endMs: 1, text: 'Mide uno sesenta.' })).toBe(true); // prettier-ignore
+    // A pressure as the recogniser writes «con», or with a slash.
+    expect(literal('diastolicBp', 80, 'perdón, 130,80', { startMs: 0, endMs: 1, text: 'Presión 130,85, perdón, 130,80.' })).toBe(true); // prettier-ignore
+    expect(literal('systolicBp', 120, 'Presión 120/80', { startMs: 0, endMs: 1, text: 'Presión 120/80.' })).toBe(true); // prettier-ignore
+    expect(literal('heartRate', 80, 'Presión 120/80', { startMs: 0, endMs: 1, text: 'Presión 120/80.' })).toBe(false); // prettier-ignore
   });
 
   it('SC-100 SC-101 counts right, wrong, empty and invented values, the reason and the speakers', () => {
