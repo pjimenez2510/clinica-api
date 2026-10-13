@@ -2406,11 +2406,17 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   además entender la sistólica y la diastólica dichas por separado
   («presión sistólica 120», «diastólica 80»), los perímetros cefálico y
   abdominal, la hemoglobina y la corregida, la posición de la talla («de
-  pie», «parado», «acostado»), y tratar una palabra que no es de un signo,
-  un número, una unidad o un enlace, dicha **después** del número, como el
-  fin de ese signo; y responderlos en `signs`, `unclear` y `heightPosition`.
+  pie», «parado», «acostado»), y responderlos en `signs`, `unclear` y
+  `heightPosition`. Al leer una **conversación** (AS-251, AS-254), además,
+  una palabra que no es de un signo, un número, una unidad, un enlace ni una
+  corrección, dicha **después** del número, DEBERÁ cerrar ese signo; y SI a
+  tres palabras o menos de ese cierre se dice otro número, ENTONCES el signo
+  DEBERÁ quedar en `unclear`.
   > Lo que falló cuando el autor dictó a su manera (13-10-2026): las reglas
-  > no conocían esas palabras y pegaban el número al signo anterior.
+  > no conocían esas palabras y pegaban el número al signo anterior. El
+  > cierre no se aplica a «Dictar»: medido con el arnés de B2, convertía un
+  > nombre mal oído («hueso» por «peso») en un valor equivocado; sin él,
+  > «Dictar» da lo mismo que antes (D-260 §8).
 - **AS-254** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el proveedor de
   demostración DEBERÁ leer la preparación sin red: cada línea con las reglas,
   el hablante por su contenido (la pregunta, enfermería; «me duele»,

@@ -14,6 +14,11 @@ const dictatedField = z.enum([
   'oxygenSaturation',
   'weightKg',
   'heightCm',
+  // AS-253 (B3).
+  'headCircumferenceCm',
+  'abdominalCircumferenceCm',
+  'hemoglobinGDl',
+  'hemoglobinCorrectedGDl',
 ]);
 
 export const vitalsDictationSchema = z.object({
@@ -23,6 +28,8 @@ export const vitalsDictationSchema = z.object({
   signs: z.partialRecord(dictatedField, z.number()),
   /** AS-182. Named aloud but not read with certainty: typed by hand. */
   unclear: z.array(dictatedField),
+  /** AS-253. How the height was taken, when it was said with the height. */
+  heightPosition: z.enum(['STANDING', 'LYING']).optional(),
 });
 
 export class VitalsDictationDto extends createZodDto(vitalsDictationSchema) {}
