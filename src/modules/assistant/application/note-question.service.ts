@@ -216,6 +216,12 @@ export class NoteQuestionService {
           .flatMap(({ proposal }) =>
             typeof proposal.text === 'string' ? [proposal.text] : [],
           ),
+        // AS-276. Asked before in other words: shown as it was first asked.
+        earlier: [...stored]
+          .sort((a, b) => a.proposedAt.getTime() - b.proposedAt.getTime())
+          .flatMap(({ proposal }) =>
+            typeof proposal.text === 'string' ? [proposal.text] : [],
+          ),
         encounterId: encounter.id,
         signal: AbortSignal.timeout(QUESTIONS_LIMIT_MS),
       },

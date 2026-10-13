@@ -134,6 +134,8 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
       ['J03.9', 'Amigdalitis aguda, no especificada'],
       ['I10.X', 'Hipertensión esencial (primaria)'],
       ['R03.0', 'Lectura elevada de la presión sanguínea'],
+      ['R07.0', 'Dolor de garganta'],
+      ['R50.9', 'Fiebre, no especificada'],
     ]) {
       concepts[code!] = (await whoCode(code!, display!)).id;
     }
@@ -228,6 +230,7 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
     diagnosisId: string | null;
     demo: boolean;
     candidates: { code: string; display: string }[];
+    symptoms: { problem: string; quote: string }[];
   }
 
   it('AS-026 asks for assistant:use, which the doctor carries and the nurse does not', async () => {
@@ -283,14 +286,17 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
     // J02.7, which the script writes on purpose, does not exist: not shown.
     expect(problems[0]!.candidates.map(({ code }) => code)).toEqual(['J02.9', 'J02.8', 'J03.9']); // prettier-ignore
     expect(problems[0]!.candidates[0]!.display).toBe('Faringitis aguda, no especificada'); // prettier-ignore
-    expect(problems[1]!.candidates.map(({ code }) => code)).toEqual(['I10.X', 'R03.0']); // prettier-ignore
+    // AS-267. With a definite diagnosis no symptom code: R03.0 goes, and the
+    // sore throat and the fever the script names are the pharyngitis' phrases.
+    expect(problems[1]!.candidates.map(({ code }) => code)).toEqual(['I10.X']); // prettier-ignore
+    expect(problems[0]!.symptoms.map(({ problem }) => problem)).toEqual(['DOLOR DE GARGANTA', 'FIEBRE']); // prettier-ignore
     expect(problems.every((problem) => problem.demo && problem.status === 'PROPOSED')).toBe(true); // prettier-ignore
 
     const kept = await prisma.aiSuggestion.findMany({ where: { encounterId }, include: { aiRun: true } }); // prettier-ignore
     expect(kept).toHaveLength(2);
     expect(kept.every((row) => row.kind === 'diagnosis' && row.aiRun.provider === 'fake' && row.aiRun.purpose === 'cie10-problems')).toBe(true); // prettier-ignore
     // One attempt names the problems, one per problem writes its codes.
-    expect(await prisma.aiRun.count({ where: { encounterId } })).toBe(3);
+    expect(await prisma.aiRun.count({ where: { encounterId } })).toBe(5);
   });
 
   it("AS-039 only the attention's professional asks, and an attention of another site does not exist", async () => {

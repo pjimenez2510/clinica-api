@@ -50,6 +50,11 @@ import { questionsCases, questionsTask } from './tasks/questions.ts';
 import { EVAL_PROVIDER_CAP_USD, ProviderCapStore } from './ledger.ts';
 import { ordersFromNoteTask } from './tasks/orders-from-note.ts';
 import { prescriptionFromNoteTask } from './tasks/prescription-from-note.ts';
+import {
+  chartTask,
+  prescriptionFieldsTask,
+  symptomsTask,
+} from './tasks/physician-fill.ts';
 
 export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5, D-239 §5)
 
@@ -57,7 +62,7 @@ export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5
   pnpm eval -- --codiesp <carpeta train_dev> corrida real con las claves del .env
 
 Opciones:
-  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042), receta-nota mide D2 (AS-079), borrador mide C2 (AS-098), examenes-nota mide D3 (AS-114), preguntas mide C3 (AS-126)
+  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042), receta-nota mide D2 (AS-079), borrador mide C2 (AS-098), examenes-nota mide D3 (AS-114), preguntas mide C3 (AS-126), receta-campos, sintomas y ficha miden SC-102 a SC-104 (AS-277)
   --codiesp <carpeta>          CodiEsp train_dev (CC BY 4.0, Zenodo 3837305); sin ella, la CIE-10 usa sólo el set propio
   --muestra <n>                frases de CodiEsp (por defecto 200)
   --casos <n>                  como mucho n casos de cada set propio (por defecto, todos)
@@ -101,7 +106,10 @@ type TaskKey =
   | 'examenes-nota'
   | 'nota'
   | 'borrador'
-  | 'preguntas';
+  | 'preguntas'
+  | 'receta-campos'
+  | 'sintomas'
+  | 'ficha';
 
 export interface Dependencies {
   env: Env;
@@ -225,6 +233,9 @@ export async function runFromArgs(
         'nota',
         'borrador',
         'preguntas',
+        'receta-campos',
+        'sintomas',
+        'ficha',
       ].includes(t),
   );
   if (unknown.length > 0)
@@ -320,6 +331,22 @@ export async function runFromArgs(
       sha256: invented.prescriptionNote.sha256,
       n: own.length,
     });
+  }
+  // AS-277 (SC-102 to SC-104). What the author asked on 13-10-2026.
+  if (wanted.includes('receta-campos')) {
+    const own = invented.prescriptionFields.cases.slice(0, limit);
+    add(prescriptionFieldsTask(catalogues), own);
+    casesMeta.push({ task: 'receta-campos', source: 'receta-campos.json', sha256: invented.prescriptionFields.sha256, n: own.length }); // prettier-ignore
+  }
+  if (wanted.includes('sintomas')) {
+    const own = invented.symptoms.cases.slice(0, limit);
+    add(symptomsTask(catalogues), own);
+    casesMeta.push({ task: 'sintomas', source: 'sintomas.json', sha256: invented.symptoms.sha256, n: own.length }); // prettier-ignore
+  }
+  if (wanted.includes('ficha')) {
+    const own = invented.chart.cases.slice(0, limit);
+    add(chartTask(), own);
+    casesMeta.push({ task: 'ficha', source: 'ficha.json', sha256: invented.chart.sha256, n: own.length }); // prettier-ignore
   }
   // AS-114 (D3). The product's call and barriers over notes and talk.
   if (wanted.includes('examenes-nota')) {

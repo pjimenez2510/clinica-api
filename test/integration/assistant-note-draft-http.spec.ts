@@ -285,12 +285,13 @@ describe('el borrador de la nota por HTTP (AS-086 a AS-097)', () => {
     ]);
   });
 
-  it('AS-086 the same stretch is drafted once however many times it is asked for', async () => {
+  it('AS-086 AS-260 the same stretch is drafted once however many times it is asked for, and its chart read once', async () => {
     await drafted();
     await drafted();
 
     expect(await prisma.noteDraft.count({ where: { encounterId } })).toBe(1);
-    expect(await prisma.aiRun.count({ where: { encounterId } })).toBe(1);
+    expect(await prisma.aiRun.count({ where: { encounterId, purpose: 'note-draft' } })).toBe(1); // prettier-ignore
+    expect(await prisma.aiRun.count({ where: { encounterId, purpose: 'chart-background' } })).toBe(1); // prettier-ignore
   });
 
   it('AS-086 only the professional of the attention asks and reads, where they write, with assistant:use', async () => {

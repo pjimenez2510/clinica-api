@@ -39,7 +39,12 @@ import type {
   LlmRequest,
   PseudonymizedText,
 } from './llm-client.port';
-import { LINES_PURPOSE, MAPPING_PURPOSE } from './prescription-reading.prompts';
+import {
+  LINES_INSTRUCTIONS,
+  LINES_PROMPT_VERSION,
+  LINES_PURPOSE,
+  MAPPING_PURPOSE,
+} from './prescription-reading.prompts';
 import { PrescriptionProposalService } from './prescription-proposal.service';
 import type { Pseudonymizer } from './pseudonymizer.port';
 import type { NewSuggestion } from './suggestion.store';
@@ -346,7 +351,7 @@ describe('PrescriptionProposalService — reading', () => {
     expect(reading.lines[0]!.medicine).toBeNull();
   });
 
-  it('AS-066 a presentation that contradicts the written strength leaves the line without one', async () => {
+  it('AS-066 AS-270 a presentation that contradicts the written strength gives way to the only one that agrees', async () => {
     const { client } = model({
       lines: [LINE],
       choices: [{ line: 1, medicine: 1, presentation: 1 }],
@@ -356,8 +361,24 @@ describe('PrescriptionProposalService — reading', () => {
     const [line] = (await service.read('enc-1', requester())).lines;
 
     expect(line!.medicine?.code).toBe('J01CA04');
-    expect(line!.fields.concentration).toBeNull();
+    expect(line!.fields).toMatchObject({ form: 'TABLET', concentration: '500 mg', route: 'ORAL' }); // prettier-ignore
     expect(line!.fields.quantity).toBe(21);
+    expect(line!.presentationGap).toBeNull();
+  });
+
+  it('AS-269 AS-270 a strength the model left out is read from the sentence, and the presentation found with it', async () => {
+    const { client } = model({
+      lines: [{ ...LINE, strength: null, form: null, doseAmount: null, doseUnit: null }], // prettier-ignore
+      choices: [{ line: 1, medicine: 1, presentation: null }],
+    });
+    const { service } = build({ llm: client });
+
+    const [line] = (await service.read('enc-1', requester())).lines;
+
+    expect(line!.fields).toMatchObject({ form: 'TABLET', concentration: '500 mg', doseAmount: 1, doseUnit: 'TABLET' }); // prettier-ignore
+    expect(line!.unsaid).toEqual(expect.arrayContaining(['presentation', 'route', 'dose'])); // prettier-ignore
+    expect(line!.presentationGap).toBeNull();
+    expect(line!.inPrescription).toBeNull();
   });
 
   it('AS-070 with the allergies unreadable nothing is proposed and no model is called', async () => {
@@ -564,6 +585,27 @@ describe('PrescriptionProposalService — allergies, confirm and link', () => {
     await expect(service.link({ encounterId: 'enc-1', prescriptionId: 'rx-1', lines: [{ suggestionId: 'sug-1', line: 4 }] }, requester())).rejects.toBeInstanceOf(SuggestionPrescriptionMismatchError); // prettier-ignore
   });
 
+  it('AS-275 a linked line says whether its medicine is still in a standing receta, after reloading too', async () => {
+    const codes: string[] = ['J01CA04'];
+    const stored: SuggestionView[] = [];
+    const built = build({
+      store: suggestions(stored),
+      prescribingReader: prescribing({ prescribedCodes: () => Promise.resolve([...codes]) }), // prettier-ignore
+    });
+    codes.length = 0;
+    await built.service.read('enc-1', requester());
+    Object.assign(stored[0]!, { status: 'ACCEPTED', record: { kind: 'prescription', id: 'rx-1' } }); // prettier-ignore
+
+    codes.push('J01CA04');
+    const kept = await built.service.overview('enc-1', requester());
+    expect(kept.lines[0]).toMatchObject({ status: 'ACCEPTED', prescriptionId: 'rx-1', inPrescription: true }); // prettier-ignore
+
+    codes.length = 0;
+    const removed = await built.service.overview('enc-1', requester());
+    expect(removed.lines[0]!.inPrescription).toBe(false);
+    expect(removed.lines[1]!.inPrescription).toBeNull();
+  });
+
   it('AS-074 nothing is linked unless every link can be: repeated ids or lines, or a line of another medicine', async () => {
     const amoxicillinLine: PrescribedLine = { conceptId: 'c-amox', dosageFormCode: 'TABLET', concentration: '500 mg', routeCode: 'ORAL', doseAmount: 1, doseUnitCode: 'TABLET', frequencyCode: 'EVERY_8_HOURS', frequencyText: 'Cada 8 horas', durationDays: 7, quantity: 21 }; // prettier-ignore
     const { service, store } = await readWith({
@@ -581,5 +623,14 @@ describe('PrescriptionProposalService — allergies, confirm and link', () => {
     // Control: the line of its own medicine links.
     await link([{ suggestionId: 'sug-1', line: 1 }]);
     expect(store.raw.accept).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the instructions of the receta reading (AS-272)', () => {
+  it('AS-272 a medicine the physician says to keep taking («siga con») is a line of today (d2-lines-2)', () => {
+    expect(LINES_PROMPT_VERSION).toBe('d2-lines-2');
+    expect(LINES_INSTRUCTIONS).toMatch(
+      /«siga con», «continúe con».*sí es una línea/,
+    );
   });
 });

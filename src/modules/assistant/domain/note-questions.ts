@@ -46,6 +46,59 @@ export function questionKey(text: string): string {
 }
 
 /**
+ * AS-276. Words that say nothing of WHAT is asked: articles, prepositions,
+ * pronouns and the verbs a question is asked with («presenta», «tiene», «ha
+ * tenido»). Folded.
+ */
+const EMPTY_WORDS = new Set(
+  (
+    'a al algo alguien algun alguna alguno algunas algunos con de del desde el ella en es esta este esto ' +
+    'e ha han hay he la las le les lo los me mi mis o otra otro otras otros para por que se si su sus ' +
+    'te tu u un una unas uno unos usted y ya ' +
+    'presenta presentado presentas tiene tienes tenido tenia tuvo siente sentido sintio nota notado ' +
+    'noto sufre sufrido padece padecido refiere'
+  ).split(' '),
+);
+
+/** AS-276. What a question asks about: its content words, folded, without a plural «s». */
+export function questionWords(text: string): Set<string> {
+  return new Set(
+    questionKey(text)
+      .split(' ')
+      .filter((word) => word.length > 1 && !EMPTY_WORDS.has(word))
+      .map((word) => (word.length > 4 ? word.replace(/(?<=[aeiou])s$/, '') : word)), // prettier-ignore
+  );
+}
+
+/** AS-276. How much of the content two questions share for them to be one. */
+export const SAME_QUESTION = 0.75;
+
+/**
+ * AS-276. Two questions are one when they ask about the same: the same
+ * content words in any order («tos, congestión nasal o mocos» and «tos, mocos
+ * o congestión nasal»), or nearly all of them.
+ */
+/**
+ * AS-276 (clinical review M4). What a discarded question keeps away: only the
+ * same content words, all of them — «¿fiebre, tos?» put away does not hide
+ * «¿fiebre, tos o disnea?», which asks one sign more.
+ */
+export function sameWords(left: string, right: string): boolean {
+  const a = questionWords(left);
+  const b = questionWords(right);
+  if (a.size === 0 || b.size === 0) return questionKey(left) === questionKey(right); // prettier-ignore
+  return a.size === b.size && [...a].every((word) => b.has(word));
+}
+
+export function sameQuestion(left: string, right: string): boolean {
+  const a = questionWords(left);
+  const b = questionWords(right);
+  if (a.size === 0 || b.size === 0) return questionKey(left) === questionKey(right); // prettier-ignore
+  const shared = [...a].filter((word) => b.has(word)).length;
+  return shared / (a.size + b.size - shared) >= SAME_QUESTION;
+}
+
+/**
  * AS-120. The questions that may be shown: backed by a line the model was
  * given, five at most, none twice and none the professional discarded, each
  * restored (names, dates) and with a section only when it is one of the
@@ -58,9 +111,10 @@ export function backedQuestions(input: {
   textSections: readonly string[];
   /** The text of the questions discarded in this attention. */
   discarded: readonly string[];
+  /** AS-276. The questions proposed earlier in this attention, oldest first. */
+  earlier?: readonly string[];
   restore: (text: string) => string;
 }): { kept: BackedQuestion[]; dropped: number } {
-  const seen = new Set(input.discarded.map(questionKey));
   const sections = new Set(input.textSections);
   const kept: BackedQuestion[] = [];
   let dropped = 0;
@@ -73,11 +127,13 @@ export function backedQuestions(input: {
       dropped += 1;
       continue;
     }
-    const key = questionKey(text);
-    if (key === '' || seen.has(key)) continue;
-    seen.add(key);
+    if (questionKey(text) === '') continue;
+    // AS-276. Put away in any wording, put away; asked before, asked as before.
+    if (input.discarded.some((each) => sameWords(each, text))) continue;
+    const worded = input.earlier?.find((each) => sameQuestion(each, text)) ?? text; // prettier-ignore
+    if (kept.some((each) => sameQuestion(each.text, worded))) continue;
     kept.push({
-      text,
+      text: worded,
       section:
         answered.section !== null && sections.has(answered.section)
           ? answered.section
@@ -192,17 +248,15 @@ export function currentQuestions(
   if (runId === null) return [];
   // AS-125. Put away once, put away in this attention: also when the review
   // that brings it again was already on its way when it was discarded.
-  const discarded = new Set(
-    stored.flatMap((each) =>
-      each.status === 'DISCARDED' && typeof each.proposal.text === 'string'
-        ? [questionKey(each.proposal.text)]
-        : [],
-    ),
+  const discarded = stored.flatMap((each) =>
+    each.status === 'DISCARDED' && typeof each.proposal.text === 'string'
+      ? [each.proposal.text]
+      : [],
   );
   return stored.flatMap((each) => {
     if (each.aiRunId !== runId || each.status === 'DISCARDED') return [];
     const { text, section, fromMs, toMs, demo } = each.proposal;
-    if (typeof text === 'string' && discarded.has(questionKey(text))) return [];
+    if (typeof text === 'string' && discarded.some((each) => sameWords(each, text))) return []; // prettier-ignore
     if (typeof text !== 'string' || typeof fromMs !== 'number' || typeof toMs !== 'number') return []; // prettier-ignore
     const quote = spokenIn({ fromMs, toMs }, transcript);
     if (quote === '') return [];

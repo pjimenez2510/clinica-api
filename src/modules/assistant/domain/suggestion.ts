@@ -17,7 +17,11 @@ export type SuggestionKind =
   | 'prescription-item'
   | 'order-item'
   /** AS-121. A question «Para completar la nota»: discarded, never accepted. */
-  | 'note-question';
+  | 'note-question'
+  /** AS-260. What the conversation said of the chart, proposed as its record. */
+  | 'chart-allergy'
+  | 'chart-no-allergy'
+  | 'chart-history';
 
 export type SuggestionStatus =
   'PROPOSED' | 'ACCEPTED' | 'ACCEPTED_WITH_CHANGES' | 'DISCARDED';
@@ -87,7 +91,13 @@ export function validSources(sources: unknown): SuggestionSource[] {
 /** The record an accepted proposal became, by the table that holds it. */
 export interface SuggestionRecord {
   kind:
-    'clinical_note' | 'encounter_diagnosis' | 'prescription' | 'service_order';
+    | 'clinical_note'
+    | 'encounter_diagnosis'
+    | 'prescription'
+    | 'service_order'
+    | 'patient_allergy'
+    | 'patient_allergy_absence'
+    | 'patient_history';
   id: string;
 }
 
@@ -136,6 +146,9 @@ const RECORD_OF: Readonly<
   diagnosis: 'encounter_diagnosis',
   'prescription-item': 'prescription',
   'order-item': 'service_order',
+  'chart-allergy': 'patient_allergy',
+  'chart-no-allergy': 'patient_allergy_absence',
+  'chart-history': 'patient_history',
 };
 
 /**

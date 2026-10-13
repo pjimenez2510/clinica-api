@@ -124,9 +124,11 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
         entry.id,
       ),
     ).rejects.toThrow(/never deleted/);
+    // Refused by its own trigger, or first by a table that points at it
+    // (`ai_suggestion`, AS-266): either way nothing is truncated.
     await expect(
       prisma.$executeRawUnsafe(`TRUNCATE patient_history`),
-    ).rejects.toThrow(/never deleted/);
+    ).rejects.toThrow(/never deleted|cannot truncate a table referenced/);
     await expect(
       prisma.$executeRawUnsafe(
         `UPDATE patient_history SET description = 'Hipertensión' WHERE id = $1::uuid`,

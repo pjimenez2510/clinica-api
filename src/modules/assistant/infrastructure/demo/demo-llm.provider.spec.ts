@@ -40,7 +40,7 @@ const ask = <
 });
 
 describe('the demonstration script (AS-029)', () => {
-  it('AS-029 names the problems the note contains, quoting it as written, and nothing else', async () => {
+  it('AS-029 AS-278 names the problems the note contains, quoting it as written, and nothing else', async () => {
     const provider = new DemoLlmProvider();
 
     const answer = await provider.generate(
@@ -57,6 +57,8 @@ describe('the demonstration script (AS-029)', () => {
         problem: 'HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO',
         quote: '150/95 en dos tomas',
       },
+      // AS-278. A symptom, so the barrier of AS-267 is seen turning it into a phrase.
+      { problem: 'DOLOR DE GARGANTA', quote: 'Odinofagia de tres días' },
     ]);
     expect(provider.name).toBe('fake');
     expect(answer.model).toBe('guion-de-demostracion');
@@ -145,6 +147,34 @@ describe('the demonstration script (AS-029)', () => {
     expect(value.choices).toEqual([
       { line: 1, medicine: 1, presentation: 2 },
       { line: 2, medicine: null, presentation: null },
+    ]);
+  });
+});
+
+describe('the libreto in the demonstration (AS-278)', () => {
+  it('AS-278 the tonsillitis leaves the pharyngitis out, and brings the sore throat and the fever as symptoms', async () => {
+    const note = '## Examen físico\nFaringe eritematosa con placas blancas en las amígdalas.\n## Enfermedad actual\nOdinofagia de tres días de evolución, con fiebre desde ayer.'; // prettier-ignore
+
+    const { value } = await new DemoLlmProvider().generate(ask(PROBLEMS_PURPOSE, note, problemsAnswer)); // prettier-ignore
+
+    expect(value.problems).toEqual([
+      {
+        problem: 'AMIGDALITIS AGUDA',
+        quote: 'placas blancas en las amígdalas',
+      },
+      { problem: 'DOLOR DE GARGANTA', quote: 'Odinofagia de tres días de evolución, con fiebre desde ayer' }, // prettier-ignore
+      { problem: 'FIEBRE', quote: 'fiebre desde ayer' },
+    ]);
+  });
+
+  it('AS-278 the plan’s amoxicillin capsule and the paracetamol «de 500», not what the patient already took', async () => {
+    const note = '<nota>\n## Enfermedad actual\nHa tomado paracetamol 500 mg cada 8 horas para la fiebre.\n## Plan\nAmoxicilina 500 mg cápsulas, una cápsula cada 8 horas por 7 días. Paracetamol de 500 cada 8 horas si tiene fiebre o dolor.\n</nota>'; // prettier-ignore
+
+    const { value } = await new DemoLlmProvider().generate(ask(LINES_PURPOSE, `${note}\n\n${vocabularyContext()}`, linesAnswer)); // prettier-ignore
+
+    expect(value.lines).toEqual([
+      expect.objectContaining({ drug: 'amoxicilina', strength: '500 mg', form: 'CAPSULE', doseAmount: 1, doseUnit: 'CAPSULE', frequency: 'EVERY_8_HOURS', durationDays: 7 }), // prettier-ignore
+      expect.objectContaining({ drug: 'paracetamol', strength: null, form: null, frequency: 'EVERY_8_HOURS', instructions: 'si tiene fiebre o dolor', quote: 'Paracetamol de 500 cada 8 horas si tiene fiebre o dolor' }), // prettier-ignore
     ]);
   });
 });

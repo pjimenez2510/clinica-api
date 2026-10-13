@@ -1,0 +1,208 @@
+{
+  "description": "AS-277, SC-104. Conversaciones inventadas —el libreto de la amigdalitis, tres variantes y las consultas de nota.json que dicen alergias o antecedentes— y lo que deben proponer para la ficha: «sin alergias conocidas», cada alergia (por su sustancia) y cada antecedente (por una palabra de su descripción y, si es familiar, el parentesco). `optional`: lo que puede proponerse o no sin contar como inventado.",
+  "cases": [
+    {
+      "id": "ficha-libreto",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenos días, Lucía. Cuénteme, ¿qué le pasa?",
+        "Paciente: Doctora, me duele mucho la garganta desde hace tres días, y desde ayer tengo fiebre.",
+        "Médico: ¿Ha tomado algo para el dolor?",
+        "Paciente: Paracetamol de quinientos, cada ocho horas, pero se me pasa un rato y vuelve.",
+        "Médico: ¿Es alérgica a algún medicamento?",
+        "Paciente: No, que yo sepa, a ninguno.",
+        "Médico: ¿Alguna enfermedad que tenga usted o su familia?",
+        "Paciente: Yo no. Mi mamá es hipertensa.",
+        "Médico: Lucía, tiene una amigdalitis aguda, una infección de la garganta."
+      ],
+      "expected": [
+        {
+          "kind": "none"
+        },
+        {
+          "kind": "history",
+          "history": "FAMILY",
+          "key": "hipertens",
+          "relative": "Madre"
+        }
+      ]
+    },
+    {
+      "id": "ficha-alergia",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Es alérgica a algún medicamento?",
+        "Paciente: Sí, soy alérgica a la amoxicilina, me da ronchas.",
+        "Médico: ¿Alguna enfermedad suya o de su familia?",
+        "Paciente: Yo tengo asma desde niña. Mi papá es diabético."
+      ],
+      "expected": [
+        {
+          "kind": "allergy",
+          "key": "amoxicilina"
+        },
+        {
+          "kind": "history",
+          "history": "PERSONAL",
+          "key": "asma"
+        },
+        {
+          "kind": "history",
+          "history": "FAMILY",
+          "key": "diabet",
+          "relative": "Padre"
+        }
+      ]
+    },
+    {
+      "id": "ficha-varias",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Alergias?",
+        "Paciente: A la penicilina y a los mariscos.",
+        "Médico: ¿Enfermedades en la familia?",
+        "Paciente: Mi mamá tuvo cáncer de mama, y mi hermano es hipertenso.",
+        "Médico: ¿Usted toma algo?",
+        "Paciente: Nada, estoy sana."
+      ],
+      "expected": [
+        {
+          "kind": "allergy",
+          "key": "penicilina"
+        },
+        {
+          "kind": "allergy",
+          "key": "marisco"
+        },
+        {
+          "kind": "history",
+          "history": "FAMILY",
+          "key": "mama",
+          "relative": "Madre"
+        },
+        {
+          "kind": "history",
+          "history": "FAMILY",
+          "key": "hipertens",
+          "relative": "Hermano"
+        }
+      ]
+    },
+    {
+      "id": "ficha-nada",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Tiene alergias?",
+        "Paciente: No tengo alergias.",
+        "Médico: ¿Toma algún medicamento?",
+        "Paciente: No tomo nada.",
+        "Médico: ¿Enfermedades en la familia?",
+        "Paciente: Nadie tiene nada, gracias a Dios."
+      ],
+      "expected": [
+        {
+          "kind": "none"
+        }
+      ]
+    },
+    {
+      "id": "ficha-nota-01",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenos días, ¿qué le trae por aquí?",
+        "Paciente: Doctor, tengo dolor de garganta desde hace tres días y fiebre en las noches.",
+        "Médico: ¿Ha tenido tos o moco?",
+        "Paciente: Un poquito de moco, tos casi no.",
+        "Médico: ¿Es alérgico a algún medicamento?",
+        "Paciente: No, a ninguno.",
+        "Médico: Vamos a revisar. Temperatura de 38,2. Las amígdalas están rojas y con placas blancas, ganglios del cuello inflamados.",
+        "Médico: Es una amigdalitis bacteriana. Le voy a dar amoxicilina de quinientos cada ocho horas por diez días y paracetamol para la fiebre.",
+        "Médico: Si no mejora en tres días, regrese."
+      ],
+      "expected": [
+        {
+          "kind": "none"
+        }
+      ],
+      "optional": []
+    },
+    {
+      "id": "ficha-nota-02",
+      "origin": "invented",
+      "lines": [
+        "Médico: Cuénteme, ¿cómo ha estado con la presión?",
+        "Paciente: Bien, doctor, me la tomo en la casa y sale ciento treinta sobre ochenta y cinco.",
+        "Médico: ¿Sigue tomando el losartán?",
+        "Paciente: Sí, el de cincuenta todas las mañanas.",
+        "Médico: ¿Dolor de cabeza, mareos, hinchazón de pies?",
+        "Paciente: No, nada de eso.",
+        "Médico: Su papá tenía diabetes, ¿verdad?",
+        "Paciente: Sí, y mi mamá era hipertensa.",
+        "Médico: Presión aquí de 128 sobre 82, frecuencia 72. Peso 81 kilos.",
+        "Médico: Hipertensión controlada. Seguimos con el losartán igual, menos sal, caminar media hora diaria, y control en tres meses con exámenes de colesterol y glucosa."
+      ],
+      "expected": [
+        {
+          "kind": "history",
+          "history": "FAMILY",
+          "key": "diabet",
+          "relative": "Padre"
+        },
+        {
+          "kind": "history",
+          "history": "FAMILY",
+          "key": "hipertens",
+          "relative": "Madre"
+        }
+      ],
+      "optional": [
+        {
+          "kind": "history",
+          "history": "PERSONAL",
+          "key": "hipertens"
+        }
+      ]
+    },
+    {
+      "id": "ficha-nota-05",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Qué le pasó en el tobillo?",
+        "Paciente: Me lo doblé jugando fútbol ayer en la tarde.",
+        "Médico: ¿Pudo caminar después?",
+        "Paciente: Sí, cojeando, pero sí.",
+        "Médico: ¿Alguna enfermedad o medicamento?",
+        "Paciente: No, ninguna.",
+        "Médico: Tobillo derecho hinchado por fuera, dolor al tocar el ligamento, sin dolor en el hueso, puede apoyar.",
+        "Médico: Es un esguince leve de tobillo. Hielo veinte minutos tres veces al día, vendaje, pie elevado e ibuprofeno de cuatrocientos cada ocho horas por cinco días.",
+        "Médico: No hace falta radiografía por ahora."
+      ],
+      "expected": [],
+      "optional": []
+    },
+    {
+      "id": "ficha-nota-06",
+      "origin": "invented",
+      "lines": [
+        "Médico: Cuénteme del azúcar, ¿cómo va?",
+        "Paciente: La glucosa en ayunas me salió ciento cuarenta la semana pasada.",
+        "Médico: ¿Está tomando la metformina?",
+        "Paciente: A veces se me olvida la de la noche.",
+        "Médico: ¿Mucha sed, orina mucho, ha bajado de peso?",
+        "Paciente: Sed un poco.",
+        "Médico: ¿Algún problema en los pies?",
+        "Paciente: Me hormiguean a veces.",
+        "Médico: Peso 88 kilos, presión 132 sobre 84. Pies con sensibilidad disminuida en la punta de los dedos, pulsos presentes.",
+        "Médico: Diabetes tipo dos mal controlada con posible neuropatía. Reforzar la toma de la metformina, pedir hemoglobina glicosilada y función renal, y referir a nutrición."
+      ],
+      "expected": [],
+      "optional": [
+        {
+          "kind": "history",
+          "history": "PERSONAL",
+          "key": "diabet"
+        }
+      ]
+    }
+  ]
+}

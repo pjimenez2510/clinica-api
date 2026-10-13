@@ -17,6 +17,7 @@ import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
 import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
+import { CHART_BACKGROUND_READER } from '../../shared/clinical/chart-background.port';
 import { ASSISTANT_AT_SIGNING } from '../../shared/clinical/assistant-at-signing.port';
 import { ASSISTANT_SITE_SWITCH } from '../../shared/clinical/assistant-site-switch.port';
 import { RECORDING_AUTHORIZATION } from '../../shared/clinical/recording-authorization.port';
@@ -38,8 +39,10 @@ import { PrismaNoteDraftContextReader } from '../../shared/infrastructure/clinic
 import { PrismaOrderingContextReader } from '../../shared/infrastructure/clinical/prisma-ordering-context.reader';
 import { PrismaPrescribingContextReader } from '../../shared/infrastructure/clinical/prisma-prescribing-context.reader';
 import { PrismaAllergyAbsenceReader } from '../../shared/infrastructure/clinical/standing-allergy-absence';
+import { PrismaChartBackgroundReader } from '../../shared/infrastructure/clinical/prisma-chart-background.reader';
 
 import { AI_RUN_STORE, type AiRunStore } from './application/ai-run.store';
+import { ChartProposalService } from './application/chart-proposal.service';
 import {
   ASSISTANT_DEMO,
   DIAGNOSIS_PROPOSAL_CLOCK,
@@ -57,6 +60,7 @@ import { AssistantPrescriptionController } from './assistant-prescription.contro
 import { OrderProposalService } from './application/order-proposal.service';
 import { PrescriptionProposalService } from './application/prescription-proposal.service';
 import { AssistantListeningController } from './assistant-listening.controller';
+import { AssistantChartController } from './assistant-chart.controller';
 import { AssistantNoteDraftController } from './assistant-note-draft.controller';
 import { AssistantNoteQuestionsController } from './assistant-note-questions.controller';
 import {
@@ -161,6 +165,7 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantDiagnosisController,
     AssistantListeningController,
     AssistantNoteDraftController,
+    AssistantChartController,
     AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
@@ -272,6 +277,9 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: NOTE_DRAFT_CLOCK, useValue: () => new Date() },
     NoteDraftService,
     { provide: TRANSCRIPT_OBSERVER, useExisting: NoteDraftService },
+    // AS-260 to AS-265. What the conversation says of the chart, as records.
+    { provide: CHART_BACKGROUND_READER, useClass: PrismaChartBackgroundReader }, // prettier-ignore
+    ChartProposalService,
     { provide: NOTE_QUESTION_CHECK_STORE, useClass: PrismaNoteQuestionCheckStore }, // prettier-ignore
     NoteQuestionService,
     // AS-140 to AS-146 (E1). What a signature asks and tells.
@@ -316,6 +324,7 @@ export class AssistantModule
         AssistantDiagnosisController,
         AssistantListeningController,
         AssistantNoteDraftController,
+        AssistantChartController,
         AssistantNoteQuestionsController,
         AssistantPrescriptionController,
         AssistantOrdersController,

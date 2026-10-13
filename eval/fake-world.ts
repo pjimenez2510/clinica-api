@@ -19,6 +19,7 @@ import type {
   NoteCase,
   PrescriptionCase,
   PrescriptionNoteCase,
+  SymptomsCase,
 } from './cases.ts';
 import type { Catalogues } from './catalogue.ts';
 import type { CallKey } from './runner.ts';
@@ -166,6 +167,25 @@ export class FakeWorld {
         );
       case 'examenes-nota':
         return answer(this.exams(item as ExamNoteCase, request.prompt, right));
+      // AS-277. The same reading as receta-nota; the fields are the barrier's.
+      case 'receta-campos':
+        return answer(
+          key.role === 'follow-up'
+            ? this.choices(item as unknown as PrescriptionNoteCase, request.prompt, right) // prettier-ignore
+            : this.lines(item as unknown as PrescriptionNoteCase),
+        );
+      // AS-277. One problem quoting the first section; its category's code.
+      case 'sintomas': {
+        const symptoms = item as SymptomsCase;
+        if (key.role === 'follow-up') {
+          return answer({ codes: right ? [`${symptoms.diagnosis[0]}.9`] : ['R50.9'] }); // prettier-ignore
+        }
+        const quote = symptoms.sections[0]!.text.replace(/\.$/, '');
+        return answer({ problems: [{ problem: 'PROBLEMA', quote }] });
+      }
+      // AS-277. Nothing said of the chart: an empty, valid answer.
+      case 'ficha':
+        return answer({ noKnownAllergies: null, allergies: [], history: [] });
     }
   }
 

@@ -95,12 +95,74 @@ export const examNoteCaseSchema = z.object({
   expected: z.array(z.string().min(1)),
 });
 
+/**
+ * AS-277, SC-102. The Plan of an invented note and, per line, the medicine
+ * of the CNMB and every field the receta must fill — said or deducible.
+ */
+export const prescriptionFieldsCaseSchema = z.object({
+  id: z.string().min(1),
+  origin: invented,
+  plan: z.string().min(1),
+  expected: z.array(
+    z.object({
+      cnmbCode: z.string().min(1),
+      form: z.string().min(1),
+      concentration: z.string().min(1),
+      route: z.string().min(1),
+      doseAmount: z.number().positive(),
+      doseUnit: z.string().min(1),
+    }),
+  ),
+});
+
+/**
+ * AS-277, SC-103. An invented note with a diagnosis that explains its
+ * symptoms, and the categories that diagnosis may be coded in.
+ */
+export const symptomsCaseSchema = z.object({
+  id: z.string().min(1),
+  origin: invented,
+  sections: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        label: z.string().min(1),
+        text: z.string().min(1),
+      }),
+    ) // prettier-ignore
+    .min(1),
+  diagnosis: z.array(z.string().regex(/^[A-Z]\d{2}$/)).min(1),
+});
+
+const chartEntrySchema = z.object({
+  kind: z.enum(['none', 'allergy', 'history']),
+  /** A word the substance or the description holds, folded. */
+  key: z.string().min(1).optional(),
+  history: z.enum(['PERSONAL', 'FAMILY']).optional(),
+  relative: z.string().min(1).optional(),
+});
+
+/**
+ * AS-277, SC-104. An invented conversation and what it must propose for the
+ * chart; `optional`, what may be proposed or not without counting as invented.
+ */
+export const chartCaseSchema = z.object({
+  id: z.string().min(1),
+  origin: invented,
+  lines: z.array(z.string().min(1)).min(2),
+  expected: z.array(chartEntrySchema),
+  optional: z.array(chartEntrySchema).optional(),
+});
+
 const SCHEMAS = {
   cie10: cie10CaseSchema,
   prescription: prescriptionCaseSchema,
   prescriptionNote: prescriptionNoteCaseSchema,
   examNote: examNoteCaseSchema,
   note: noteCaseSchema,
+  prescriptionFields: prescriptionFieldsCaseSchema,
+  symptoms: symptomsCaseSchema,
+  chart: chartCaseSchema,
 } as const;
 type Kind = keyof typeof SCHEMAS;
 
@@ -109,6 +171,12 @@ export type PrescriptionCase = z.infer<typeof prescriptionCaseSchema>;
 export type NoteCase = z.infer<typeof noteCaseSchema>;
 export type PrescriptionNoteCase = z.infer<typeof prescriptionNoteCaseSchema>;
 export type ExamNoteCase = z.infer<typeof examNoteCaseSchema>;
+export type PrescriptionFieldsCase = z.infer<
+  typeof prescriptionFieldsCaseSchema
+>;
+export type SymptomsCase = z.infer<typeof symptomsCaseSchema>;
+export type ChartCase = z.infer<typeof chartCaseSchema>;
+export type ChartEntry = z.infer<typeof chartEntrySchema>;
 
 export interface CaseSet<Case> {
   file: string;
@@ -159,6 +227,10 @@ export function loadInventedCases(dir = CASES_DIR) {
     note: loadCaseFile(join(dir, 'nota.json'), 'note'),
     /** SC-091. Consultations the draft's prompt was never tuned on. */
     noteHeldOut: loadCaseFile(join(dir, 'nota-reservada.json'), 'note'),
+    /** AS-277: SC-102, SC-103 and SC-104. */
+    prescriptionFields: loadCaseFile(join(dir, 'receta-campos.json'), 'prescriptionFields'), // prettier-ignore
+    symptoms: loadCaseFile(join(dir, 'sintomas.json'), 'symptoms'),
+    chart: loadCaseFile(join(dir, 'ficha.json'), 'chart'),
   };
 }
 
