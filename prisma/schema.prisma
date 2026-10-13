@@ -2161,6 +2161,9 @@ model PatientAllergy {
   changedBy   User?     @relation("AllergyChanger", fields: [changedById], references: [id], onDelete: Restrict)
   changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
 
+  /// AS-266. The assistant's proposals this record was accepted from.
+  aiSuggestions AiSuggestion[]
+
   @@index([patientId, refutedAt])
   @@map("patient_allergy")
 }
@@ -2206,6 +2209,9 @@ model PatientHistory {
   changedBy   User?     @relation("HistoryChanger", fields: [changedById], references: [id], onDelete: Restrict)
   changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
 
+  /// AS-266. The assistant's proposals this record was accepted from.
+  aiSuggestions AiSuggestion[]
+
   @@index([patientId, refutedAt])
   @@map("patient_history")
 }
@@ -2246,6 +2252,9 @@ model PatientAllergyAbsence {
   retractedById String?   @map("retracted_by") @db.Uuid
   retractedBy   User?     @relation("AllergyAbsenceRetractor", fields: [retractedById], references: [id], onDelete: Restrict)
   retractedAt   DateTime? @map("retracted_at") @db.Timestamptz(6)
+
+  /// AS-266. The assistant's proposals this record was accepted from.
+  aiSuggestions AiSuggestion[]
 
   @@index([patientId, assertedAt(sort: Desc)], map: "patient_allergy_absence_by_chart")
   @@map("patient_allergy_absence")
@@ -6268,7 +6277,8 @@ model AiSuggestion {
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
   aiRunId     String    @map("ai_run_id") @db.Uuid
   aiRun       AiRun     @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
-  /// `note-section`, `diagnosis`, `prescription-item`, `order-item`.
+  /// `note-section`, `diagnosis`, `prescription-item`, `order-item`,
+  /// `note-question`, `chart-allergy`, `chart-no-allergy`, `chart-history`.
   kind        String    @db.VarChar(24)
   proposal    Json      @db.JsonB
   /// P2: a list of where each part comes from (a minute of the conversation,
@@ -6279,21 +6289,29 @@ model AiSuggestion {
   /// AS-022. Normalised edit distance between the proposal and what was saved.
   distance    Decimal?  @db.Decimal(5, 4)
 
-  clinicalNoteId       String?       @map("clinical_note_id") @db.Uuid
-  clinicalNote         ClinicalNote? @relation(fields: [clinicalNoteId], references: [id], onDelete: Restrict)
+  clinicalNoteId          String?                @map("clinical_note_id") @db.Uuid
+  clinicalNote            ClinicalNote?          @relation(fields: [clinicalNoteId], references: [id], onDelete: Restrict)
   /// No foreign key, on purpose: removing a diagnosis deletes its row and
   /// keeps the same id in `encounter_diagnosis_retraction` (EN-180). The
   /// trigger checks it exists, in this attention, when the proposal is
   /// accepted (D-243 §3).
-  encounterDiagnosisId String?       @map("encounter_diagnosis_id") @db.Uuid
-  prescriptionId       String?       @map("prescription_id") @db.Uuid
-  prescription         Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
-  serviceOrderId       String?       @map("service_order_id") @db.Uuid
-  serviceOrder         ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  encounterDiagnosisId    String?                @map("encounter_diagnosis_id") @db.Uuid
+  prescriptionId          String?                @map("prescription_id") @db.Uuid
+  prescription            Prescription?          @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
+  serviceOrderId          String?                @map("service_order_id") @db.Uuid
+  serviceOrder            ServiceOrder?          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  /// AS-266. The chart's records an accepted proposal of the chart links: of
+  /// the attention's patient (`ai_suggestion_record_in_its_encounter`).
+  patientAllergyId        String?                @map("patient_allergy_id") @db.Uuid
+  patientAllergy          PatientAllergy?        @relation(fields: [patientAllergyId], references: [id], onDelete: Restrict)
+  patientAllergyAbsenceId String?                @map("patient_allergy_absence_id") @db.Uuid
+  patientAllergyAbsence   PatientAllergyAbsence? @relation(fields: [patientAllergyAbsenceId], references: [id], onDelete: Restrict)
+  patientHistoryId        String?                @map("patient_history_id") @db.Uuid
+  patientHistory          PatientHistory?        @relation(fields: [patientHistoryId], references: [id], onDelete: Restrict)
   /// AS-109. The service code an accepted exam was chosen as: exactly on an
   /// accepted `order-item` (`ai_suggestion_accepted_code_of_an_accepted_exam`),
   /// and one proposal per exam of an order (`ai_suggestion_one_per_ordered_exam`).
-  acceptedCode         String?       @map("accepted_code") @db.VarChar(32)
+  acceptedCode            String?                @map("accepted_code") @db.VarChar(32)
 
   /// The application's clock, never `now()`.
   proposedAt DateTime  @map("proposed_at") @db.Timestamptz(6)
@@ -6306,6 +6324,9 @@ model AiSuggestion {
 
   @@index([encounterId])
   @@index([aiRunId])
+  @@index([patientAllergyId])
+  @@index([patientAllergyAbsenceId])
+  @@index([patientHistoryId])
   @@map("ai_suggestion")
 }
 

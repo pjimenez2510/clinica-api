@@ -6,6 +6,7 @@ import type {
   NewSuggestion,
   SuggestionStore,
 } from '../application/suggestion.store';
+import { chartRecordText } from '../../../shared/clinical/chart-background.port';
 import {
   acceptsNewContent,
   type CodingEncounterStatus,
@@ -39,6 +40,9 @@ const SUGGESTION_SELECT = {
   encounterDiagnosisId: true,
   prescriptionId: true,
   serviceOrderId: true,
+  patientAllergyId: true,
+  patientAllergyAbsenceId: true,
+  patientHistoryId: true,
   acceptedCode: true,
   proposedAt: true,
   decidedBy: true,
@@ -55,6 +59,9 @@ const COLUMN_OF = {
   encounter_diagnosis: 'encounterDiagnosisId',
   prescription: 'prescriptionId',
   service_order: 'serviceOrderId',
+  patient_allergy: 'patientAllergyId',
+  patient_allergy_absence: 'patientAllergyAbsenceId',
+  patient_history: 'patientHistoryId',
 } as const satisfies Record<SuggestionRecord['kind'], keyof SuggestionRow>;
 
 /**
@@ -235,6 +242,32 @@ async function savedIn(
       select: { cie10Code: true },
     });
     return diagnosis?.cie10Code ?? '';
+  }
+  // AS-022, AS-265. The chart's record as one line, as the proposal wrote it.
+  if (suggestion.kind === 'chart-allergy') {
+    const allergy = await tx.patientAllergy.findUnique({
+      where: { id: recordId },
+      select: { substanceText: true, reaction: true },
+    });
+    return allergy
+      ? chartRecordText({ kind: 'allergy', substance: allergy.substanceText, reaction: allergy.reaction }) // prettier-ignore
+      : '';
+  }
+  if (suggestion.kind === 'chart-no-allergy') {
+    const absence = await tx.patientAllergyAbsence.findUnique({
+      where: { id: recordId },
+      select: { id: true },
+    });
+    return absence ? chartRecordText({ kind: 'absence' }) : '';
+  }
+  if (suggestion.kind === 'chart-history') {
+    const history = await tx.patientHistory.findUnique({
+      where: { id: recordId },
+      select: { description: true, relative: true },
+    });
+    return history
+      ? chartRecordText({ kind: 'history', description: history.description, relative: history.relative }) // prettier-ignore
+      : '';
   }
   return null;
 }
