@@ -5,18 +5,35 @@ import type {
   NoteQuestionCheck,
   NoteQuestionCheckStore,
 } from '../application/note-question-check.store';
+import type { NewSuggestion } from '../application/suggestion.store';
+import type { SiteScopeFilter } from '../domain/suggestion';
+
+import { proposeLocked } from './prisma-suggestion.store';
+import { suggestionErrorFrom } from './suggestion-database-errors';
 
 /**
  * AS-121, AS-122 over PostgreSQL. The table refuses a review of an attempt of
  * another attention or one that did not answer, more than five questions, a
- * digest that is not one, and any rewrite (`note_question_check_*`).
+ * digest that is not one, and any rewrite (`note_question_check_*`); and,
+ * once the 002 is signed, any review at all (`note_question_of_a_draft`, AS-124).
  */
 @Injectable()
 export class PrismaNoteQuestionCheckStore implements NoteQuestionCheckStore {
   constructor(private readonly prisma: PrismaService) {}
 
-  async record(check: NoteQuestionCheck): Promise<void> {
-    await this.prisma.noteQuestionCheck.create({ data: check });
+  async record(
+    check: NoteQuestionCheck,
+    questions: readonly NewSuggestion[],
+    sites: SiteScopeFilter,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await proposeLocked(tx, questions, check.checkedAt, sites, [check.encounterId]); // prettier-ignore
+      await tx.noteQuestionCheck
+        .create({ data: check })
+        .catch((error: unknown) => {
+          throw suggestionErrorFrom(error) ?? error;
+        });
+    });
   }
 
   async latest(encounterId: string): Promise<NoteQuestionCheck | null> {
