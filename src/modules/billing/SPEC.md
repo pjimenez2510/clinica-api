@@ -650,6 +650,21 @@ autorizada, y desistir de otra y acreditar de nuevo sus líneas; dos «enviar a
 caja» con pagadores distintos y que la segunda diga cuál tiene la cuenta.
 **Cubre:** BI-024, BI-274, BI-301 a BI-305. **Solo servidor:** BI-301, BI-302.
 
+### B23 — El «Próximo número» de cada punto de emisión _(P1, 13-10-2026)_
+
+D-262 (plan `feat-f06-secuencial-punto-emision`): la factura 19 del autor
+volvió del SRI con el error 45 porque el SRI ya tenía esa 19, y la base no
+tenía cómo saber dónde iba la numeración. Lo mismo le pasa a la clínica que
+viene de otro sistema de facturación. La salida del comprobante devuelto está
+en `sri/SPEC.md` S12.
+**Prueba independiente:** con `admin@`, en Sedes → puntos de emisión, fijar
+el «Próximo número» de factura del 001 en 100 con un motivo; emitir una
+factura con `caja@` y verla salir con `000000100`, y la siguiente con la 101;
+intentar fijarlo en 50 y que se rechace diciendo el mayor usado. Contra
+PostgreSQL: dos emisiones a la vez con el número fijado no comparten número, y
+la base rechaza por SQL directo un próximo número por debajo del usado.
+**Cubre:** BI-306 a BI-311. **Solo servidor:** BI-308. **Solo interfaz:** BI-310, BI-311.
+
 > **Sustituye** —retirados en su sitio, con su sustituto dicho—: BI-185 a
 > BI-188, BI-257, BI-275 a BI-277, y SP-020, SP-026, SP-030, SP-031, ORD-103,
 > ORD-108, ORD-109, ORD-162, ORD-163 y ORD-169 en sus módulos.
@@ -3279,6 +3294,65 @@ lo ve._
   > D-216 §1. Caja ve el pagador ya elegido y lo cambia con «Cambiar
   > pagador» (BI-215) si hace falta, en vez de descubrirlo en el extracto.
 
+
+## 29. El «Próximo número» de cada punto de emisión (B23, D-262)
+
+> Modifica BI-085 sin retirarlo: la numeración sigue sin reutilizar ningún
+> número y consecutiva, salvo los dos huecos que deja una persona y quedan
+> explicados — el salto al «Próximo número» que fija administración (aquí) y el
+> número que el SRI devolvió con el error 45 y se renumeró (`sri` SRI-109).
+> **Confirmar con:** contador (D-262 §5).
+
+- **BI-306** — El sistema DEBERÁ guardar, por punto de emisión y por tipo de
+  comprobante —`01` factura y `04` nota de crédito, que el SRI numera por
+  separado—, un «próximo número» y un «último número emitido en el sistema
+  anterior», los dos opcionales (`emission_point_numbering`); y CUANDO quien
+  tenga `site:manage` en la sede del punto los fije, DEBERÁ guardarlos con el
+  motivo, quién y cuándo, y la fila anterior en `record_version`. SI falta el
+  motivo ENTONCES DEBERÁ rechazarlo con `NUMBERING_REASON_REQUIRED`; SI un
+  número no es un entero de 1 a 999 999 999 ENTONCES DEBERÁ rechazarlo
+  nombrando el campo; SI el punto no existe o es de una sede fuera de su
+  alcance ENTONCES DEBERÁ responder `NUMBERING_EMISSION_POINT_NOT_FOUND`.
+  > D-262 §2: administración, nunca caja. Es el permiso con que se dan de alta
+  > los puntos de emisión; caja no lo tiene.
+- **BI-307** — SI el «próximo número» que se fija no supera el mayor
+  secuencial ya usado en ese punto y tipo, ENTONCES el sistema DEBERÁ
+  rechazarlo con `NUMBERING_BELOW_USED` diciendo el mayor usado; y la base
+  DEBERÁ rechazarlo también (`emission_point_numbering_not_below_used`),
+  leyendo el mayor usado bajo el bloqueo de fila del punto de emisión con que
+  se numera (BI-085); un «próximo número» que no cambia —uno ya superado por
+  las emisiones— NO DEBERÁ impedir cambiar el resto de la fila. La base
+  DEBERÁ rechazar un secuencial de factura o de nota de crédito que no tenga
+  sus nueve dígitos (`invoice_sequential_has_nine_digits`,
+  `credit_note_sequential_has_nine_digits`).
+  > D-262 §3. Por encima se puede, siempre con motivo; bajar hasta el mayor
+  > usado más uno también. Que la base lo garantice cierra la carrera entre
+  > fijarlo y una emisión que se cuela entre la lectura y la escritura.
+- **BI-308** — CUANDO se emita una factura o una nota de crédito, el sistema
+  DEBERÁ darle como secuencial el mayor entre el mayor usado en su punto y tipo
+  más uno y el «próximo número» fijado, calculado bajo el bloqueo de fila del
+  punto de emisión por la función de la base `next_voucher_sequential`; y dos
+  emisiones a la vez en el mismo punto y tipo NO DEBERÁN compartir número.
+  > Una sola función para la factura, la nota de crédito y la renumeración
+  > (SRI-109): tres lecturas de `max(sequential)` repetidas eran tres sitios
+  > donde olvidar el número fijado.
+- **BI-309** — El sistema DEBERÁ servir a quien tenga `site:read` en la sede,
+  por cada punto de emisión y tipo, el mayor secuencial usado, el «próximo
+  número» fijado con su motivo, quién y cuándo, el número con que saldrá el
+  siguiente comprobante y el último del sistema anterior; y DEBERÁ marcar
+  `belowPreviousSystem` CUANDO el que saldrá no supere el último declarado del
+  sistema anterior.
+  > D-262 §4: el aviso no bloquea. El sistema no puede saber qué emitió la
+  > clínica con otro software; quien migra, sí.
+- **BI-310** — La pantalla de puntos de emisión DEBERÁ mostrar, por punto, el
+  número con que saldrán la próxima factura y la próxima nota de crédito, y a
+  quien tenga `site:manage` DEBERÁ ofrecer «Numeración», donde se fijan los dos
+  números de cada tipo con su motivo; MIENTRAS el que saldrá no supere el
+  último del sistema anterior, DEBERÁ avisarlo sin impedir guardar.
+- **BI-311** — La puesta en marcha DEBERÁ recordar, en el paso de las sedes,
+  que si la clínica ya facturaba con otro sistema fije el «Próximo número» de
+  cada punto antes de la primera factura.
+
 ---
 
 ## Códigos de error nuevos
@@ -3293,6 +3367,9 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `BILLABLE_SERVICE_INACTIVE` | 422 | BI-015 |
 | `SERVICE_CODE_INVOICED` | 409 | BI-281 |
 | `SERVICE_NAME_DUPLICATE` | 409 | BI-278 (lo produce `service_active_name_unique`: va en `billing.constraints.ts`, no en el catálogo) |
+| `NUMBERING_REASON_REQUIRED` | 422 | BI-306 |
+| `NUMBERING_BELOW_USED` | 409 | BI-307 (también `emission_point_numbering_not_below_used`, de la base) |
+| `NUMBERING_EMISSION_POINT_NOT_FOUND` | 404 | BI-306 (un punto de otra sede, o un tipo que no es `01` ni `04`) |
 | `TAX_RATE_REQUIRED` | 422 | BI-013 |
 | `TAX_RATE_NOT_FOUND` | 404 | BI-020 |
 | `TAX_RATE_IN_USE` | 409 | BI-026 |
@@ -3498,6 +3575,8 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `PATCH` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si trae `exam`, o si cambia nombre, código o estado de un servicio con extensión de orden, BI-299) | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286, BI-299 |
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si tiene extensión de orden, BI-299) | `global` | BI-012, BI-299 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
+| `GET` | `/billing/sites/{siteId}/numbering` | `site:read` | `param:siteId` | BI-309 |
+| `PUT` | `/billing/sites/{siteId}/numbering/{emissionPointId}/{documentType}` | `site:manage` | `param:siteId` | BI-306, BI-307 |
 | `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |
 | `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |
 | `GET` | `/billing/services/{id}/exams` | `billing:read` | `global` | BI-188 |
@@ -3620,6 +3699,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-080 a BI-083, BI-087, BI-089 | Contrato HTTP (código, estado y mensaje) + unitario de dominio |
 | BI-084, BI-090 | Integración contra PostgreSQL real: se intenta el `UPDATE` y el `DELETE` **por `psql`**, y una prueba de rutas comprueba que ninguna ruta declarada modifica una factura |
 | BI-085 | Integración contra PostgreSQL real con dos clientes concurrentes: es SC-023, y el hueco en la numeración solo aparece bajo concurrencia |
+| BI-306 a BI-309 | Integración contra PostgreSQL real por HTTP: fijar, leer y emitir con el número fijado; la base rechaza por SQL directo un próximo número por debajo del usado (control positivo: el mayor usado más uno entra); dos emisiones a la vez con el número fijado, en factura y en nota de crédito |
 | BI-088, BI-096 | Integración contra PostgreSQL real: se factura, se anula y se vuelve a facturar el mismo cargo; y con nota de crédito, no |
 | BI-091 a BI-095, BI-097 | Unitario de dominio con reloj fijado (los plazos) + contrato HTTP |
 | BI-100 a BI-105, BI-247 a BI-255, BI-258, BI-259 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE`, el cobro cerrado y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253; dos cierres el mismo día por HTTP; el filtro «con saldo» contra PostgreSQL con una cobrada, una acreditada del todo y una anulada como controles, y una con el cobro revertido y otra con un abono, dentro |

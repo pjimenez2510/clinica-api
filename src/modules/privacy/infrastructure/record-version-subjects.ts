@@ -292,6 +292,14 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
       'Un precio es configuración de la clínica: no es dato de ningún paciente.',
     reachesNoPatient: true,
   },
+  // BI-306 (D-262). The «próximo número» of an emission point is the
+  // clinic's configuration: declared so the map stays exhaustive.
+  emission_point_numbering: {
+    resourceIdsOf: () => Prisma.sql`SELECT NULL::uuid AS id WHERE false`,
+    omittedBecause:
+      'La numeración de un punto de emisión es configuración de la clínica: no es dato de ningún paciente.',
+    reachesNoPatient: true,
+  },
   // AG-064. The outcome of a call about this patient's waiting-list entry.
   waitlist_contact_attempt: {
     resourceIdsOf: (chartId) => Prisma.sql`

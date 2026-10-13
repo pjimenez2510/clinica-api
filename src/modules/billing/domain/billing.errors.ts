@@ -1483,3 +1483,58 @@ export class InvoiceNotPayableError extends ConflictError {
     super('The invoice is not issued, or it is voided');
   }
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// The «próximo número» of an emission point (BI-306, BI-307, D-262)
+// ───────────────────────────────────────────────────────────────────────────
+
+/** BI-306. Fixing where a point's numbering goes is said, not just done. */
+export class NumberingReasonRequiredError extends ValidationError {
+  readonly code = 'NUMBERING_REASON_REQUIRED';
+  override readonly userTitle = 'Escriba por qué cambia el próximo número';
+
+  constructor() {
+    super('A reason is required to fix the next sequential', {}, [
+      {
+        field: 'reason',
+        code: 'NUMBERING_REASON_REQUIRED',
+        message: 'Escriba el motivo',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-307. At or below the largest used, the next voucher would take a number
+ * this point already issued. `usedUpTo` says which, so the screen can offer
+ * the first one allowed.
+ */
+export class NumberingBelowUsedError extends ConflictError {
+  readonly code = 'NUMBERING_BELOW_USED';
+  override readonly userTitle: string;
+
+  constructor(readonly usedUpTo: number) {
+    super(
+      'The next sequential must be above the largest already used',
+      { usedUpTo },
+      [
+        {
+          field: 'nextSequential',
+          code: 'NUMBERING_BELOW_USED',
+          message: `Tiene que ser mayor que ${usedUpTo}`,
+        },
+      ],
+    );
+    this.userTitle = `El próximo número tiene que ser mayor que ${usedUpTo}, el último ya usado en este punto`;
+  }
+}
+
+/** BI-306. Out of the requester's sites, or not there: the same answer. */
+export class NumberingEmissionPointNotFoundError extends NotFoundError {
+  readonly code = 'NUMBERING_EMISSION_POINT_NOT_FOUND';
+  override readonly userTitle = 'Ese punto de emisión no existe';
+
+  constructor() {
+    super('No emission point with that identifier in this site');
+  }
+}

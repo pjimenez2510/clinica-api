@@ -11,7 +11,6 @@ import {
   FINAL_CONSUMER_IDENTIFICATION,
   type ReceiverContext,
   frequentBuyers,
-  nextSequential,
   proposeReceiver,
   resolveReceiver,
 } from './invoice';
@@ -262,24 +261,6 @@ describe('BI-035, BI-087 el pagador no decide quién figura en la factura', () =
       identification: '1710034065',
       name: 'Guamán Andrade, María José',
     });
-  });
-});
-
-describe('BI-085 el secuencial del punto de emisión', () => {
-  it('BI-085 empieza en 000000001 y avanza de uno en uno', () => {
-    expect(nextSequential(null)).toBe('000000001');
-    expect(nextSequential('000000001')).toBe('000000002');
-    expect(nextSequential('000000999')).toBe('000001000');
-  });
-
-  it('BI-085 conserva los nueve dígitos, porque el cero a la izquierda cuenta', () => {
-    expect(nextSequential('000000009')).toHaveLength(9);
-  });
-
-  it('BI-085 se niega a seguir cuando el punto de emisión se agota', () => {
-    // Truncating silently would collide with the number issued a billion
-    // documents ago, and the SRI would receive two vouchers under one key.
-    expect(() => nextSequential('999999999')).toThrow(RangeError);
   });
 });
 

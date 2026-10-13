@@ -39,6 +39,10 @@ import { CREDIT_NOTE_REPOSITORY } from './domain/credit-note.repository';
 import { TARIFF_PUBLICATION_REPOSITORY } from './domain/tariff-publication.repository';
 import { PrismaBillingAccountRepository } from './infrastructure/prisma-billing-account.repository';
 import { PrismaBillingParametersRepository } from './infrastructure/prisma-billing-parameters.repository';
+import { PrismaEmissionPointNumberingRepository } from './infrastructure/prisma-emission-point-numbering.repository';
+import { EmissionPointNumberingService } from './application/emission-point-numbering.service';
+import { EMISSION_POINT_NUMBERING_REPOSITORY } from './domain/emission-point-numbering.repository';
+import { BillingNumberingController } from './billing-numbering.controller';
 import { PrismaCashRepository } from './infrastructure/prisma-cash.repository';
 import { PrismaClinicalActsRepository } from './infrastructure/prisma-clinical-acts.repository';
 import { PrismaCreditNoteRepository } from './infrastructure/prisma-credit-note.repository';
@@ -84,6 +88,8 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
 @Module({
   controllers: [
     BillingCatalogueController,
+    // B23 (BI-306 to BI-309, D-262). The «próximo número» of each point.
+    BillingNumberingController,
     // B7 (BI-140 to BI-147): what the clinic changes without a deploy.
     BillingParametersController,
     BillingController,
@@ -125,6 +131,12 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
     TariffPublicationService,
     // B7. Payment methods and discount limits, under `settings:manage`.
     BillingParametersService,
+    // B23. Where each emission point's numbering goes, under `site:manage`.
+    EmissionPointNumberingService,
+    {
+      provide: EMISSION_POINT_NUMBERING_REPOSITORY,
+      useClass: PrismaEmissionPointNumberingRepository,
+    },
     // B6. Receiving money and closing the day: a seventh reason to change.
     CashService,
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },

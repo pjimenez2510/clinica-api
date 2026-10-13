@@ -24,6 +24,7 @@ import type { Request, Response } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { ALL_SITES } from '../../shared/authorisation/principal';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -32,14 +33,17 @@ import {
 } from './application/signing-certificate.service';
 import { VoucherMonitorService } from './application/voucher-monitor.service';
 import type { Requester } from './application/voucher-monitor.service';
+import { VoucherRenumberingService } from './application/voucher-renumbering.service';
 import { ElectronicVoucherNotFoundError } from './domain/sri.errors';
 import {
   CertificateDto,
+  RenumberedDto,
   ResendVoucherDto,
   SriMonitorDto,
   SriTransportFailureDto,
   UploadCertificateDto,
   type CertificateResponse,
+  type RenumberedResponse,
   type SriMonitorResponse,
   type SriTransportFailureResponse,
 } from './dto/sri.dto';
@@ -71,6 +75,7 @@ function toCertificate(summary: CheckedCertificate): CertificateResponse {
 export class SriVouchersController {
   constructor(
     private readonly monitorService: VoucherMonitorService,
+    private readonly renumbering: VoucherRenumberingService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
@@ -91,6 +96,13 @@ export class SriVouchersController {
         issuedAt: row.issuedAt.toISOString(),
         nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
         receivedAt: row.receivedAt?.toISOString() ?? null,
+        renumberedFrom: row.renumberedFrom.map((renumbering) => ({
+          previousNumber: renumbering.previousNumber,
+          newSequential: renumbering.newSequential,
+          renumberedAt: renumbering.renumberedAt.toISOString(),
+          renumberedByName: renumbering.renumberedByName,
+          sriMessage: renumbering.sriMessage,
+        })),
         lastTransportFailure: row.lastTransportFailure
           ? {
               ...row.lastTransportFailure,
@@ -133,6 +145,30 @@ export class SriVouchersController {
       voucherId,
       this.requester(req, 'billing:write'),
     );
+  }
+
+  /** SRI-109, SRI-110. «Renumerar con el siguiente libre». */
+  @Post(':voucherId/renumber')
+  @HttpCode(HttpStatus.OK)
+  @AnnouncesChange('billing')
+  @RequirePermission('billing:write', 'query')
+  @ApiOperation({
+    summary:
+      'Dar el siguiente número a un comprobante que el SRI devolvió con «secuencial registrado» (45)',
+  })
+  @ApiOkResponse({ type: RenumberedDto })
+  async renumber(
+    @Param('voucherId', ParseUUIDPipe) voucherId: string,
+    @Req() req: Request,
+  ): Promise<RenumberedResponse> {
+    const renumbered = await this.renumbering.renumber(
+      voucherId,
+      this.requester(req, 'billing:write'),
+    );
+    return {
+      previousSequential: renumbered.previousSequential,
+      newSequential: renumbered.newSequential,
+    };
   }
 
   /** SRI-095, SRI-096. A copy to another address; the voucher does not move. */

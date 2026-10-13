@@ -6,6 +6,7 @@ import {
   deliveryRetrySeconds,
   authorisationDocument,
   deliveryGivesUp,
+  isRenumberable,
   isRetriableByAPerson,
   needsAPerson,
   retryDelaySeconds,
@@ -295,5 +296,61 @@ describe('SRI-091 cuándo el correo deja de intentarse', () => {
 
   it('SRI-091 sin autorización no hay plazo que cumplir', () => {
     expect(deliveryGivesUp(null, now)).toBe(false);
+  });
+});
+
+describe('SRI-108 qué se renumera', () => {
+  const returned = (
+    over: Partial<Parameters<typeof isRenumberable>[0]> = {},
+  ): Parameters<typeof isRenumberable>[0] => ({
+    status: 'RETURNED',
+    authorisationNumber: null,
+    everAuthorised: false,
+    lastMessages: [message('45')],
+    ...over,
+  });
+
+  it('SRI-108 un devuelto sólo con el 45 y nunca autorizado se renumera', () => {
+    expect(isRenumberable(returned())).toBe(true);
+    // A warning beside it does not change what the SRI objected to.
+    expect(
+      isRenumberable(
+        returned({
+          lastMessages: [message('45'), message('60', 'ADVERTENCIA')],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('SRI-108 con otro error al lado, o con otro código, no', () => {
+    expect(
+      isRenumberable(
+        returned({ lastMessages: [message('45'), message('35')] }),
+      ),
+    ).toBe(false);
+    expect(isRenumberable(returned({ lastMessages: [message('35')] }))).toBe(
+      false,
+    );
+    expect(isRenumberable(returned({ lastMessages: [] }))).toBe(false);
+  });
+
+  it('SRI-108 lo que el SRI autorizó alguna vez, o que no está devuelto, no', () => {
+    expect(isRenumberable(returned({ everAuthorised: true }))).toBe(false);
+    expect(
+      isRenumberable(returned({ authorisationNumber: '1'.repeat(49) })),
+    ).toBe(false);
+    for (const status of [
+      'NOT_AUTHORISED',
+      'RECEIVED',
+      'AUTHORISED',
+      'SUPERSEDED',
+    ] as const) {
+      expect(isRenumberable(returned({ status }))).toBe(false);
+    }
+  });
+
+  it('SRI-112 un comprobante reemplazado no lo reintenta nadie ni espera a nadie', () => {
+    expect(isRetriableByAPerson('SUPERSEDED')).toBe(false);
+    expect(needsAPerson('SUPERSEDED')).toBe(false);
   });
 });

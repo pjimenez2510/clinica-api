@@ -278,45 +278,6 @@ function resolveFinalConsumer(exception: {
   };
 }
 
-/** `invoice.sequential` is `varchar(9)`, and the SRI prints nine positions. */
-const SEQUENTIAL_LENGTH = 9;
-
-/**
- * BI-085. The next sequential of an emission point, with no gaps and no reuse.
- *
- * ⚠️ ZERO-PADDED TO NINE, AND THE PADDING IS SIGNIFICANT — the same rule
- * `emission_point.code` states for its three digits: «001» is not 1. Because
- * the width is fixed, the lexicographic maximum IS the numeric maximum, which
- * is what lets the adapter ask PostgreSQL for `max(sequential)` instead of
- * carrying a counter that could disagree with the rows.
- *
- * ⚠️ NOT EVEN A VOIDED INVOICE'S NUMBER COMES BACK. Reusing one is how the SRI
- * receives two different vouchers under the same access key — error 43 of
- * ADR-004, made permanent.
- *
- * The race between two cashiers is NOT arbitrated here: the adapter takes the
- * emission point's row lock before reading the maximum, and
- * `invoice_sequential_unique` is the last word. A pure function cannot close a
- * window between a read and a write, and pretending otherwise is how the gap
- * gets built.
- */
-export function nextSequential(lastIssued: string | null): string {
-  const previous = lastIssued === null ? 0 : Number.parseInt(lastIssued, 10);
-  if (!Number.isInteger(previous) || previous < 0) {
-    throw new RangeError(`Not a sequential: ${String(lastIssued)}`);
-  }
-
-  const next = previous + 1;
-  const printed = String(next).padStart(SEQUENTIAL_LENGTH, '0');
-  if (printed.length > SEQUENTIAL_LENGTH) {
-    // 999 999 999 invoices from one emission point. Reaching it means the
-    // clinic opens a new one; silently truncating would collide with the
-    // number issued a billion documents ago.
-    throw new RangeError('Emission point sequential is exhausted');
-  }
-  return printed;
-}
-
 /**
  * `invoice_status_is_known`. `DRAFT` exists in the column and this delivery
  * never writes it: an invoice is born ISSUED, because a draft that can be

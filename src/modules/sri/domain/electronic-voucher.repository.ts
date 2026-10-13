@@ -218,6 +218,42 @@ export interface MonitorRow {
   receivedAt: Date | null;
   /** SRI-069. `null` unless the last attempt was a transport failure. */
   lastTransportFailure: LastTransportFailure | null;
+  /** SRI-108. Whether the SRI ever authorised it, by number or by attempt. */
+  authorisationNumber: string | null;
+  everAuthorised: boolean;
+}
+
+/**
+ * SRI-109. A number of a document the SRI returned with the 45, and what
+ * replaced it; read from `voucher_renumbering`.
+ */
+export interface RenumberingView {
+  /** The invoice's or the credit note's id. */
+  documentId: string;
+  /** The number the SRI already held, as it was printed: `001-001-000000019`. */
+  previousNumber: string;
+  newSequential: string;
+  renumberedAt: Date;
+  renumberedByName: string;
+  sriMessage: string;
+}
+
+/** SRI-108. What decides whether a voucher is renumbered, read under lock. */
+export interface RenumberCandidate {
+  status: VoucherStatus;
+  authorisationNumber: string | null;
+  everAuthorised: boolean;
+  lastMessages: SriMessage[];
+  /** `REJECTED` is the only one renumbered; a withdrawn note is not. */
+  documentStatus: string;
+}
+
+/** SRI-109. What a renumbering did. */
+export interface Renumbered {
+  document: VoucherDocument;
+  siteId: string;
+  previousSequential: string;
+  newSequential: string;
 }
 
 /** The voucher's state as `billing` shows it beside the invoice (SRI-060). */
@@ -231,6 +267,11 @@ export interface VoucherStatusView {
   authorisedAt: Date | null;
   deliveryStatus: DeliveryStatus | null;
   lastMessages: SriMessage[];
+  /** SRI-108. Whether the SRI ever authorised it, by number or by attempt. */
+  authorisationNumber: string | null;
+  everAuthorised: boolean;
+  /** SRI-110. The invoice's or the credit note's status. */
+  documentStatus: string;
 }
 
 export interface ElectronicVoucherRepository {
@@ -249,7 +290,16 @@ export interface ElectronicVoucherRepository {
    */
   create(voucher: NewVoucher): Promise<VoucherRecord>;
 
+  /** SRI-109. The renumberings of these documents, oldest first. */
+  renumberingsOf(documents: {
+    invoiceIds: readonly string[];
+    creditNoteIds: readonly string[];
+  }): Promise<RenumberingView[]>;
+
+  /** SRI-112. A SUPERSEDED voucher is not found by id: it has no document. */
   findById(id: string): Promise<VoucherRecord | null>;
+  /** SRI-110. The site of any voucher, SUPERSEDED included. */
+  siteOf(id: string): Promise<string | null>;
   findByInvoice(invoiceId: string): Promise<VoucherRecord | null>;
   findByCreditNote(creditNoteId: string): Promise<VoucherRecord | null>;
   findByIdInSites(
@@ -276,6 +326,26 @@ export interface ElectronicVoucherRepository {
    * invoice or credit note back to ISSUED. The key does not move (the database refuses).
    */
   reopen(id: string, unsignedXml: string): Promise<boolean>;
+
+  /**
+   * SRI-109, SRI-111. Under the voucher's and the document's row locks, and
+   * only if `admits` says so of what it reads there: the next number of the
+   * point (`next_voucher_sequential`), the row of `voucher_renumbering`, the
+   * document ISSUED with the new number and no key, and the voucher
+   * SUPERSEDED with no document — in one transaction. `null` when it does not
+   * admit it, or the voucher is not there.
+   */
+  /**
+   * SRI-108. What decides a renumbering, read WITHOUT locks: only to know
+   * whether the SRI is worth asking before `renumber` decides under lock.
+   */
+  renumberCandidate(id: string): Promise<RenumberCandidate | null>;
+
+  renumber(
+    id: string,
+    by: { userId: string; at: Date },
+    admits: (voucher: RenumberCandidate) => boolean,
+  ): Promise<Renumbered | null>;
 
   /** SRI-051, SRI-057. The attempt row and its effect, in one transaction. */
   recordAttempt(
