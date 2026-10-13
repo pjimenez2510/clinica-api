@@ -47,7 +47,12 @@ export class PrismaChartBackgroundReader implements ChartBackgroundReader {
     if (kind === 'absence') {
       const row = await this.prisma.patientAllergyAbsence.findUnique({
         where: { id },
-        select: { patientId: true, assertedById: true, assertedAt: true, retractedAt: true },
+        select: {
+          patientId: true,
+          assertedById: true,
+          assertedAt: true,
+          retractedAt: true,
+        },
       });
       return row
         ? {
