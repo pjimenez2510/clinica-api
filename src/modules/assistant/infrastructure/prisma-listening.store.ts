@@ -1,5 +1,3 @@
-import { Injectable } from '@nestjs/common';
-
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
   ListeningStore,
@@ -7,21 +5,30 @@ import type {
   TranscriptLine,
 } from '../application/listening.store';
 import type { RecognizedSegment } from '../application/speech-recognizer.port';
-import type { ListeningState, PauseReason } from '../domain/listening';
+import type {
+  ListeningScope,
+  ListeningState,
+  PauseReason,
+} from '../domain/listening';
 import { transcriptPurgeCutoffs } from '../domain/transcript-retention';
 
 /**
  * AS-049, AS-052, AS-056, AS-057. The listening and its transcript in
  * PostgreSQL. What the tables guarantee — one segment per start, nothing
  * rewritten, no binary column — is theirs (`20261025001100_listening`).
+ *
+ * AS-241, AS-242 (B3). One store per scope: everything it reads and writes is
+ * of its own scope, so the consultation's readers never see the preparation.
  */
-@Injectable()
 export class PrismaListeningStore implements ListeningStore {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly scope: ListeningScope,
+  ) {}
 
   async find(encounterId: string): Promise<StoredListening | null> {
     const row = await this.prisma.listeningSession.findUnique({
-      where: { encounterId },
+      where: { encounterId_scope: { encounterId, scope: this.scope } },
     });
     if (!row) return null;
     return {
@@ -39,8 +46,8 @@ export class PrismaListeningStore implements ListeningStore {
   async save(listening: StoredListening): Promise<void> {
     const { encounterId, ...rest } = listening;
     await this.prisma.listeningSession.upsert({
-      where: { encounterId },
-      create: listening,
+      where: { encounterId_scope: { encounterId, scope: this.scope } },
+      create: { ...listening, scope: this.scope },
       update: rest,
     });
   }
@@ -51,7 +58,12 @@ export class PrismaListeningStore implements ListeningStore {
     at: Date,
   ): Promise<void> {
     await this.prisma.listeningSession.updateMany({
-      where: { encounterId, state: 'LISTENING', offsetMs: { lt: offsetMs } },
+      where: {
+        encounterId,
+        scope: this.scope,
+        state: 'LISTENING',
+        offsetMs: { lt: offsetMs },
+      },
       data: { offsetMs, updatedAt: at },
     });
   }
@@ -66,6 +78,7 @@ export class PrismaListeningStore implements ListeningStore {
     await this.prisma.transcriptSegment.createMany({
       data: segments.map((segment) => ({
         encounterId,
+        scope: this.scope,
         startMs: segment.startMs,
         endMs: segment.endMs,
         text: segment.text,
@@ -77,7 +90,7 @@ export class PrismaListeningStore implements ListeningStore {
 
   transcript(encounterId: string): Promise<TranscriptLine[]> {
     return this.prisma.transcriptSegment.findMany({
-      where: { encounterId },
+      where: { encounterId, scope: this.scope },
       orderBy: { startMs: 'asc' },
       select: { startMs: true, endMs: true, text: true },
     });
@@ -89,6 +102,8 @@ export class PrismaListeningStore implements ListeningStore {
    * kept. A note signed without discharge leaves the attention open and the
    * listening may go on: those later segments count from the same first
    * signature (D-247 §8, recommendation awaiting the author).
+   *
+   * Every scope at once (AS-242): the preparation is purged by the same rule.
    */
   purge(now: Date): Promise<number> {
     const { retention, maximum } = transcriptPurgeCutoffs(now);

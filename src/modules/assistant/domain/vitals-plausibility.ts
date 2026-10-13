@@ -14,6 +14,11 @@ export interface VitalSigns {
   oxygenSaturation: number | null;
   systolic: number | null;
   diastolic: number | null;
+  /** AS-253 (B3). Not in SigmAI: the readings its nursing never dictated. */
+  headCircumferenceCm: number | null;
+  abdominalCircumferenceCm: number | null;
+  hemoglobinGDl: number | null;
+  hemoglobinCorrectedGDl: number | null;
 }
 
 export interface PlausibleRange {
@@ -66,6 +71,27 @@ export const PLAUSIBLE: Readonly<Record<keyof VitalSigns, PlausibleRange>> = {
     max: 200,
     unit: 'mmHg',
     label: 'La presión diastólica',
+  },
+  // AS-248 (D-260 §4). SigmAI had no bounds for these: the database's
+  // (`encounter_vitals_ranges_*`, D-058), never narrower ones made up here.
+  headCircumferenceCm: {
+    min: 20,
+    max: 80,
+    unit: 'cm',
+    label: 'El perímetro cefálico',
+  },
+  abdominalCircumferenceCm: {
+    min: 20,
+    max: 250,
+    unit: 'cm',
+    label: 'El perímetro abdominal',
+  },
+  hemoglobinGDl: { min: 1, max: 25, unit: 'g/dl', label: 'La hemoglobina' },
+  hemoglobinCorrectedGDl: {
+    min: 1,
+    max: 25,
+    unit: 'g/dl',
+    label: 'La hemoglobina corregida',
   },
 };
 

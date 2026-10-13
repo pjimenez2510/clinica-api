@@ -355,7 +355,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
 
     // AS-143: after the answer, not inside it.
     await vi.waitFor(async () => expect(await prisma.aiSuggestionReview.count()).toBe(shown.length)); // prettier-ignore
-    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId } })).state).toBe('STOPPED'); // prettier-ignore
+    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } })).state).toBe('STOPPED'); // prettier-ignore
     const reviews = await prisma.aiSuggestionReview.findMany({
       where: { suggestion: { encounterId } },
       include: { suggestion: { select: { proposal: true } } },
@@ -409,7 +409,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
 
     expect((await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } })).status).toBe('DISCONTINUED'); // prettier-ignore
     expect(await prisma.noteDraft.findFirstOrThrow({ where: { encounterId } })).toMatchObject({ status: 'FAILED', failureCode: 'ASSISTANT_DRAFT_CANCELLED' }); // prettier-ignore
-    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId } })).state).toBe('STOPPED'); // prettier-ignore
+    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } })).state).toBe('STOPPED'); // prettier-ignore
     expect(await prisma.aiSuggestion.count({ where: { encounterId } })).toBe(0);
   });
 
@@ -455,7 +455,7 @@ describe('la revisión al firmar por HTTP (AS-140 a AS-147)', () => {
     release();
     await drafts.settled();
 
-    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId } })).state).toBe('STOPPED'); // prettier-ignore
+    expect((await prisma.listeningSession.findUniqueOrThrow({ where: { encounterId_scope: { encounterId, scope: 'CONSULTATION' } } })).state).toBe('STOPPED'); // prettier-ignore
     expect(await prisma.aiSuggestion.count({ where: { encounterId } })).toBe(0);
   });
 });

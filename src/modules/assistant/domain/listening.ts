@@ -18,6 +18,12 @@ export const MAX_FRAME_BYTES = 1_000 * BYTES_PER_MS;
 export type ListeningState = 'LISTENING' | 'PAUSED' | 'STOPPED';
 
 /**
+ * AS-241 (B3). Whose conversation a listening hears: the consultation's
+ * professional's, or the preparation's. Each has its own state and lines.
+ */
+export type ListeningScope = 'CONSULTATION' | 'PREPARATION';
+
+/**
  * AS-051, AS-055. Why the system paused a listening nobody paused. Codes, not
  * sentences: they reach logs and screens (AS-058), and the screen words them.
  */

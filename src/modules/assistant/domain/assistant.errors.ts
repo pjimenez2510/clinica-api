@@ -213,6 +213,21 @@ export class AssistantRecordingNotAuthorizedError extends ConflictError {
   }
 }
 
+/**
+ * AS-240, AS-244 (B3, revisión). The consultation's listening has begun: what
+ * is said from now on is the consultation, which only its professional hears
+ * (D-247 §3), never the preparation, which whoever prepares reads.
+ */
+export class AssistantPreparationOverError extends ConflictError {
+  readonly code = 'ASSISTANT_PREPARATION_OVER';
+  override readonly userTitle =
+    'La consulta ya empezó a escucharse: dicte o escriba los signos';
+
+  constructor() {
+    super('The consultation listening of this attention has begun');
+  }
+}
+
 /** AS-028. There is nothing in the note to read the problems from. */
 export class AssistantNoteEmptyError extends ValidationError {
   readonly code = 'ASSISTANT_NOTE_EMPTY';

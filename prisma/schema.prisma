@@ -2844,7 +2844,7 @@ model Encounter {
   /// AS-011. The calls to a language model made for this encounter.
   aiRuns              AiRun[]
   aiSuggestions       AiSuggestion[]
-  listeningSession    ListeningSession?
+  listeningSessions   ListeningSession[]
   transcriptSegments  TranscriptSegment[]
   noteDrafts          NoteDraft[]
   noteQuestionChecks  NoteQuestionCheck[]
@@ -6405,8 +6405,10 @@ model AiSuggestionReview {
 /// C1. The listening of a consultation: its clock and state, one per
 /// attention (AS-049). The audio is stored nowhere (AS-053).
 model ListeningSession {
-  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounterId String    @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  /// AS-241. `CONSULTATION` or `PREPARATION`: one listening of each per attention.
+  scope       String    @default("CONSULTATION") @db.VarChar(16)
   /// `LISTENING`, `PAUSED`, `STOPPED`.
   state       String    @db.VarChar(16)
   offsetMs    Int       @default(0) @map("offset_ms")
@@ -6419,6 +6421,7 @@ model ListeningSession {
   startedAt   DateTime  @map("started_at") @db.Timestamptz(6)
   updatedAt   DateTime  @map("updated_at") @db.Timestamptz(6)
 
+  @@id([encounterId, scope])
   @@map("listening_session")
 }
 
@@ -6428,12 +6431,14 @@ model TranscriptSegment {
   id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   encounterId String    @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  /// AS-241. Whose listening heard it; the consultation's readers never see the preparation's.
+  scope       String    @default("CONSULTATION") @db.VarChar(16)
   startMs     Int       @map("start_ms")
   endMs       Int       @map("end_ms")
   text        String
   createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
 
-  @@unique([encounterId, startMs], map: "transcript_segment_once")
+  @@unique([encounterId, scope, startMs], map: "transcript_segment_once")
   @@index([createdAt])
   @@map("transcript_segment")
 }

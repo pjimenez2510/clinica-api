@@ -440,6 +440,38 @@ como AS-191.
 propuesta y los fallos en la pestaña Signos; su mitad del servidor es AS-180,
 AS-182, AS-185 y AS-186, que ya se prueban con esos números.
 
+### E14 — La preparación escuchada _(B3, 13-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 B3 y la decisión del autor del 13-10-2026: las
+reglas de B2 no entienden cada forma de dictar («presión sistólica 120,
+presión diastólica 100», «talla 160, perímetro cefálico 48…») y en la
+preparación el motivo lo dice el paciente. En la pestaña Signos, quien
+prepara pulsa **«Escuchar»**: la misma escucha de C1, en un ámbito propio y
+con la autorización de grabar; al **«Detener»**, el asistente lee la
+conversación seudonimizada y propone cada medida y el motivo, **cada uno con
+su frase y con quién la dijo**, deducido por lo que se dice y nunca por la
+voz. Las barreras son código (P5): un número que no está en su frase no se
+propone, la plausibilidad de B2 sigue, y sin proveedor se lee con las reglas.
+
+**Por qué va así:** la huella de voz quedó descartada (`PLAN-ASISTENTE-IA.md`
+§3: 85,8 % y dato biométrico), y lo que hacía preferir las reglas era que un
+modelo puede escribir un número que nadie dijo: aquí el número lo pone la
+frase, no el modelo.
+**Prueba independiente:** con `clinica-ai` en marcha, el modo de
+demostración y el audio de prueba, «Escuchar» y «Detener» en la pestaña Signos
+de un paciente con la autorización llenan las casillas como propuesta, cada
+una con su frase y su hablante, y el motivo con la frase del paciente; sin
+autorización, «Escuchar» dice por qué y «Dictar» sigue; el arnés da 0 números
+fuera de su frase.
+**Cubre:** AS-240 a AS-259.
+**Solo servidor:** AS-242 (lo que no leen el borrador, las preguntas ni la
+firma), AS-252 (lo que no se guarda ni llega al log) y AS-255 (el arnés, fuera
+del verify). La pantalla los ve como AS-257.
+**Solo interfaz:** AS-256 a AS-259. Son «Escuchar», la propuesta con su
+procedencia, los hablantes y los fallos en la pestaña Signos; su mitad del
+servidor es AS-240, AS-243, AS-245 y AS-251, que ya se prueban con esos
+números.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -483,6 +515,20 @@ AS-182, AS-185 y AS-186, que ya se prueban con esos números.
   **100 %** de los resultados de la historia tiene el mismo valor, unidad,
   rango y bandera que el informe vigente de su orden
   (`GET /v1/orders/:id/reports`), y ninguno es de otra persona (PA-055).
+
+- **SC-099** — En el set inventado de preparaciones
+  (`eval/casos/preparaciones.json`) y en el reservado de B2, escrito y oído,
+  con el proveedor principal: **0** valores propuestos cuyo número dicho no
+  esté literalmente en su frase, ni frases que no estén en su línea.
+- **SC-100** — En esas corridas, **≥ 95 %** de los valores esperados con el
+  valor correcto y **0 graves** —ninguna casilla con un valor distinto del
+  dicho y ninguna llenada sin que se dijera—, en el texto escrito y en lo
+  oído sin ruido con voces sintéticas; y el **p90** de la lectura tras
+  «Detener» **≤ 5 s**.
+- **SC-101** — En esas corridas, el motivo propuesto es la frase del
+  paciente esperada en **≥ 90 %** de las preparaciones que lo dicen (y ninguno
+  en las que no), y el hablante de cada línea es el esperado en **≥ 90 %** de
+  las líneas.
 
 ## Supuestos
 
@@ -2275,6 +2321,202 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-195** — A 375 px de ancho, «Dictar», «Terminar» y «Cancelar» DEBERÁN
   medir al menos 44 px de alto y la pestaña no DEBERÁ desbordar.
 
+### 51. Escuchar la preparación (B3)
+
+- **AS-240** — CUANDO alguien con `assistant:dictate-vitals` y `vitals:write`
+  en la sede de una atención viva, con el asistente encendido en esa sede,
+  pida escuchar la preparación
+  (`POST /v1/encounters/:id/assistant/preparation-listening/ticket`), el
+  sistema DEBERÁ darle un vale de la escucha **de la preparación** con las
+  reglas de AS-045 (un uso, 30 s, en memoria) sin exigir que sea el
+  profesional de la atención ni `assistant:use`; SI el paciente no tiene
+  vigente la autorización de grabar (AS-164), ENTONCES DEBERÁ responder
+  `ASSISTANT_RECORDING_NOT_AUTHORIZED` (409); SI la atención ya tiene escucha
+  de la consulta, ENTONCES `ASSISTANT_PREPARATION_OVER` (409): la preparación
+  termina donde empieza la consulta; y como AS-185: sin el permiso en
+  ninguna sede 403, fuera del alcance 404, atención cerrada 409, asistente
+  apagado 404 antes de todo. Cada vale deja su `CREATE` en la bitácora
+  (`assistant_preparation_listening`).
+  > Se graba la conversación con el paciente, no sólo la voz de quien dicta:
+  > por eso pide la autorización que «Dictar» no pide (D-255 §2, D-260).
+- **AS-241** — Con el vale de la preparación, el canal de la escucha
+  (`/api/v1/assistant/listening`) DEBERÁ comportarse como en AS-046 a AS-055
+  —reloj, pausa, reconexión sin pérdida ni duplicados, el audio fuera del
+  disco— con **su propio estado y sus propias líneas**, aparte de los de la
+  consulta de la misma atención. La base DEBERÁ admitir una escucha por
+  atención y ámbito (`CONSULTATION`, `PREPARATION`) y un segmento por
+  atención, ámbito e inicio, y rechazar cualquier otro ámbito.
+- **AS-242** — Lo transcrito en la preparación NO DEBERÁ leerlo el borrador
+  (AS-086), las preguntas (AS-119) ni la revisión al firmar (AS-140), ni
+  pedir el borrador por su cuenta (AS-087), ni continuarlo la escucha de la
+  consulta; y DEBERÁ purgarse con las reglas de AS-057.
+  > La consulta se midió con su propia conversación (SC-091 a SC-094); juntar
+  > la de la sala es decisión del autor (D-260 §1).
+- **AS-243** — CUANDO la pantalla lea la escucha de la preparación
+  (`GET /v1/encounters/:id/assistant/preparation-listening`), el sistema
+  DEBERÁ responder su estado, sus líneas en orden y si el paciente tiene la
+  autorización de grabar (`recordingAuthorized`), con los permisos y rechazos
+  de AS-240 salvo la autorización y la consulta empezada, y dejar su `READ`
+  en la bitácora; con la atención ya cerrada, sólo a su profesional
+  (`ASSISTANT_ENCOUNTER_CLOSED` a los demás).
+  > La leen quienes pueden tomar los signos en la sede, no sólo el
+  > profesional (D-260 §2; contrasta con D-247 §3).
+- **AS-244** — MIENTRAS la escucha de la preparación esté abierta, al iniciar
+  o reanudar y cada ≤ 5 s, el sistema DEBERÁ volver a comprobar la sede
+  encendida, la autorización de grabar, que la consulta no haya empezado a
+  escucharse y que la atención admita contenido; SI algo falta, ENTONCES
+  DEBERÁ detenerla, sin guardar lo que el reconocedor retenía cuando la
+  causa es la autorización, la sede o la consulta, y decir por qué, como
+  AS-045, AS-163 y AS-166. Firmar la nota también la detiene (AS-143).
+  > Los permisos de quien escucha se leen al dar el vale y el canal vive como
+  > mucho lo que su sesión (15 min); no se releen cada 5 s, como en la
+  > escucha de la consulta (D-260 §12).
+
+### 52. Leer la preparación (B3, P2, P5)
+
+- **AS-245** — CUANDO quien puede escuchar la preparación (AS-240, también
+  con la autorización) pida leerla
+  (`POST /v1/encounters/:id/assistant/preparation-reading`), el sistema
+  DEBERÁ leer la transcripción **guardada** de la preparación, seudonimizarla
+  (AS-025), mandarla al nivel `fast` con cada línea marcada (`[L1]`…) y
+  delimitada como dato, y responder la propuesta, sus líneas y hasta qué
+  minuto cubre (`upToMs`); NO DEBERÁ escribir nada en la toma. SI la
+  transcripción no tiene ninguna línea con texto, ENTONCES
+  `ASSISTANT_TRANSCRIPT_EMPTY` (422). Mandarla deja su `EXPORT` en la
+  bitácora (`assistant_preparation_reading`, EN-122). Admite 30 lecturas por
+  minuto por dirección.
+- **AS-246** — La propuesta DEBERÁ poder traer cada medida de la toma
+  —`weightKg`, `heightCm` y su posición (`heightPosition`: de pie o
+  acostado), `headCircumferenceCm`, `abdominalCircumferenceCm`,
+  `systolicBp` y `diastolicBp` (dichas juntas o por separado), `heartRate`,
+  `respiratoryRate`, `temperatureC`, `oxygenSaturation`, `hemoglobinGDl` y
+  `hemoglobinCorrectedGDl`— y el motivo (`presentingComplaint`), **cada uno
+  con el inicio de su línea y la frase exacta** de donde sale; lo que no se
+  habló NO DEBERÁ aparecer.
+- **AS-247** — El sistema DEBERÁ proponer un valor sólo si su frase está en
+  su línea de la transcripción guardada —comparadas sin mayúsculas, tildes ni
+  signos, tras devolver los nombres que quitó el seudonimizador— y el número
+  **dicho** está en la frase, escrito en cifras o en palabras («ciento
+  veinte», «treinta y seis y medio», «uno sesenta», «22.5»); el modelo DEBERÁ
+  dar el número tal como se dijo y su unidad, y el paso de libras a
+  kilogramos y de metros a centímetros DEBERÁ hacerlo el código. Además: dos
+  números sólo se leen como uno («uno sesenta», «treinta y seis ocho») si se
+  dijeron seguidos y para el campo que les corresponde (metros para la
+  talla, décimas para temperatura y hemoglobina); el número DEBERÁ ser del
+  campo que lo nombra —el último nombrado antes de él en su frase, o en la
+  frase anterior si es la respuesta a una pregunta («¿Cuánto pesa?»
+  «Setenta kilos»), o el que le sigue con «de» («treinta y seis y medio de
+  temperatura»)— y no estar retirado por una corrección posterior
+  («perdón», «mejor dicho»); y la unidad DEBERÁ ser la dicha (libras sólo
+  donde se dijo libras, nunca kilos donde se dijo libras; metros sólo bajo
+  tres; ninguna para lo que no la lleva). SI no se cumple, ENTONCES el campo
+  NO DEBERÁ proponerse y DEBERÁ nombrarse en `unclear`. **Ningún número de
+  la propuesta sale del modelo.** Lo que dice el **paciente** (lo que se
+  midió en casa, lo que cree que pesa) NO DEBERÁ proponerse: no es la toma.
+  > Es lo que hacía preferir las reglas: el modelo puede elegir de qué frase
+  > sale un número y a qué casilla va, nunca escribirlo.
+- **AS-248** — SI un valor que pasa AS-247 está fuera de lo que una persona
+  puede medir —los límites de B2 (`vitals-plausibility.ts`) y, para los
+  campos que B2 no tenía, los de la base: perímetro cefálico 20–80 cm,
+  abdominal 20–250 cm, hemoglobina 1–25 g/dl—, la diastólica no queda bajo
+  la sistólica, la corregida supera a la medida, o se proponen dos valores
+  distintos para el mismo campo, ENTONCES NO DEBERÁ proponerse y DEBERÁ ir
+  en `unclear`. La posición de la talla DEBERÁ proponerse sólo si su frase
+  dice «de pie», «parado», «acostado», «echado» o «decúbito», y nunca sin la
+  talla en la misma lectura.
+- **AS-249** — El motivo DEBERÁ ser la **frase entera** (≤ 500 caracteres)
+  de la transcripción que la lectura atribuye al **paciente** y que contiene
+  lo que el lector señaló, así una negación («no me duele el pecho») nunca
+  queda fuera; SI no la hay, ENTONCES NO DEBERÁ proponerse ningún motivo.
+  > En palabras del paciente, como pide el formulario 020: no se resume ni se
+  > reescribe, así no puede inventarse (D-260 §5).
+- **AS-250** — La lectura DEBERÁ hacerse **por frase**: cada línea de la
+  transcripción partida tras un punto, una interrogación o una exclamación
+  (no el punto entre cifras), cada frase con un inicio estimado dentro de su
+  línea; y cada frase de la respuesta DEBERÁ llevar quién la dijo
+  —`nursing`, `patient` u `other`— deducido por el lector **por lo que
+  dice** (quién pregunta, quién responde, quién cuenta su molestia); una
+  frase sin etiqueta del modelo DEBERÁ ir como `other`. Ninguna
+  característica de la voz DEBERÁ llegar al lector ni guardarse.
+  > El reconocedor corta por silencios, no por turnos: una línea de la
+  > escucha junta la pregunta de enfermería y la respuesta del paciente
+  > (visto en el recorrido de F-03, 13-10-2026).
+  > La huella de voz es un dato biométrico (LOPDP art. 26) y midió 85,8 %
+  > (`PLAN-ASISTENTE-IA.md` §3).
+- **AS-251** — La lectura con proveedor DEBERÁ pedir, además de
+  `ASSISTANT_ALLOW_REMOTE`, su propio interruptor
+  `ASSISTANT_PREPARATION_REMOTE`, apagado de fábrica hasta medirla (P7).
+  SI el asistente no puede leer —cualquiera de los dos apagado, el techo no
+  admite el intento, el seudonimizador o el proveedor fallan, o pasan
+  **20 s**—, ENTONCES el sistema DEBERÁ leer la transcripción con las
+  reglas (AS-253) y responder `reader: rules`, sin hablantes ni motivo, cada
+  valor con la única frase que lo dice y, si no hay una sola, en `unclear`;
+  sin mandar nada al proveedor si está apagado. La misma preparación leída
+  otra vez sin nada nuevo dicho DEBERÁ responderse de memoria (10 min), sin
+  volver a pagarla.
+- **AS-252** — Ni la propuesta, ni la transcripción, ni las frases DEBERÁN
+  guardarse fuera de `transcript_segment` ni llegar al log, a `ai_run` o a un
+  mensaje de error; la respuesta DEBERÁ llevar `Cache-Control: no-store`; un
+  fallo se registra con su código, la atención y cifras.
+  > Con `ASSISTANT_EXCHANGE_LOG` encendido, el texto seudonimizado queda en
+  > `ai_exchange` con su purga (AS-014), como el de las demás funciones.
+- **AS-253** — La lectura con reglas (AS-181), la misma de «Dictar», DEBERÁ
+  además entender la sistólica y la diastólica dichas por separado
+  («presión sistólica 120», «diastólica 80»), los perímetros cefálico y
+  abdominal, la hemoglobina y la corregida, la posición de la talla («de
+  pie», «parado», «acostado»), y responderlos en `signs`, `unclear` y
+  `heightPosition`. Al leer una **conversación** (AS-251, AS-254), además,
+  una palabra que no es de un signo, un número, una unidad, un enlace ni una
+  corrección, dicha **después** del número, DEBERÁ cerrar ese signo; y SI a
+  tres palabras o menos de ese cierre se dice otro número, ENTONCES el signo
+  DEBERÁ quedar en `unclear`.
+  > Lo que falló cuando el autor dictó a su manera (13-10-2026): las reglas
+  > no conocían esas palabras y pegaban el número al signo anterior. El
+  > cierre no se aplica a «Dictar»: medido con el arnés de B2, convertía un
+  > nombre mal oído («hueso» por «peso») en un valor equivocado; sin él,
+  > «Dictar» da lo mismo que antes (D-260 §8).
+- **AS-254** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el proveedor de
+  demostración DEBERÁ leer la preparación sin red: cada línea con las reglas,
+  el hablante por su contenido (la pregunta, enfermería; «me duele»,
+  «tengo», el paciente) y el motivo de la primera línea del paciente que lo
+  cuenta; y la respuesta DEBERÁ decir que es de demostración (AS-029).
+
+### 53. Medir la preparación (B3, P7)
+
+- **AS-255** — El arnés DEBERÁ medir con `pnpm eval:preparacion`, fuera del
+  verify, la lectura del producto —la misma función que usa la ruta— sobre
+  el set inventado de preparaciones (≥ 40, de estilos distintos, escrito
+  antes de medir, `"origin": "invented"`) y el reservado de B2, en dos
+  brazos: el texto escrito por líneas y lo que `clinica-ai` **oyó** de cada
+  línea dicha por una voz sintética distinta por persona, sin ruido; y DEBERÁ
+  informar SC-099, SC-100 y SC-101 con su intervalo de Wilson, cada grave
+  con su texto y la latencia p50/p90, mirando antes de cada intento el tope
+  por proveedor del registro compartido (D-241).
+
+### 54. En la pestaña Signos, la escucha (solo interfaz)
+
+- **AS-256** — MIENTRAS la toma se pueda escribir y la lectura de la escucha
+  de la preparación responda (AS-243), la pestaña Signos DEBERÁ ofrecer
+  **«Escuchar»** junto a «Dictar»; SI el paciente no autorizó grabar,
+  ENTONCES en su lugar DEBERÁ decir por qué, sin quitar «Dictar». Escuchando,
+  DEBERÁ mostrar el estado con el tiempo, las líneas con su minuto a medida
+  que llegan y **«Detener»**; con el asistente apagado (404), nada.
+- **AS-257** — CUANDO se detenga la escucha (o se pulse **«Leer de
+  nuevo»**), la pantalla DEBERÁ decir «Leyendo…» y llenar cada valor propuesto
+  como el dictado de B2 —borde punteado y «Propuesta», «No se entendió:
+  escríbalo», «antes …», nada guardado sin «Confirmar lo dictado» y
+  «Guardar» (AS-191, AS-192, AS-198)—, con debajo de cada casilla su
+  procedencia («Paciente · 00:12 «…»»); el motivo propuesto, igual, en su
+  casilla; y con `reader: rules`, **«Leído sin asistente»**.
+- **AS-258** — Cada línea DEBERÁ mostrar quién la dijo (Enfermería, Paciente u
+  Otro); un toque la cambia **sólo en la pantalla** («Pulse si esto lo dijo
+  …»), y la procedencia de las casillas DEBERÁ seguir la etiqueta corregida.
+- **AS-259** — SI la escucha o la lectura fallan, ENTONCES la pestaña DEBERÁ
+  decir qué pasó sin llenar nada ni perder lo tecleado, y «Dictar» DEBERÁ
+  seguir disponible; a 375 px «Escuchar» y «Detener» DEBERÁN medir al menos
+  44 px y la pestaña no DEBERÁ desbordar; y el médico DEBERÁ verlo igual en
+  la pestaña Signos de la consulta.
+
 ---
 
 ## Códigos de error nuevos
@@ -2313,6 +2555,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
 | `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
 | `CLINICAL_HISTORY_CHART_NOT_OPEN`    | `ConflictError`        | 409       | La ficha de la historia no existe o la absorbió una unificación (AS-200)     |
+| `ASSISTANT_PREPARATION_OVER`         | `ConflictError`        | 409       | La consulta de la atención ya se escucha: la preparación terminó (AS-240, AS-244) |
 
 ## Niveles de prueba
 
@@ -2427,6 +2670,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-160 (la base), AS-161, AS-162, AS-164, AS-165, AS-167, AS-168, AS-169 | Integración HTTP contra PostgreSQL, con control positivo |
 | AS-160 (el dominio), AS-163, AS-166 | Unitario con lector y reloj falsos; AS-163 y AS-166 también en la integración del canal |
 | AS-170 a AS-175 | Componente y composable; recorridos F-08 y F-02 |
+| AS-240, AS-241 (la base), AS-243, AS-245, AS-252 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-240, AS-242, AS-244 | Unitario del acceso y del servicio con lectores, reloj y reconocedor falsos; integración del canal |
+| AS-246 a AS-251, AS-253, AS-254 | Unitario del dominio y del servicio con seudonimizador y proveedor falsos |
+| AS-255 | Arnés (`eval/`), fuera del verify |
+| AS-256 a AS-259 | Componente y composable; recorrido F-03 con el audio de prueba, `clinica-ai` y el modo de demostración |
 
 ## Preguntas abiertas
 

@@ -97,9 +97,12 @@ import { ListeningAccess } from './application/listening-access';
 import {
   LISTENING_CLOCK,
   ListeningService,
+  PREPARATION_LISTENING,
+  type ListeningClock,
 } from './application/listening.service';
 import {
   LISTENING_STORE,
+  PREPARATION_LISTENING_STORE,
   type ListeningStore,
 } from './application/listening.store';
 import {
@@ -112,6 +115,12 @@ import {
   LISTENING_GATEWAY_OPTIONS,
   ListeningGateway,
 } from './infrastructure/listening.gateway';
+import { PrismaService } from '../../shared/infrastructure/prisma/prisma.service';
+import { AssistantPreparationController } from './assistant-preparation.controller';
+import {
+  PREPARATION_ASSISTANT,
+  PreparationReadingService,
+} from './application/preparation-reading.service';
 import { PrismaListeningStore } from './infrastructure/prisma-listening.store';
 import {
   SUGGESTION_CLOCK,
@@ -158,6 +167,7 @@ const PURGE_EVERY_MS = 86_400_000;
     // AS-200 (D-256 §1). Outside the switch: no model, nothing leaves.
     AssistantHistoryController,
     AssistantVitalsDictationController,
+    AssistantPreparationController,
   ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -207,7 +217,12 @@ const PURGE_EVERY_MS = 86_400_000;
     OrderProposalService,
     CurrentUserService,
     // AS-045 to AS-058. The listening (C1).
-    { provide: LISTENING_STORE, useClass: PrismaListeningStore },
+    {
+      provide: LISTENING_STORE,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) =>
+        new PrismaListeningStore(prisma, 'CONSULTATION'),
+    },
     { provide: LISTENING_CLOCK, useValue: () => new Date() },
     {
       provide: SPEECH_RECOGNIZER,
@@ -222,8 +237,35 @@ const PURGE_EVERY_MS = 86_400_000;
       }),
     },
     ListeningService,
+    // AS-240 to AS-244 (B3). The preparation: the same listening, over its own
+    // store and without the draft's observer (AS-242).
+    {
+      provide: PREPARATION_LISTENING_STORE,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) =>
+        new PrismaListeningStore(prisma, 'PREPARATION'),
+    },
+    {
+      provide: PREPARATION_LISTENING,
+      inject: [SPEECH_RECOGNIZER, PREPARATION_LISTENING_STORE, LISTENING_CLOCK],
+      useFactory: (
+        recognizer: SpeechRecognizer,
+        store: ListeningStore,
+        clock: ListeningClock,
+      ) => new ListeningService(recognizer, store, clock),
+    },
     ListeningAccess,
     ListeningGateway,
+    // AS-245 to AS-252 (B3). The preparation read into a proposal.
+    {
+      provide: PREPARATION_ASSISTANT,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): boolean =>
+        config.get('ASSISTANT_FAKE_PROVIDER', { infer: true }) === true ||
+        (config.get('ASSISTANT_ALLOW_REMOTE', { infer: true }) === true &&
+          config.get('ASSISTANT_PREPARATION_REMOTE', { infer: true }) === true),
+    },
+    PreparationReadingService,
     // AS-086 to AS-097. The draft of the note (C2), told by the listening.
     { provide: NOTE_DRAFT_STORE, useClass: PrismaNoteDraftStore },
     { provide: NOTE_DRAFT_CONTEXT_READER, useClass: PrismaNoteDraftContextReader }, // prettier-ignore
@@ -278,6 +320,7 @@ export class AssistantModule
         AssistantPrescriptionController,
         AssistantOrdersController,
         AssistantVitalsDictationController,
+        AssistantPreparationController,
       );
     // AS-186. The recording as raw bytes, whatever its type, capped at the
     // socket: a larger one is the parser's 413 before it reaches clinica-ai
