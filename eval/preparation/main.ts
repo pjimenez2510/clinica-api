@@ -31,6 +31,7 @@ import {
   loadPreparationCases,
   loadPreparationHeard,
   PREPARATION_HEARD,
+  WORDING_CASES,
   reservedDictations,
   reservedDictationsHeard,
   type HeardFile,
@@ -54,7 +55,7 @@ export const USAGE = `La preparación escuchada (B3, AS-255): la lectura del pro
 
 Opciones:
   --brazos escrito,oido          qué brazos (por defecto los dos)
-  --sets preparaciones,reservado-b2   qué casos (por defecto los dos; del reservado de B2 sólo el texto escrito)
+  --sets preparaciones,motivo,reservado-b2   qué casos (por defecto los tres; del motivo y del reservado de B2 sólo el texto escrito)
   --casos <n>                    sólo los n primeros de cada set
   --gasto-maximo <usd>           lo más que gasta ESTA corrida en el proveedor (por defecto 0,20; D-241)
   --proveedor gemini             el proveedor medido (por defecto el principal)
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
       falso: { type: 'boolean', default: false },
       oir: { type: 'boolean', default: false },
       brazos: { type: 'string', default: 'escrito,oido' },
-      sets: { type: 'string', default: 'preparaciones,reservado-b2' },
+      sets: { type: 'string', default: 'preparaciones,motivo,reservado-b2' },
       casos: { type: 'string' },
       'gasto-maximo': { type: 'string', default: '0.20' },
       proveedor: { type: 'string', default: 'gemini' },
@@ -147,6 +148,11 @@ async function main(): Promise<void> {
       const heard = new Map(loadPreparationHeard(sha256).map((each) => [each.id, each.lines])); // prettier-ignore
       runs.push(...own.map((item) => ({ item, arm: 'oido' as const, voice: 'por persona', texts: heard.get(item.id) ?? [] }))); // prettier-ignore
     }
+  }
+  // AS-284. Its own set, written text only: nothing of it was heard.
+  if (sets.includes('motivo') && arms.includes('escrito')) {
+    const own = loadPreparationCases(WORDING_CASES).cases.slice(0, limit);
+    runs.push(...own.map((item) => ({ item, arm: 'escrito' as const, voice: '—', texts: item.lines.map((line) => line.text) }))); // prettier-ignore
   }
   if (
     sets.includes('reservado-b2') &&
@@ -234,8 +240,9 @@ async function main(): Promise<void> {
   const label =
     values.etiqueta ?? `b3-preparacion${values.falso ? '-falso' : ''}`;
   const groups = {
-    escrito: scored.filter((each) => each.arm === 'escrito' && !each.id.startsWith('B2-')), // prettier-ignore
-    oido: scored.filter((each) => each.arm === 'oido' && !each.id.startsWith('B2-')), // prettier-ignore
+    escrito: scored.filter((each) => each.arm === 'escrito' && /^P/.test(each.id)), // prettier-ignore
+    oido: scored.filter((each) => each.arm === 'oido' && /^P/.test(each.id)), // prettier-ignore
+    motivo: scored.filter((each) => each.id.startsWith('M')),
     'reservado-b2': scored.filter((each) => each.id.startsWith('B2-')),
   };
   const summaries = Object.fromEntries(Object.entries(groups).filter(([, each]) => each.length > 0).map(([name, each]) => [name, summarise(each)])); // prettier-ignore
@@ -267,11 +274,11 @@ async function main(): Promise<void> {
   const figuresOnly = <T extends { id: string }>(row: T) =>
     row.id.startsWith('B2-') ? { ...row, values: undefined, expected: undefined, got: undefined } : row; // prettier-ignore
   writeFileSync(join(folder, 'resultado.json'), `${JSON.stringify({ ...meta, summaries, verdicts, serious: serious.map(figuresOnly), scored: scored.map(figuresOnly) }, null, 2)}\n`); // prettier-ignore
-  writeFileSync(join(folder, 'informe.md'), renderPreparationReport({ meta, summaries, verdicts, scored, cases })); // prettier-ignore
+  writeFileSync(join(folder, 'informe.md'), renderPreparationReport({ meta, summaries, verdicts, scored, cases: [...cases, ...loadPreparationCases(WORDING_CASES).cases] })); // prettier-ignore
 
   for (const [name, summary] of Object.entries(summaries)) {
     const v = verdicts[name]!;
-    print(`${name}: ${summary.correct}/${summary.expected} (${(summary.correctRate.rate * 100).toFixed(1)} %), graves ${summary.serious}, fuera de su frase ${summary.notLiteral}, motivo ${summary.complaintRight}/${summary.complaintSaid} (inventados ${summary.complaintInvented}), hablante ${summary.speakersRight}/${summary.lines}, p90 ${summary.p90Ms ?? '—'} ms · SC-099 ${v.sc099 ? '✓' : '✗'} SC-100 ${v.sc100 ? '✓' : '✗'} SC-101 ${v.sc101 ? '✓' : '✗'}`); // prettier-ignore
+    print(`${name}: ${summary.correct}/${summary.expected} (${(summary.correctRate.rate * 100).toFixed(1)} %), graves ${summary.serious}, fuera de su frase ${summary.notLiteral}, motivo ${summary.complaintRight}/${summary.complaintSaid} (inventados ${summary.complaintInvented}, redactados ${summary.complaintWorded}/${summary.complaintProposed}), hablante ${summary.speakersRight}/${summary.lines}, p90 ${summary.p90Ms ?? '—'} ms · SC-099 ${v.sc099 ? '✓' : '✗'} SC-100 ${v.sc100 ? '✓' : '✗'} SC-101 ${v.sc101 ? '✓' : '✗'}`); // prettier-ignore
   }
   if (Object.keys(failures).length > 0) {
     print(`Sin respuesta, por código: ${JSON.stringify(failures)}`);

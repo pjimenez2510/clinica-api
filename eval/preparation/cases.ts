@@ -52,6 +52,8 @@ export type HeardFile = z.infer<typeof heardFileSchema>;
 
 export const PREPARATION_CASES = join(CASES_DIR, 'preparaciones.json');
 export const PREPARATION_HEARD = join(CASES_DIR, 'preparaciones-oido.json');
+/** AS-284. The reason worded and «150 y 8»: written text only. */
+export const WORDING_CASES = join(CASES_DIR, 'preparaciones-motivo.json');
 
 const sha256 = (text: string) =>
   createHash('sha256').update(text).digest('hex');

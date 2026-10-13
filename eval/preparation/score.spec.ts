@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadPreparationCases, type PreparationCase } from './cases.ts';
-import { literal, scoreCase, summarise, verdict } from './score.ts';
+import { literal, scoreCase, summarise, verdict, worded } from './score.ts';
 
 const ITEM: PreparationCase = {
   id: 'T1',
@@ -93,5 +93,25 @@ describe('AS-255 the scoring of a preparation', () => {
     expect(() => loadPreparationCases(file)).toThrow(/motivo/);
     writeFileSync(file, JSON.stringify({ origin: 'invented', description: '', cases: [ITEM] })); // prettier-ignore
     expect(loadPreparationCases(file).cases).toHaveLength(1);
+  });
+
+  it('AS-284 a number written «150 y 8» is said literally as 158, and «120 y 80» is no 200', () => {
+    const rosa = { startMs: 0, endMs: 9_000, text: 'Pesa 72 kilos y la talla 150 y 8 centímetros un medida de pie.' }; // prettier-ignore
+    expect(literal('heightCm', 158, 'la talla 150 y 8 centímetros', rosa)).toBe(true); // prettier-ignore
+    expect(literal('heightCm', 158, 'la talla 150 y ocho', { ...rosa, text: 'la talla 150 y ocho' })).toBe(true); // prettier-ignore
+    expect(literal('systolicBp', 200, 'Presión 120 y 80', { ...rosa, text: 'Presión 120 y 80' })).toBe(false); // prettier-ignore
+  });
+
+  it('AS-284 a reason is worded when it is not the phrase, has no first person and no fillers', () => {
+    const quote = 'Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada.'; // prettier-ignore
+    expect(worded({ text: 'Dolor de cabeza muy fuerte desde hace dos días, con sensación de mareo', quote })).toBe(true); // prettier-ignore
+    expect(worded({ text: quote, quote })).toBe(false);
+    expect(worded({ text: 'Tengo dolor de cabeza desde hace dos días', quote })).toBe(false); // prettier-ignore
+    expect(worded({ text: 'Señorita, dolor de cabeza desde hace dos días', quote })).toBe(false); // prettier-ignore
+    expect(worded({ text: 'Dolor de cabeza y se siente mareada', quote })).toBe(true); // prettier-ignore
+
+    const scored = scoreCase({ item: ITEM, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], complaint: { text: 'Dolor de cabeza.', quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
+    expect(scored.complaintWorded).toBe(true);
+    expect(summarise([scored])).toMatchObject({ complaintProposed: 1, complaintWorded: 1 }); // prettier-ignore
   });
 });

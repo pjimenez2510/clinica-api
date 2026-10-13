@@ -19,6 +19,8 @@ export interface ScoredCase {
   /** SC-099. Values whose number is not in their phrase, or whose phrase is not in its line. */
   notLiteral: number;
   complaint: ComplaintOutcome;
+  /** AS-284. The reason proposed reads as the nurse writes it; null: none proposed. */
+  complaintWorded: boolean | null;
   speakers: { right: number; lines: number };
 }
 
@@ -99,6 +101,11 @@ function spellings(n: number): string[] {
   const tenths = Math.round((n - whole) * 100);
   if (tenths === 0) {
     out.push(String(whole), ...words(whole));
+    // AS-284. How whisper writes «ciento cincuenta y ocho»: «150 y 8».
+    const unit = whole % 10;
+    if (whole > 20 && unit > 0 && (whole - unit) % 100 !== 0) {
+      out.push(...[String(unit), ...words(unit)].map((u) => `${whole - unit} y ${u}`)); // prettier-ignore
+    }
     return out;
   }
   const two = String(tenths).padStart(2, '0');
@@ -116,6 +123,15 @@ function spellings(n: number): string[] {
     if (whole <= 2) for (const s of words(tenths)) out.push(`${w} metro ${s}`, `${w} metros ${s}`); // prettier-ignore
   }
   return out;
+}
+
+/** AS-284. First person, fillers and whom the patient speaks to: what a worded reason has none of. */
+const SPOKEN = /(^| )(me|mi|mis|yo|tengo|estoy|siento|ay|pues|bueno|mire|oiga|senorita|senora|doctora?|doctorita)( |$)/; // prettier-ignore
+
+/** AS-284. Checked apart from the barrier: not the patient's phrase, and none of SPOKEN. */
+export function worded(complaint: { text: string; quote: string }): boolean {
+  const text = fold(complaint.text);
+  return text !== fold(complaint.quote) && !SPOKEN.test(text);
 }
 
 /** Where the harness puts each line of a case: ten seconds apart (`main.ts`). */
@@ -170,6 +186,7 @@ export function scoreCase(input: {
     values,
     notLiteral,
     complaint,
+    complaintWorded: said ? worded(said) : null,
     speakers: {
       // A line of the case is right when every sentence read from it is.
       right: item.lines.filter((line, index) => {
@@ -205,6 +222,10 @@ export interface Summary {
   complaintRight: number;
   complaintRate: Interval & { rate: number };
   complaintInvented: number;
+  /** AS-284. Of the reasons proposed, how many read as the nurse writes them. */
+  complaintProposed: number;
+  complaintWorded: number;
+  wordedRate: Interval & { rate: number };
   lines: number;
   speakersRight: number;
   speakerRate: Interval & { rate: number };
@@ -224,6 +245,7 @@ export function summarise(scored: readonly ScoredCase[]): Summary {
   const invented = all.filter((each) => each.outcome === 'invented').length;
   const said = answered.filter((each) => each.complaint !== 'none' && each.complaint !== 'invented'); // prettier-ignore
   const right = said.filter((each) => each.complaint === 'correct').length;
+  const proposed = answered.filter((each) => each.complaintWorded !== null);
   const lines = answered.reduce((total, each) => total + each.speakers.lines, 0); // prettier-ignore
   const speakersRight = answered.reduce((total, each) => total + each.speakers.right, 0); // prettier-ignore
   const latencies = answered.flatMap((each) => (each.latencyMs === null ? [] : [each.latencyMs])); // prettier-ignore
@@ -241,6 +263,9 @@ export function summarise(scored: readonly ScoredCase[]): Summary {
     complaintRight: right,
     complaintRate: rateOf(right, said.length),
     complaintInvented: answered.filter((each) => each.complaint === 'invented').length, // prettier-ignore
+    complaintProposed: proposed.length,
+    complaintWorded: proposed.filter((each) => each.complaintWorded).length,
+    wordedRate: rateOf(proposed.filter((each) => each.complaintWorded).length, proposed.length), // prettier-ignore
     lines,
     speakersRight,
     speakerRate: rateOf(speakersRight, lines),

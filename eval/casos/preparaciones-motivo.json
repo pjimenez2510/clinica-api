@@ -1,0 +1,273 @@
+{
+  "origin": "invented",
+  "description": "B3 (AS-284, D-263): preparaciones inventadas para lo que el autor vio con el modelo real el 13-10-2026 —la talla que el reconocedor escribió «150 y 8» (M01, la frase del autor tal cual), la forma «decena y unidad» en talla, peso, presión, pulso, saturación y perímetros, los falsos positivos que no se unen («120 y 80», «36 y medio», «18 y saturación 97») y motivos con muletillas, vocativos, una negación y una duración—. Escrito antes de medir. Ningún dato de una persona real. Sólo el texto escrito: lo oído no se generó.",
+  "cases": [
+    {
+      "id": "M01",
+      "style": "autor-whisper",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Buenos días, ¿qué le trae por aquí?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Bueno, pesa 72 kilos y la talla 150 y 8 centímetros un medida de pie."
+        }
+      ],
+      "expected": {
+        "weightKg": 72,
+        "heightCm": 158
+      },
+      "heightPosition": "STANDING",
+      "complaint": [
+        1
+      ]
+    },
+    {
+      "id": "M02",
+      "style": "decena-y-unidad",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Peso 60 y 5 kilos, talla 160 y 2 centímetros."
+        }
+      ],
+      "expected": {
+        "weightKg": 65,
+        "heightCm": 162
+      },
+      "heightPosition": null,
+      "complaint": null
+    },
+    {
+      "id": "M03",
+      "style": "decena-y-unidad",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "¿Cómo se siente hoy?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Pues bien, doctora, solo vengo por el control de la presión."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Presión 130 y 5 sobre 80 y 5, pulso 70 y 6."
+        }
+      ],
+      "expected": {
+        "systolicBp": 135,
+        "diastolicBp": 85,
+        "heartRate": 76
+      },
+      "heightPosition": null,
+      "complaint": [
+        1
+      ]
+    },
+    {
+      "id": "M04",
+      "style": "decena-y-unidad",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Perímetro abdominal 90 y 4, perímetro cefálico 50 y 3."
+        }
+      ],
+      "expected": {
+        "abdominalCircumferenceCm": 94,
+        "headCircumferenceCm": 53
+      },
+      "heightPosition": null,
+      "complaint": null
+    },
+    {
+      "id": "M05",
+      "style": "falsos-positivos",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Presión 120 y 80, temperatura 36 y medio."
+        }
+      ],
+      "expected": {
+        "systolicBp": 120,
+        "diastolicBp": 80,
+        "temperatureC": 36.5
+      },
+      "heightPosition": null,
+      "complaint": null
+    },
+    {
+      "id": "M06",
+      "style": "falsos-positivos",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Frecuencia respiratoria 18 y saturación 97."
+        }
+      ],
+      "expected": {
+        "respiratoryRate": 18,
+        "oxygenSaturation": 97
+      },
+      "heightPosition": null,
+      "complaint": null
+    },
+    {
+      "id": "M07",
+      "style": "palabras",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Talla ciento cincuenta y ocho, acostada."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Peso setenta kilos."
+        }
+      ],
+      "expected": {
+        "heightCm": 158,
+        "weightKg": 70
+      },
+      "heightPosition": "LYING",
+      "complaint": null
+    },
+    {
+      "id": "M08",
+      "style": "muletillas",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "¿Qué le pasa, mijo?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Mire, doctora, pues tengo tos con flema desde hace una semana."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Temperatura 38 grados, saturación 90 y 4."
+        }
+      ],
+      "expected": {
+        "temperatureC": 38,
+        "oxygenSaturation": 94
+      },
+      "heightPosition": null,
+      "complaint": [
+        1
+      ]
+    },
+    {
+      "id": "M09",
+      "style": "negacion",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "¿Le duele el pecho?"
+        },
+        {
+          "speaker": "patient",
+          "text": "No, señorita, no me duele el pecho, es la barriga que me arde desde anoche."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Pulso 80 y 8."
+        }
+      ],
+      "expected": {
+        "heartRate": 88
+      },
+      "heightPosition": null,
+      "complaint": [
+        1
+      ]
+    },
+    {
+      "id": "M10",
+      "style": "muletillas",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Siéntese, ¿qué le trae?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Bueno, ay, me duele la garganta y tengo fiebre desde el lunes."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Peso 50 y 9 kilos, temperatura 38 y medio."
+        }
+      ],
+      "expected": {
+        "weightKg": 59,
+        "temperatureC": 38.5
+      },
+      "heightPosition": null,
+      "complaint": [
+        1
+      ]
+    },
+    {
+      "id": "M11",
+      "style": "muletillas",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Buenas tardes, cuénteme."
+        },
+        {
+          "speaker": "patient",
+          "text": "Doctorita, vengo porque me mareo cuando me levanto, hace tres días."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Presión 100 y 60."
+        }
+      ],
+      "expected": {
+        "systolicBp": 100,
+        "diastolicBp": 60
+      },
+      "heightPosition": null,
+      "complaint": [
+        1
+      ]
+    },
+    {
+      "id": "M12",
+      "style": "duracion",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "¿Desde cuándo?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Ay, ya son como 2 semanas con este dolor de rodilla, señorita."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Talla 170 y 1, peso 80 y 3 kilos."
+        }
+      ],
+      "expected": {
+        "heightCm": 171,
+        "weightKg": 83
+      },
+      "heightPosition": null,
+      "complaint": [
+        1
+      ]
+    }
+  ]
+}
