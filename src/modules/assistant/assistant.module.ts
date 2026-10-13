@@ -76,6 +76,13 @@ import {
 import { SUGGESTION_REVIEW_STORE } from './application/suggestion-review.store';
 import { PrismaSuggestionReviewStore } from './infrastructure/prisma-suggestion-review.store';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
+import { AssistantHistoryController } from './assistant-history.controller';
+import {
+  CLINICAL_HISTORY_CLOCK,
+  CLINICAL_HISTORY_READER,
+} from './application/clinical-history.reader';
+import { ClinicalHistoryService } from './application/clinical-history.service';
+import { PrismaClinicalHistoryReader } from './infrastructure/prisma-clinical-history.reader';
 import {
   AssistantVitalsDictationController,
   MAX_DICTATION_BYTES,
@@ -148,6 +155,8 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
+    // AS-200 (D-256 §1). Outside the switch: no model, nothing leaves.
+    AssistantHistoryController,
     AssistantVitalsDictationController,
   ],
   providers: [
@@ -228,6 +237,10 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: SIGNING_REVIEW_CLOCK, useValue: () => new Date() },
     SigningReviewService,
     { provide: ASSISTANT_AT_SIGNING, useExisting: SigningReviewService },
+    // AS-200 to AS-207 (B1). The history without a model.
+    { provide: CLINICAL_HISTORY_READER, useClass: PrismaClinicalHistoryReader },
+    { provide: CLINICAL_HISTORY_CLOCK, useValue: () => new Date() },
+    ClinicalHistoryService,
     // AS-180 to AS-186 (B2). The dictated vital signs: clinica-ai transcribes,
     // a rule reads; no model, nothing kept.
     {

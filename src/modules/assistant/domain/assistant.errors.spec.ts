@@ -37,6 +37,7 @@ import {
   AssistantDraftInterruptedError,
   AssistantDraftFailedError,
   AssistantDraftRetryLimitError,
+  ClinicalHistoryChartNotOpenError,
   DictationNotHeardError,
   DictationUnavailableError,
 } from './assistant.errors';
@@ -157,6 +158,13 @@ describe('assistant errors', () => {
       'ASSISTANT_ENCOUNTER_CLOSED',
       ConflictError,
       /ya no admite/,
+    ],
+    [
+      'AS-200',
+      () => new ClinicalHistoryChartNotOpenError(),
+      'CLINICAL_HISTORY_CHART_NOT_OPEN',
+      ConflictError,
+      /historia clínica abierta/,
     ],
     [
       'AS-028',

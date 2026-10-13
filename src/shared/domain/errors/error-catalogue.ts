@@ -73,6 +73,8 @@ export const DOMAIN_ERROR_CODES = [
   'ASSISTANT_ENCOUNTER_NOT_FOUND',
   'ASSISTANT_NOT_ENCOUNTER_OWNER',
   'ASSISTANT_ENCOUNTER_CLOSED',
+  // AS-200 (B1). La ficha de la historia no existe o la absorbió una unificación.
+  'CLINICAL_HISTORY_CHART_NOT_OPEN',
   // AS-165, AS-166 (A3): escuchar sin la autorización de grabar del paciente.
   'ASSISTANT_RECORDING_NOT_AUTHORIZED',
   'ASSISTANT_NOTE_EMPTY',

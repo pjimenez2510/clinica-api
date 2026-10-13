@@ -528,6 +528,21 @@ export class AssistantDraftCancelledError extends ConflictError {
   }
 }
 
+/**
+ * AS-200. The chart whose history was asked for does not exist or was
+ * absorbed by a merge: its history is read from the survivor. Same answer for
+ * both, so an identifier that names nothing reveals nothing (PA-024).
+ */
+export class ClinicalHistoryChartNotOpenError extends ConflictError {
+  readonly code = 'CLINICAL_HISTORY_CHART_NOT_OPEN';
+  override readonly userTitle =
+    'Ese paciente no tiene historia clínica abierta: si se unificó con otra ficha, ábrala desde la ficha que quedó';
+
+  constructor() {
+    super('Patient chart does not exist or was absorbed by a merge');
+  }
+}
+
 /** AS-186. Why a dictation gave no text, as the screen needs to say it. */
 export type DictationNotHeard =
   | { kind: 'empty' }

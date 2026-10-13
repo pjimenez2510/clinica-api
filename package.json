@@ -69,7 +69,8 @@
     "db:import:sri-ruc": "node --env-file=.env --experimental-strip-types prisma/import-sri-ruc.mts",
     "db:seed:identity": "node --env-file=.env --experimental-strip-types prisma/seed-identity.mts",
     "demo:note-draft": "node --env-file-if-exists=.env --experimental-strip-types scripts/demo-note-draft.mts",
-    "listening:measure": "node --env-file-if-exists=.env --experimental-strip-types scripts/measure-listening.mts"
+    "listening:measure": "node --env-file-if-exists=.env --experimental-strip-types scripts/measure-listening.mts",
+    "history:demo": "node --env-file-if-exists=.env --experimental-strip-types scripts/clinical-history-demo.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.129.0",
