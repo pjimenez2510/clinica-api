@@ -35,6 +35,7 @@ import {
   createPatient,
   createSite,
 } from './setup/fixtures';
+import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -259,6 +260,19 @@ describe('los exámenes propuestos por HTTP (AS-103 a AS-112)', () => {
     await get(encounterId, nurseToken).expect(403);
     // Control: the doctor of the seed gets in by the same route.
     await get(encounterId, doctor.token).expect(200);
+  });
+
+  it('AU-061 the reading and what it shows again are the consultation: no cache keeps them', async () => {
+    const read = await post(encounterId, '/read', doctor.token).expect(200);
+    const shown = await get(encounterId, doctor.token).expect(200);
+
+    // Both carry sentences of the note.
+    expect((shown.body as { lines: unknown[] }).lines.length).toBeGreaterThan(
+      0,
+    );
+    expect(read.headers['cache-control']).toBe('no-store');
+    expect(shown.headers['cache-control']).toBe('no-store');
+    await expectPublicTariffCacheable(app.getHttpServer());
   });
 
   it('AS-103 AS-104 AS-105 AS-107 AS-108 reads the note: each exam asked for with only the catalogue’s candidates; what it brings is not a line; nothing is ordered', async () => {

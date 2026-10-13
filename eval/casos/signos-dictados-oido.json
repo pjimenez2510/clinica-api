@@ -1,0 +1,1927 @@
+{
+  "origin": "invented",
+  "description": "Lo que clinica-ai oyó de cada frase inventada de signos-dictados.json dicha por voces sintéticas de macOS, sin ruido (AS-188). El audio no se guardó.",
+  "casesSha256": "f76dfcf723b96dc095aa2baeacb86273f0ffb22f2251a41234dd9cce63d37b18",
+  "heard": [
+    {
+      "id": "P01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 118,76, pulso 68, temperatura 36,5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión 118,76, pulso 68, temperatura 36,5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión 118.76, pulso 68, temperatura 36.5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión 118.76, pulso 68, temperatura 36.5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión 118.76, pulso 68, temperatura 36.5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión 118.76, pulso 68, temperatura 36.5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 118,76, pulso 68, temperatura 36,5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 118,76, pulso 68, temperatura 36,5, saturación 97, peso 64, talla 159."
+    },
+    {
+      "id": "P02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 134.88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 1.72."
+    },
+    {
+      "id": "P02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 1,72."
+    },
+    {
+      "id": "P02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 172."
+    },
+    {
+      "id": "P02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 172."
+    },
+    {
+      "id": "P02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 172."
+    },
+    {
+      "id": "P02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 172."
+    },
+    {
+      "id": "P02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 172."
+    },
+    {
+      "id": "P02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 134,88, frecuencia 79, saturación 95, temperatura 37, peso 81, talla 172."
+    },
+    {
+      "id": "P03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 95.62, pulso 56, saturación 99, temperatura 35.5, peso 48, talla 1.48."
+    },
+    {
+      "id": "P03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "presión 95,62, pulso 56, saturación 99, temperatura 35,5, peso 48, talla 1, 48."
+    },
+    {
+      "id": "P03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión 95 con 62, pulso 56, saturación 99, temperatura 35 y medio, peso 48, talla 148."
+    },
+    {
+      "id": "P03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión 95 con 62, pulso 56, saturación 99, temperatura 35 y medio, peso 48, talla 148."
+    },
+    {
+      "id": "P03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión 95.62, pulso 56, saturación 99, temperatura 35.5, peso 48, talla 148."
+    },
+    {
+      "id": "P03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión 95 con 62, pulso 56, saturación 99, temperatura 35 y medio, peso 48, talla 148."
+    },
+    {
+      "id": "P03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 95,62, pulso 56, saturación 99, temperatura 35,5, peso 48, talla 1,48."
+    },
+    {
+      "id": "P03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 95,62, pulso 56, saturación 99, temperatura 35,5, peso 48, talla 1,48."
+    },
+    {
+      "id": "P04",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 1 68."
+    },
+    {
+      "id": "P04",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 1 68."
+    },
+    {
+      "id": "P04",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 168."
+    },
+    {
+      "id": "P04",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 168."
+    },
+    {
+      "id": "P04",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 168."
+    },
+    {
+      "id": "P04",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 168."
+    },
+    {
+      "id": "P04",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 168."
+    },
+    {
+      "id": "P04",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Tensión arterial 152 sobre 96, frecuencia cardíaca 91, frecuencia respiratoria 20, saturación 93, temperatura 38, peso 97, talla 1 68."
+    },
+    {
+      "id": "C01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, 70 pesos kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, 70 pesos kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, peso 70 kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, peso 70 kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, peso 70 kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, peso 70 kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, peso 70 kilos, talla 1,65."
+    },
+    {
+      "id": "C01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 120 sobre 80, pulso 72, temperatura 36,5, saturación 98, peso 70 kilos, talla 1,65."
+    },
+    {
+      "id": "C02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, 73 pesos con 50 céntimos, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, 73 pesos con 50 céntimos, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, peso 73,5, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, peso 73,5, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, peso 73,5, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, peso 73,5, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, peso 73,5, talla 1,61."
+    },
+    {
+      "id": "C02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 126,82, frecuencia 74, saturación 96, temperatura 36,9, peso 73,5, talla 1,61."
+    },
+    {
+      "id": "C03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 22, saturación 91, temperatura 38,4, 88 pesos, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 22, saturación 91, temperatura 38,4, 88 pesos, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 22, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 22, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 20, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 20, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 22, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 142 sobre 94, frecuencia 102, frecuencia respiratoria 22, saturación 91, temperatura 38,4, peso 88, talla 1,77."
+    },
+    {
+      "id": "C04",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "PA 110-70, FC 66, saturación 97, 59 pesos, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "PA 110-70, FC 66, saturación 97, 59 pesos, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "F110-70, FC66, saturación 97, peso 59, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "F110-70, FC66, saturación 97, peso 59, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "F110-70, FC66, saturación 97, peso 59, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Va 110 barra 70, FC 66, saturación 97, peso 59, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Paciento 10-70, FC-66, saturación 97, peso 59, talla 157 centímetros."
+    },
+    {
+      "id": "C04",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Paciento 10-70, FC-66, saturación 97, peso 59, talla 157 centímetros."
+    },
+    {
+      "id": "O01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Peso 66, talla 1'55, presión 112'72."
+    },
+    {
+      "id": "O01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Peso 66, talla 155, presión 112,72."
+    },
+    {
+      "id": "O01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Peso 66, talla 1.55, presión 112.72."
+    },
+    {
+      "id": "O01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Peso 66, talla 1.55, presión 112.72."
+    },
+    {
+      "id": "O01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Peso 66, talla 1.55, presión 112.72."
+    },
+    {
+      "id": "O01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Peso 66, traje 1,55, presión 112,72."
+    },
+    {
+      "id": "O01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Peso 66, talla 1'55, presión 112'72."
+    },
+    {
+      "id": "O01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Peso 66, talla 1.55, presión 112,72."
+    },
+    {
+      "id": "O02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "saturación 96 y pulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "saturación 96 y pulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Saturación 96, impulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Saturación 96 y pulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Saturación 96 y pulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Saturación 96 y pulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Saturación 96 y pulso 86."
+    },
+    {
+      "id": "O02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Saturación 96 y pulso 86."
+    },
+    {
+      "id": "O03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Temperatura 37, presión 128,78."
+    },
+    {
+      "id": "O04",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "talla 162, peso 75."
+    },
+    {
+      "id": "O04",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "talla 1.62, peso 75."
+    },
+    {
+      "id": "O04",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Talla 162, puesto 75."
+    },
+    {
+      "id": "O04",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Traiga uno sesenta y dos, peso setenta y cinco."
+    },
+    {
+      "id": "O04",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Talla uno sesenta y dos, puesto setenta y cinco."
+    },
+    {
+      "id": "O04",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Talla uno sesenta y os, hueso sesenta y cinco."
+    },
+    {
+      "id": "O04",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Talla 162, peso 75."
+    },
+    {
+      "id": "O04",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Talla 162, peso 75."
+    },
+    {
+      "id": "A01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Tensión arterial 145 sobre 90."
+    },
+    {
+      "id": "A02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "La presión está en 115,75."
+    },
+    {
+      "id": "A02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "La presión está en 115, 75."
+    },
+    {
+      "id": "A02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "La presión está en 115,75."
+    },
+    {
+      "id": "A02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "La presión está en 115.75."
+    },
+    {
+      "id": "A02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "La presión está en 115,75."
+    },
+    {
+      "id": "A02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "La presión está en 115.75."
+    },
+    {
+      "id": "A02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "La presión está en 115,75."
+    },
+    {
+      "id": "A02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "La presión está en 115, 75."
+    },
+    {
+      "id": "A03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión arterial 180 con 110, pulso 94."
+    },
+    {
+      "id": "A04",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 100 con 60."
+    },
+    {
+      "id": "A04",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión 100 con 60."
+    },
+    {
+      "id": "A04",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión 100 con 60."
+    },
+    {
+      "id": "A04",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión 100 con 60."
+    },
+    {
+      "id": "A04",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión 100.60."
+    },
+    {
+      "id": "A04",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión 100.60."
+    },
+    {
+      "id": "A04",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 100,60."
+    },
+    {
+      "id": "A04",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 100,60."
+    },
+    {
+      "id": "T01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "talla 168 centímetros, hueso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Talla 168 centímetros, peso 72 kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Mide 1 metro 52 y pesa 57 kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Mide 1 metro 52 y pesa 57 kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Mide un metro cincuenta y dos si pesa cincuenta y siete kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Mide un metro cincuenta y dos y pesa cincuenta y siete kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Mide un metro cincuenta y dos y pesa cincuenta y siete kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Mide un metro cincuenta y dos y pesa cincuenta y siete kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Mide 1 metro 52 y pesa 57 kilos."
+    },
+    {
+      "id": "T02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Mide 1 metro 52 y pesa 57 kilos."
+    },
+    {
+      "id": "T03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Estatura 1.80, peso 89."
+    },
+    {
+      "id": "T03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Estatura 1.80, peso 89."
+    },
+    {
+      "id": "T03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "estatura en ochenta, peso ochenta y nueve."
+    },
+    {
+      "id": "T03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Estatura 1.80, peso 89."
+    },
+    {
+      "id": "T03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Estatura uno ochenta, peso ochenta y nueve."
+    },
+    {
+      "id": "T03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Estatura 1.80, peso 89"
+    },
+    {
+      "id": "T03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Estatura 1.80, peso 89."
+    },
+    {
+      "id": "T03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Estatura 1.80, peso 89."
+    },
+    {
+      "id": "S01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "saturando 94, pulso 77."
+    },
+    {
+      "id": "S01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "saturando 94, pulso 77."
+    },
+    {
+      "id": "S01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "saturando noventa y cuatro, pulso setenta y siete."
+    },
+    {
+      "id": "S01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "saturando noventa y cuatro, pulso setenta y siete."
+    },
+    {
+      "id": "S01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "saturando noventa y cuatro, pulso setenta y siete."
+    },
+    {
+      "id": "S01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Saturando 94, pulso 77."
+    },
+    {
+      "id": "S01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Saturando 94, pulso 77."
+    },
+    {
+      "id": "S01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Saturando 94, pulso 77."
+    },
+    {
+      "id": "S02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Saturación de oxígeno 92%, frecuencia 64."
+    },
+    {
+      "id": "S03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "S03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Saturación 98."
+    },
+    {
+      "id": "R01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 60."
+    },
+    {
+      "id": "R01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Frecuencia respiratoria 16, frecuencia cardíaca 70."
+    },
+    {
+      "id": "R02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Frecuencia cardíaca 82, frecuencia respiratoria 18, saturación 96."
+    },
+    {
+      "id": "R03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "R03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Respiración 20 por minuto, pulso 75."
+    },
+    {
+      "id": "E01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Temperatura axilar 36,7."
+    },
+    {
+      "id": "E02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Temperatura 37.8."
+    },
+    {
+      "id": "E03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "E03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Temperatura 39, saturación 94."
+    },
+    {
+      "id": "W01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Puesto 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Peso 160 libras."
+    },
+    {
+      "id": "W02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Pesa 71 kilos y medio."
+    },
+    {
+      "id": "W03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "W03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Peso 68,4."
+    },
+    {
+      "id": "K01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "pulso 80, perdón, 82."
+    },
+    {
+      "id": "K01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Pulso 80, perdón, 82."
+    },
+    {
+      "id": "K01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "pulso 80, perdón, 82."
+    },
+    {
+      "id": "K01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Pulso 80, perdón, 82."
+    },
+    {
+      "id": "K01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Pulso ochenta, perdón, ochenta y dos."
+    },
+    {
+      "id": "K01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Pulso 80, perdón, 82."
+    },
+    {
+      "id": "K01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Pulso 80, perdón, 82."
+    },
+    {
+      "id": "K01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Pulso 80, perdón, 82."
+    },
+    {
+      "id": "K02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Peso 60, no, 63, talla 1 57."
+    },
+    {
+      "id": "K02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "peso 60, no, 63, talla 157."
+    },
+    {
+      "id": "K02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Peso 60, no, 63, talla 157."
+    },
+    {
+      "id": "K02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Peso 60, no, 63, traiga 1.57."
+    },
+    {
+      "id": "K02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Peso 60, no, 63, talla 157."
+    },
+    {
+      "id": "K02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "¿Peso 60? No, 63. Traiga uno 57."
+    },
+    {
+      "id": "K02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Peso 60, no, 63, talla 157."
+    },
+    {
+      "id": "K02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Peso 60, no, 63, talla 157."
+    },
+    {
+      "id": "K03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión 130,85, mejor dicho, 130,80."
+    },
+    {
+      "id": "K03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión 130,85, mejor dicho, 130,80."
+    },
+    {
+      "id": "K03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión 130 con 85, o mejor dicho, 130 con 80."
+    },
+    {
+      "id": "K03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión 130,85, o mejor dicho, 130,80."
+    },
+    {
+      "id": "K03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión 130,85, o mejor dicho, 130,80."
+    },
+    {
+      "id": "K03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión 130,85, o mejor dicho, 130,80."
+    },
+    {
+      "id": "K03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión 130,85, mejor dicho, 130,80."
+    },
+    {
+      "id": "K03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión 130,85, mejor dicho, 130,80."
+    },
+    {
+      "id": "D01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Presión normal, temperatura B."
+    },
+    {
+      "id": "D01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Presión normal, temperatura bien."
+    },
+    {
+      "id": "D02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "saturación 90 y, no sé, espera, peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "saturación 90 y, no sé, espera. Peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Saturación 90, no sé, espera, peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Saturación 90, no sé, espera. Peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Saturación 90, no sé, espera, peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Saturación 90, no sé, espera. Peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Saturación 90 y, no sé, espera. Peso 78."
+    },
+    {
+      "id": "D02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Saturación 90 y, no sé, espera, peso 78."
+    },
+    {
+      "id": "D03",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D03",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Temperatura 4, pulso 800."
+    },
+    {
+      "id": "D04",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "D04",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Pulso 72, frecuencia respiratoria 300."
+    },
+    {
+      "id": "L01",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "peso 61 kilos. Ahora súbase al tallímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110,70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "peso 61 kilos. Ahora súbase al tallímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110 con 70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Peso 61 kilos. Ahora súbase al tachímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110 con 70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Peso 61 kilos. Ahora súbase al tajímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110 con 70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Peso 61 kilos. Ahora súbase al tachímetro. Talla 158. Siéntese por favor y eme el brazo. Presión 110 con 70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Peso 61 kilos. Ahora súbase al tajímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110 con 70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Peso 61 kilos. Ahora súbase al tallímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110,70. Saturación 97."
+    },
+    {
+      "id": "L01",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Peso 61 kilos. Ahora súbase al tallímetro. Talla 158. Siéntese por favor y deme el brazo. Presión 110,70. Saturación 97."
+    },
+    {
+      "id": "L02",
+      "voice": "Paulina",
+      "rate": null,
+      "text": "Buenos días. Vamos a tomar los signos. Pulso 88. Temperatura 37 y medio. Respire normal. Frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Paulina",
+      "rate": 220,
+      "text": "Buenos días. Vamos a tomar los signos. Pulso 88. Temperatura 37 y medio. Respire normal. Frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Eddy (Español (México))",
+      "rate": null,
+      "text": "Buenos días, vamos a tomar los signos, pulso 88, temperatura 37 y medio, respire normal, frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Eddy (Español (México))",
+      "rate": 220,
+      "text": "Buenos días, vamos a tomar los signos, pulso 88, temperatura 37 y medio, respire normal, frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Flo (Español (México))",
+      "rate": null,
+      "text": "Buenos días, vamos a tomar los signos, pulso 88, temperatura 37 y medio, respire normal, frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Flo (Español (México))",
+      "rate": 220,
+      "text": "Buenos días, vamos a tomar los signos, pulso 88, temperatura 37 y medio, respire normal, frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Mónica",
+      "rate": null,
+      "text": "Buenos días, vamos a tomar los signos. Pulso 88. Temperatura 37 y medio. Respire normal. Frecuencia respiratoria 19."
+    },
+    {
+      "id": "L02",
+      "voice": "Mónica",
+      "rate": 220,
+      "text": "Buenos días, vamos a tomar los signos. Pulso 88. Temperatura 37 y medio. Respire normal. Frecuencia respiratoria 19."
+    }
+  ]
+}

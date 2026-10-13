@@ -1,0 +1,77 @@
+{
+  "label": "b2-signos-dictados-reservado",
+  "set": "reservado",
+  "startedAt": "2026-10-13 00:04:54",
+  "commit": "148b2237+cambios",
+  "casesSha256": "7ebddcad4f8db5f8b212985c77d550fa02e586a3616d7555b759a1541c2f9e9e",
+  "heardSha256": "5484a2db293cacf389a7731af45b5f7c1aefbe9a95cd640158b371b6a8d9df15",
+  "voices": [
+    "Paulina",
+    "Eddy (Español (México))",
+    "Flo (Español (México))",
+    "Mónica"
+  ],
+  "cases": 30,
+  "verdict": {
+    "sc095": true,
+    "sc096": false
+  },
+  "texto": {
+    "expected": 92,
+    "correct": 92,
+    "wrong": 0,
+    "empty": 0,
+    "invented": 0,
+    "unsaid": 148,
+    "serious": 0,
+    "correctRate": {
+      "low": 0.9599186101074084,
+      "high": 0.9999999999999998
+    },
+    "emptyRate": {
+      "low": 0,
+      "high": 0.04008138989259148
+    }
+  },
+  "oido": {
+    "expected": 736,
+    "correct": 707,
+    "wrong": 2,
+    "empty": 27,
+    "invented": 0,
+    "unsaid": 1184,
+    "serious": 2,
+    "correctRate": {
+      "low": 0.9439849828641036,
+      "high": 0.9724275699349711
+    },
+    "emptyRate": {
+      "low": 0.025332644590815506,
+      "high": 0.05284823887678211
+    }
+  },
+  "serious": [
+    {
+      "id": "V30",
+      "category": "completa-palabras",
+      "arm": "oido",
+      "voice": "Flo (Español (México))",
+      "field": "systolicBp",
+      "expected": 141,
+      "got": 140,
+      "outcome": "wrong",
+      "text": ""
+    },
+    {
+      "id": "V30",
+      "category": "completa-palabras",
+      "arm": "oido",
+      "voice": "Flo (Español (México)) · 220",
+      "field": "systolicBp",
+      "expected": 141,
+      "got": 140,
+      "outcome": "wrong",
+      "text": ""
+    }
+  ]
+}
