@@ -1431,8 +1431,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   «Aceptar» DEBERÁ sólo enlazar, sin escribir el texto otra vez. «Aceptar las
   N» DEBERÁ hacer, sección por sección, lo mismo que su «Aceptar» —en una con
   texto del médico, «Añadir»—, sin reemplazar nada ni firmar; y «Deshacer»
-  DEBERÁ devolver la sección a lo que tenía antes de aceptar, mientras la
-  pantalla lo conserve.
+  DEBERÁ devolver la sección a lo que tenía antes de aceptar, sólo mientras
+  la pantalla lo conserve y la sección siga siendo lo que dejó la aceptación,
+  y decir «Se quitó lo aceptado del asistente»; el enlace queda en el
+  servidor y la distancia al firmar (E1) lo registra como cambiado. MIENTRAS
+  quede alguna propuesta sin decidir, junto a «Firmar…» DEBERÁ decir cuántas
+  y que no están en la nota.
 - **AS-102** — CUANDO llegue `assistant-draft`, la pantalla DEBERÁ releer el
   borrador sin recargar la página ni tocar lo que el médico está escribiendo.
 
