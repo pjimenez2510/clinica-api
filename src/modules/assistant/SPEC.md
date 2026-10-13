@@ -1563,7 +1563,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 ### 41. En la pestaña Nota (solo interfaz)
 
 - **AS-148** — MIENTRAS la escucha esté capturando, o el borrador en cola o
-  redactándose, «Firmar…» DEBERÁ verse deshabilitado y, junto a él, el motivo:
+  redactándose, «Firmar…» —y «Terminar y firmar», la salida de la atención—
+  DEBERÁ verse deshabilitado y, junto a él, el motivo:
   «Detenga la escucha para firmar.» o «El asistente está redactando el
   borrador.» con «Dejar de esperar» (AS-147); CUANDO la escucha se detenga o
   el borrador termine, DEBERÁ habilitarse sin recargar la página.
