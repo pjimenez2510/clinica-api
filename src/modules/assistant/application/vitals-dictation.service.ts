@@ -10,7 +10,10 @@ import {
   AssistantEncounterNotFoundError,
   DictationNotHeardError,
 } from '../domain/assistant.errors';
-import { readHeard, type DictatedVitals } from '../domain/dictated-vitals';
+import {
+  readDictatedVitals,
+  type DictatedVitals,
+} from '../domain/dictated-vitals';
 
 import {
   DICTATION_TRANSCRIBER,
@@ -31,7 +34,7 @@ export interface VitalsDictation extends DictatedVitals {
 }
 
 /**
- * AS-180 to AS-186, AS-196, AS-197. The vital signs said aloud, read into a proposal
+ * AS-180 to AS-186, AS-196. The vital signs said aloud, read into a proposal
  * for the taking's form.
  *
  * Nothing here writes: the taking is still written by «Guardar», through the
@@ -84,7 +87,7 @@ export class VitalsDictationService {
         seconds: heard.seconds,
       });
     }
-    return { heard: text, ...readHeard({ text, words: heard.words }) };
+    return { heard: text, ...readDictatedVitals(text) };
   }
 
   /**

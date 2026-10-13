@@ -13,13 +13,6 @@ import {
 const answerSchema = z.object({
   text: z.string(),
   seconds: z.number().nonnegative(),
-  // CAI-016. Absent in a clinica-ai older than it: no confidence, and the
-  // reading fails closed (AS-197).
-  words: z
-    .array(
-      z.object({ text: z.string(), probability: z.number().min(0).max(1) }),
-    )
-    .default([]),
 });
 
 /**
@@ -91,11 +84,7 @@ export class ClinicaAiDictationTranscriber implements DictationTranscriber {
     const answer = answerSchema.safeParse(parseJson(body));
     if (!answer.success) throw new DictationUnavailableError('unreachable');
 
-    return {
-      text: answer.data.text.trim(),
-      seconds: answer.data.seconds,
-      words: answer.data.words,
-    };
+    return { text: answer.data.text.trim(), seconds: answer.data.seconds };
   }
 }
 

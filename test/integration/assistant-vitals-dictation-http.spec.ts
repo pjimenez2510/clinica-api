@@ -31,11 +31,6 @@ import { closeApp, listenForTests } from './setup/http-server';
 const PASSWORD = 'el caballo come alfalfa';
 const SAID =
   'Presión 120 sobre 80, pulso 72, temperatura 36 y medio, saturación 98, peso 70 kilos, talla 1,65, frecuencia respiratoria trescientos';
-/** CAI-016. Every token sure of itself, as clinica-ai answers a clear dictation. */
-const WORDS = SAID.split(' ').map((piece, at) => ({
-  text: at === 0 ? piece : ` ${piece}`,
-  probability: 0.97,
-}));
 /** Stands for a WAV: the adapter forwards the bytes as they came. */
 const RECORDING = Buffer.from('RIFF\u0000\u0000\u0000\u0000WAVEfmt invented');
 
@@ -59,9 +54,7 @@ describe('los signos dictados por HTTP (AS-180, AS-184 a AS-187, AS-196)', () =>
     prisma = db();
     clinicaAi.mockReset();
     clinicaAi.mockImplementation(() =>
-      Promise.resolve(
-        Response.json({ text: SAID, seconds: 9.4, words: WORDS }),
-      ),
+      Promise.resolve(Response.json({ text: SAID, seconds: 9.4 })),
     );
 
     if (!app) {

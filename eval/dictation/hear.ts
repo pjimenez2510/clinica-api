@@ -60,14 +60,14 @@ export async function hearAll(
     for (const voice of VOICES) {
       for (const rate of RATES) {
         const recording = say(item.text, voice, rate);
-        const { text, words } = await transcriber
+        const { text } = await transcriber
           .transcribe(recording)
           // A clip the recogniser found no voice in is heard as nothing.
           .catch((error: unknown) => {
-            if ((error as { code?: string }).code === 'ASSISTANT_DICTATION_NOT_HEARD') return { text: '', words: [] }; // prettier-ignore
+            if ((error as { code?: string }).code === 'ASSISTANT_DICTATION_NOT_HEARD') return { text: '' }; // prettier-ignore
             throw error;
           });
-        heard.push({ id: item.id, voice, rate, text: text.replace(/\s+/g, ' ').trim(), words }); // prettier-ignore
+        heard.push({ id: item.id, voice, rate, text: text.replace(/\s+/g, ' ').trim() }); // prettier-ignore
         progress(heard.length, total);
       }
     }

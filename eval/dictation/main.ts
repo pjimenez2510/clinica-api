@@ -4,11 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import {
-  MIN_WORD_PROBABILITY,
-  readDictatedVitals,
-  readHeard,
-} from '../../src/modules/assistant/domain/dictated-vitals.ts';
+import { readDictatedVitals } from '../../src/modules/assistant/domain/dictated-vitals.ts';
 import { dictationTranscriberFor } from '../../src/modules/assistant/infrastructure/clinica-ai.dictation-transcriber.ts';
 import { CASES_DIR } from '../cases.ts';
 
@@ -29,9 +25,7 @@ export const USAGE = `Signos dictados (B2, AS-188): la lectura del producto sobr
   pnpm eval:dictado -- --oir        vuelve a decir cada frase con las voces del sistema y la transcribe con clinica-ai
 
 Opciones:
-  --set desarrollo|reservado   qué frases (por defecto desarrollo; el umbral se eligió sobre él)
-  --umbral <0..1>              probabilidad mínima de cada token (por defecto la del producto)
-  --barrer                     sólo imprime correctos y graves del oído para varios umbrales
+  --set desarrollo|reservado   qué frases (por defecto desarrollo; el reservado no se usa para ajustar nada)
   --etiqueta <texto>   nombre de la carpeta de resultados (por defecto b2-signos-dictados)
   --ayuda              esta ayuda
 
@@ -63,8 +57,6 @@ async function main(): Promise<void> {
       oir: { type: 'boolean', default: false },
       etiqueta: { type: 'string' },
       set: { type: 'string', default: 'desarrollo' },
-      umbral: { type: 'string' },
-      barrer: { type: 'boolean', default: false },
       ayuda: { type: 'boolean', default: false },
     },
   });
@@ -78,9 +70,6 @@ async function main(): Promise<void> {
   }
   const set = values.set as DictationSet;
   const files = DICTATION_SETS[set];
-  const threshold = values.umbral === undefined ? MIN_WORD_PROBABILITY : Number(values.umbral); // prettier-ignore
-  if (!(threshold >= 0 && threshold <= 1))
-    throw new Error('--umbral: entre 0 y 1');
   const label = values.etiqueta ?? `b2-signos-dictados-${set}`;
   const cases = loadDictationCases(CASES_DIR, files.cases);
   const casesPath = join(CASES_DIR, files.cases);
@@ -98,7 +87,7 @@ async function main(): Promise<void> {
     process.stderr.write('\n');
     const file: HeardFile = {
       origin: 'invented',
-      description: `Lo que clinica-ai oyó de cada frase inventada de ${files.cases} dicha por voces sintéticas de macOS, sin ruido, con la probabilidad de cada token (AS-188, CAI-016). El audio no se guardó.`,
+      description: `Lo que clinica-ai oyó de cada frase inventada de ${files.cases} dicha por voces sintéticas de macOS, sin ruido (AS-188). El audio no se guardó.`,
       casesSha256: sha256(casesPath),
       heard,
     };
@@ -111,28 +100,24 @@ async function main(): Promise<void> {
   }
 
   const byId = new Map(cases.map((item) => [item.id, item]));
-  const heardCells = (min: number): Cell[] =>
+  const heardCells = (): Cell[] =>
     heardFile.heard.flatMap((clip) => {
       const item = byId.get(clip.id);
       if (!item) throw new Error(`${files.heard} trae un caso que no existe: ${clip.id}`); // prettier-ignore
       const voice =
         clip.rate === null ? clip.voice : `${clip.voice} · ${clip.rate}`;
-      return cellsOf(item, 'oido', voice, clip.text, readHeard(clip, min));
+      return cellsOf(
+        item,
+        'oido',
+        voice,
+        clip.text,
+        readDictatedVitals(clip.text),
+      );
     });
-
-  if (values.barrer) {
-    for (const min of [
-      0, 0.3, 0.4, 0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9,
-    ]) {
-      const t = tally(heardCells(min));
-      print(`umbral ${min.toFixed(2)}: correctos ${t.correct}/${t.expected} (${((t.correct / t.expected) * 100).toFixed(1)} %), vacíos ${t.empty}, graves ${t.serious}`); // prettier-ignore
-    }
-    return;
-  }
 
   const cells: Cell[] = [
     ...cases.flatMap((item) => cellsOf(item, 'texto', '—', item.text, readDictatedVitals(item.text))), // prettier-ignore
-    ...heardCells(threshold),
+    ...heardCells(),
   ];
 
   const textTally = tally(cells.filter((cell) => cell.arm === 'texto'));
@@ -142,7 +127,6 @@ async function main(): Promise<void> {
   const meta = {
     label,
     set,
-    threshold,
     startedAt,
     commit: gitCommit(),
     casesSha256: sha256(casesPath),

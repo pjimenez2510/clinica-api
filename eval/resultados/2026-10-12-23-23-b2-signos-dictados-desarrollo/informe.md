@@ -1,9 +1,10 @@
-# Signos dictados — b2-signos-dictados
+# Signos dictados — b2-signos-dictados-desarrollo
 
-- **Fecha:** 2026-10-12 22:53:17 (America/Guayaquil) · **Commit:** `55fe2009+cambios`
-- **Casos:** 40 frases inventadas (`eval/casos/signos-dictados.json`, SHA-256 `f76dfcf723b96dc0…`)
-- **Lo oído:** `signos-dictados-oido.json` (SHA-256 `df245f914adde9b9…`), voces sintéticas de macOS (Paulina, Eddy (Español (México)), Flo (Español (México)), Mónica), a su velocidad y a 220 palabras por minuto, sin ruido, transcritas por `clinica-ai` (whisper + VAD) en esta máquina.
-- **Lectura medida:** `readDictatedVitals` de `src/modules/assistant/domain/dictated-vitals.ts`, la misma de la ruta. Ningún proveedor de modelo.
+- **Fecha:** 2026-10-12 23:23:10 (America/Guayaquil) · **Commit:** `1e7afecb+cambios`
+- **Set:** desarrollo
+- **Casos:** 40 frases inventadas (`signos-dictados.json`, SHA-256 `f76dfcf723b96dc0…`)
+- **Lo oído:** (SHA-256 `51f1137e9a8a46fb…`), voces sintéticas de macOS (Paulina, Eddy (Español (México)), Flo (Español (México)), Mónica), a su velocidad y a 220 palabras por minuto, sin ruido, transcritas por `clinica-ai` (whisper + VAD) en esta máquina.
+- **Lectura medida:** `readDictatedVitals`, de `src/modules/assistant/domain/dictated-vitals.ts`, la misma de la ruta. Ningún proveedor de modelo.
 
 ## Criterios (escritos antes de medir)
 

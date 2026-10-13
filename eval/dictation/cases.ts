@@ -44,12 +44,6 @@ export const heardSchema = z.object({
   /** Words per minute given to the synthesiser; `null` is its own default. */
   rate: z.number().int().positive().nullable(),
   text: z.string(),
-  /** CAI-016, AS-197. Each token with its probability, as clinica-ai gave it. */
-  words: z
-    .array(
-      z.object({ text: z.string(), probability: z.number().min(0).max(1) }),
-    )
-    .default([]),
 });
 export type Heard = z.infer<typeof heardSchema>;
 
@@ -63,8 +57,8 @@ const heardFileSchema = z.object({
 export type HeardFile = z.infer<typeof heardFileSchema>;
 
 /**
- * AS-188, AS-197. Two sets: the one the confidence threshold was chosen on,
- * and a reserved one, written before it was ever measured, that only checks it.
+ * AS-188. Two sets: the development one, and a reserved one written before
+ * it was ever measured, which nothing is adjusted on.
  */
 export const DICTATION_SETS = {
   desarrollo: {

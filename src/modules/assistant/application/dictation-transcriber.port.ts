@@ -1,10 +1,6 @@
-import type { HeardWord } from '../domain/heard-doubts';
-
 /** AS-180. What `clinica-ai` heard in a dictation, and how long the recording was. */
 export interface DictationHeard {
   text: string;
-  /** AS-197. Each token with its probability; empty when clinica-ai gave none. */
-  words: HeardWord[];
   /** How long the recording was, not how long recognising it took. */
   seconds: number;
 }

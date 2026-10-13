@@ -364,10 +364,9 @@ casilla vacía la ve quien guarda; el 170 leído por 117, no.
 saturación, peso y talla con su marca de propuesta, la frecuencia respiratoria
 dicha «trescientos» queda marcada sin valor, y la toma no existe en la base
 hasta «Guardar»; el arnés da ≥ 93 % y 0 graves sobre el set inventado.
-**Cubre:** AS-180 a AS-197.
+**Cubre:** AS-180 a AS-196.
 **Solo servidor:** AS-184 (lo que no se guarda ni llega al log), AS-187 (el
-catálogo y los roles), AS-188 (el arnés, fuera del verify) y AS-197 (la
-confianza de cada token). La pantalla los ve
+catálogo y los roles) y AS-188 (el arnés, fuera del verify). La pantalla los ve
 como AS-191.
 **Solo interfaz:** AS-189 a AS-195. Son el botón, la grabación, las marcas de
 propuesta y los fallos en la pestaña Signos; su mitad del servidor es AS-180,
@@ -401,8 +400,8 @@ AS-182, AS-185 y AS-186, que ya se prueban con esos números.
 
 - **SC-095** — En los sets inventados de frases dictadas
   (`eval/casos/signos-dictados.json`, de desarrollo, y
-  `eval/casos/signos-dictados-reservado.json`, que no se usa para elegir el
-  umbral de AS-197), dichos por voces sintéticas del sistema sin ruido y
+  `eval/casos/signos-dictados-reservado.json`, escrito antes de medirlo y que
+  no se usa para ajustar nada), dichos por voces sintéticas del sistema sin ruido y
   transcritos por `clinica-ai`, la lectura del producto llena **≥ 93 %** de
   los valores esperados con el valor correcto (E-055: 93,9 %).
 - **SC-096** — En esas mismas corridas y sobre el texto escrito de las mismas
@@ -1868,26 +1867,13 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   mucho un dictado (`maxSeconds`, 120).
   > Es lo que deja a la pantalla ocultar «Dictar» con el 404 del asistente
   > apagado, como las demás funciones (AS-026), sin grabar nada para saberlo.
-- **AS-197** — Antes de leer lo oído, cada token al que `clinica-ai` dio una
-  probabilidad menor que **`MIN_WORD_PROBABILITY`** DEBERÁ tomarse como una
-  duda, de modo que el signo en cuyo tramo cae NO DEBERÁ proponerse y DEBERÁ
-  nombrarse en `unclear` (AS-182); `heard` DEBERÁ seguir diciendo lo que se
-  oyó. SI `clinica-ai` no da los tokens (CAI-016), ENTONCES todo signo
-  nombrado DEBERÁ ir en `unclear`.
-  > La primera medición sin esta regla dejó 4 graves en 936 valores: whisper
-  > escribió con seguridad baja otro número plausible («veintidós» → 20,
-  > «setenta» → 60, «uno ochenta» → «en ochenta»), y ninguna regla del texto
-  > puede verlo. Rechazar por debajo de un umbral de confianza, elegido
-  > midiendo y comprobado en datos aparte, es lo habitual en reconocimiento
-  > de voz. El umbral se eligió sobre el set de desarrollo y se comprobó en
-  > el reservado sin moverlo (D-255 §7).
 
 ### 49. Medir el dictado (B2)
 
 - **AS-188** — El arnés de evaluación DEBERÁ medir, con
   `pnpm eval:dictado` y fuera del verify, la lectura del producto —la misma
-  función de AS-181 a AS-183 y AS-197— sobre los sets de desarrollo y
-  reservado (frases inventadas, `"origin": "invented"`) en dos brazos: el **texto
+  función de AS-181 a AS-183— sobre los sets de desarrollo y reservado
+  (frases inventadas, `"origin": "invented"`) en dos brazos: el **texto
   escrito** de cada frase y lo que `clinica-ai` **oyó** de ella dicha por
   voces sintéticas del sistema, sin ruido; y DEBERÁ informar, por brazo, por
   voz y por signo, los valores correctos, mal leídos, vacíos e inventados con
@@ -1895,7 +1881,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   a ningún proveedor de modelo ni leer ninguna base.
   > SigmAI E-055 (`frases.tsv`, `oir.py`, `interpretar.mts`). La voz es la
   > síntesis de macOS, no la de ninguna persona; lo oído se guarda como caso
-  > inventado y el audio se borra.
+  > inventado y el audio se borra. Se probó además no leer los números a los
+  > que whisper dio poca confianza (CAI-016): ningún umbral dejó a la vez
+  > ≥ 93 % y 0 graves en los dos sets —whisper duda también de muchos números
+  > correctos y escribió uno mal con seguridad—, así que no entró (D-255 §7).
 
 ### 50. En la pestaña Signos (solo interfaz)
 
@@ -2013,8 +2002,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-145 | Integración contra PostgreSQL, con control positivo |
 | AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
 
-| AS-180 a AS-183, AS-197 (la lectura) | Unitario del dominio, con las frases de SigmAI |
-| AS-180, AS-184, AS-186, AS-197 | Unitario del servicio y del adaptador con `fetch` y reconocedor falsos |
+| AS-180 a AS-183 (la lectura) | Unitario del dominio, con las frases de SigmAI |
+| AS-180, AS-184, AS-186 | Unitario del servicio y del adaptador con `fetch` y reconocedor falsos |
 | AS-180, AS-185, AS-186, AS-187, AS-196 | Integración HTTP contra PostgreSQL, con control positivo |
 | AS-188 | Arnés (`eval/`), fuera del verify |
 | AS-189 a AS-195 | Componente y composable; recorrido F-03 con el audio de prueba y `clinica-ai` |
@@ -2043,4 +2032,4 @@ en pausa, firmar cualquier nota de la atención, qué secciones se miden y
 En **D-255**: el permiso propio de enfermería, el interruptor de la sede sin
 la autorización de grabar, la temperatura axilar en la única casilla, los
 límites de SigmAI frente a los de la base, lo que no mide la voz sintética,
-reemplazar lo ya tecleado y el umbral de confianza.
+reemplazar lo ya tecleado y los graves que deja el reconocedor.

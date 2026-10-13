@@ -13,8 +13,6 @@ import {
 export interface DictationRunMeta {
   label: string;
   set: string;
-  /** AS-197. The least probability a heard token needed to be read. */
-  threshold: number;
   startedAt: string;
   commit: string;
   casesSha256: string;
@@ -71,10 +69,10 @@ export function renderDictationReport(
   return `# Signos dictados — ${meta.label}
 
 - **Fecha:** ${meta.startedAt} (America/Guayaquil) · **Commit:** \`${meta.commit}\`
-- **Set:** ${meta.set} · **Umbral de confianza por token (AS-197):** ${meta.threshold}
+- **Set:** ${meta.set}
 - **Casos:** ${meta.cases} frases inventadas (\`${meta.set === 'reservado' ? 'signos-dictados-reservado.json' : 'signos-dictados.json'}\`, SHA-256 \`${meta.casesSha256.slice(0, 16)}…\`)
 - **Lo oído:** (SHA-256 \`${meta.heardSha256.slice(0, 16)}…\`), voces sintéticas de macOS (${meta.voices.join(', ')}), a su velocidad y a 220 palabras por minuto, sin ruido, transcritas por \`clinica-ai\` (whisper + VAD) en esta máquina.
-- **Lectura medida:** \`readHeard\` (lo oído, con los tokens dudosos como duda) y \`readDictatedVitals\` (el texto escrito), de \`src/modules/assistant/domain/dictated-vitals.ts\`, las mismas de la ruta. Ningún proveedor de modelo.
+- **Lectura medida:** \`readDictatedVitals\`, de \`src/modules/assistant/domain/dictated-vitals.ts\`, la misma de la ruta. Ningún proveedor de modelo.
 
 ## Criterios (escritos antes de medir)
 

@@ -1,4 +1,3 @@
-import { withDoubts, type HeardWord } from './heard-doubts';
 import { interpretDictation, type VitalField } from './vitals-dictation';
 
 /**
@@ -66,24 +65,4 @@ export function readDictatedVitals(text: string): DictatedVitals {
     if (!unclear.has(field)) signs[field] = value;
   }
   return { signs, unclear: [...unclear] };
-}
-
-/**
- * AS-197. Below this probability a token of the dictation is a doubt. Chosen
- * on the development set (`eval/casos/signos-dictados.json`) and checked on
- * the reserved one, which never moved it (SC-095, SC-096; D-255 §7).
- */
-export const MIN_WORD_PROBABILITY = 0.75;
-
-/**
- * AS-180 to AS-183, AS-197. What `clinica-ai` heard, read: the tokens it was
- * unsure of are doubts first. The one function the route and the harness use.
- */
-export function readHeard(
-  heard: { text: string; words: readonly HeardWord[] },
-  minProbability = MIN_WORD_PROBABILITY,
-): DictatedVitals {
-  return readDictatedVitals(
-    withDoubts(heard.text, heard.words, minProbability),
-  );
 }

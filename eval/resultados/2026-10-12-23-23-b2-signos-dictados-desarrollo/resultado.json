@@ -1,9 +1,10 @@
 {
-  "label": "b2-signos-dictados",
-  "startedAt": "2026-10-12 22:53:17",
-  "commit": "55fe2009+cambios",
+  "label": "b2-signos-dictados-desarrollo",
+  "set": "desarrollo",
+  "startedAt": "2026-10-12 23:23:10",
+  "commit": "1e7afecb+cambios",
   "casesSha256": "f76dfcf723b96dc095aa2baeacb86273f0ffb22f2251a41234dd9cce63d37b18",
-  "heardSha256": "df245f914adde9b94853f50a869275bb54f701de1c5f20a0b6dd53c3d9a72c05",
+  "heardSha256": "51f1137e9a8a46fbc52c42d29b278a414217ca49ac7f01bc1e9d79e5e647287a",
   "voices": [
     "Paulina",
     "Eddy (Español (México))",
