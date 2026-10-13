@@ -1318,7 +1318,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   responder el estado del último —en cola, redactando, listo o fallido con su
   código—, su tramo, cuánto de la transcripción queda sin redactar y las
   secciones vigentes (AS-090) con sus frases, fuentes, marcas y si son de
-  demostración; a cualquier otro, lo de AS-039.
+  demostración; a cualquier otro, lo de AS-039. Esa respuesta, y la de pedir
+  (AS-086), dejar de esperar (AS-147), aceptar y descartar una sección
+  (AS-094), NO DEBERÁ guardarse en ningún caché (`no-store`), como las
+  preguntas (AS-124).
+  > Sus secciones son la consulta (revisión de C3, 12-10-2026).
 - **AS-097** — CUANDO un borrador se ponga en cola o termine, listo o fallido,
   y CUANDO se acepte o descarte una sección, el sistema DEBERÁ publicar
   `assistant-draft` dirigido a quien lo pidió o decidió, sin contenido
@@ -1600,8 +1604,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-124** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
   (**45 s**) o el techo no admite el intento, ENTONCES el sistema DEBERÁ
   responder el error con su código sin guardar ninguna revisión ni tocar la
-  anterior; SI la atención se cerró mientras se revisaba, ENTONCES NO DEBERÁ
-  guardar nada; la respuesta NO DEBERÁ guardarse en ningún caché
+  anterior; SI la atención se cerró, o su 002 se firmó, mientras se revisaba,
+  ENTONCES NO DEBERÁ guardar nada —una nota firmada responde
+  `ASSISTANT_NOTE_NOT_OPEN`, y la base DEBERÁ rechazar una pregunta o una
+  revisión de una atención sin su 002 en borrador, también cuando la firma se
+  cruza con el guardado—; la respuesta NO DEBERÁ guardarse en ningún caché
   (`no-store`); ninguna línea de log, mensaje de error ni fila de la revisión
   DEBERÁ contener la transcripción, la nota ni una pregunta (sólo cuántas);
   mandarlas DEBERÁ dejar su `EXPORT` en la bitácora; y las marcas que separan
