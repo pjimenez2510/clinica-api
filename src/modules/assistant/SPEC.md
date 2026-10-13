@@ -472,6 +472,31 @@ procedencia, los hablantes y los fallos en la pestaña Signos; su mitad del
 servidor es AS-240, AS-243, AS-245 y AS-251, que ya se prueban con esos
 números.
 
+### E16 — La talla dicha con «y» y el motivo redactado _(13-10-2026)_
+
+Lo que vio el autor al probar «Escuchar» con el modelo real (13-10-2026): el
+reconocedor escribió «ciento cincuenta y ocho» como «150 y 8» y la barrera
+dejó la talla en ámbar, porque «158» no está en la frase; y el motivo salió
+literal, con su «Ay, señorita». La forma «decena y unidad» se lee como un
+número antes de la barrera, con una regla del código, y el motivo se
+propone redactado como lo escribe la enfermera, con la frase del paciente
+como fuente y las mismas barreras de los signos (D-263).
+
+**Por qué va así:** la regla es determinista, así que el número sigue sin
+salir del modelo; la redacción sí sale del modelo, y por eso sólo se cree si
+cada palabra, número y negación que lleva está en la frase; si no, se
+propone la frase entera, como antes.
+**Prueba independiente:** con el modo de demostración, el guion de Rosa
+(«…la talla 150 y 8 centímetros…», «Ay, señorita, tengo un dolor de
+cabeza…») propone la talla 158 con su frase y el motivo sin «Ay, señorita»,
+con «Paciente · 00:07 «…»» debajo; «presión 120 y 80», «36 y medio» y «18 y
+97» siguen siendo lo que eran; y el arnés da 0 números fuera de su frase.
+**Cubre:** AS-280 a AS-286.
+**Solo servidor:** AS-284 (el arnés, fuera del verify).
+**Solo interfaz:** AS-285 y AS-286. Son la casilla «Motivo de consulta» y la
+fuente del motivo en la pestaña Signos; su mitad del servidor es AS-282, que
+ya se prueba con ese número.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -2430,6 +2455,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   queda fuera; SI no la hay, ENTONCES NO DEBERÁ proponerse ningún motivo.
   > En palabras del paciente, como pide el formulario 020: no se resume ni se
   > reescribe, así no puede inventarse (D-260 §5).
+  > Desde AS-282 (D-263), esta frase es la **fuente** del motivo, y lo que
+  > se propone en la casilla es su redacción, si pasa sus barreras.
 - **AS-250** — La lectura DEBERÁ hacerse **por frase**: cada línea de la
   transcripción partida tras un punto, una interrogación o una exclamación
   (no el punto entre cifras), cada frase con un inicio estimado dentro de su
@@ -2516,6 +2543,62 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   seguir disponible; a 375 px «Escuchar» y «Detener» DEBERÁN medir al menos
   44 px y la pestaña no DEBERÁ desbordar; y el médico DEBERÁ verlo igual en
   la pestaña Signos de la consulta.
+
+### 60. La talla dicha con «y» y el motivo redactado (B3, D-263, P2, P5)
+
+- **AS-280** — El lector de números (el de «Dictar», las reglas y la
+  barrera de AS-247) DEBERÁ leer como **un solo número** una decena o una
+  centena escrita en cifras (20, 30… 90, 110… 190, 210…; nunca 100, 200 ni
+  un número que no termine en cero) seguida de «y» y de una sola unidad del
+  1 al 9, en cifras o en palabras: «150 y 8» es 158, «90 y 4» es 94, «150 y
+  ocho» es 158; y «ciento cincuenta y ocho», como hasta hoy, 158. La frase
+  citada DEBERÁ seguir siendo la dicha. NO DEBERÁ unir lo que no es esa
+  forma: «presión 120 y 80» (la segunda cifra no es una unidad), «36 y
+  medio» (36,5), «18 y 97» (18 no es una decena), ni «70 y 2.5».
+  > Whisper escribe así lo que se dice «ciento cincuenta y ocho»; es la
+  > forma que el reconocedor deja, no la que alguien dicta.
+- **AS-281** — La lectura del asistente DEBERÁ pedir al modelo, para el
+  motivo, además de la línea y la frase copiada del paciente, su
+  **redacción** (`written`): como la escribe la enfermera, en tercera
+  persona o sin persona, sin muletillas ni vocativos («ay», «señorita»,
+  «doctora», «mire») y concisa; y el modelo DEBERÁ dar el número de «150 y
+  8» como 158.
+- **AS-282** — El motivo propuesto DEBERÁ ser la redacción SÓLO SI, frente
+  a la frase entera de AS-249 (su **fuente**): (a) no es más larga que
+  ella ni que 500 caracteres; (b) cada palabra suya está en la fuente
+  —comparadas sin mayúsculas, tildes ni signos, por su raíz (las cinco
+  primeras letras, o todas menos la última si es más corta), con «dolor»
+  por «duele» o «dolía»—, salvo las palabras de enlace y de redacción
+  («de», «con», «desde», «hace», «muy», «sensación», «refiere»…); (c) cada
+  número que dice está dicho en la fuente (`saidIn`, como los signos); y
+  (d) niega algo («no», «sin», «ni», «nunca», «niega») si y sólo si la
+  fuente niega algo. SI no las pasa, o el modelo no la da, ENTONCES el
+  motivo DEBERÁ ser la frase entera, como AS-249. La respuesta DEBERÁ
+  llevar, en `complaint`, el texto propuesto (`text`), su fuente (`quote`)
+  y su inicio (`startMs`).
+  > Lo que el modelo escribe sólo se cree si cada palabra la dijo el
+  > paciente (P2): una duración, un número o una negación cambiados no
+  > pasan, y entonces queda lo literal, que nunca se inventa.
+- **AS-283** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el lector de
+  demostración DEBERÁ redactar el motivo sin red: quitar del comienzo de la
+  frase las muletillas y los vocativos y un «tengo», y pasar «me siento» a
+  «se siente»; y su redacción DEBERÁ pasar las mismas barreras (AS-282).
+- **AS-284** — El arnés (`pnpm eval:preparacion`) DEBERÁ medir además un set
+  propio (`eval/casos/preparaciones-motivo.json`, inventado, escrito antes
+  de medir) con la frase del autor tal como la escribió el reconocedor,
+  variantes «X y Y» en talla, peso, presión y perímetro, los falsos
+  positivos de AS-280 y motivos con muletillas; aceptar como dicho
+  literalmente un número escrito «150 y 8» (SC-099); e informar qué parte
+  de los motivos propuestos sale **redactada** —sin primera persona («me»,
+  «mi», «tengo», «estoy»), sin muletillas ni vocativos y distinta de la
+  frase— con su intervalo de Wilson, que con el proveedor principal DEBERÁ
+  ser **≥ 90 %**.
+- **AS-285** _(solo interfaz)_ — La casilla del motivo DEBERÁ llamarse
+  **«Motivo de consulta»**, con la ayuda «Lo que refiere el paciente», en la
+  toma y en su lectura guardada (D-263 §2).
+- **AS-286** _(solo interfaz)_ — Bajo el motivo propuesto, la procedencia
+  DEBERÁ citar la **fuente** («Paciente · 00:07 «Ay, señorita, tengo…»»), no
+  la redacción, y abrir la transcripción en esa frase como las demás.
 
 ---
 
@@ -2675,6 +2758,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-246 a AS-251, AS-253, AS-254 | Unitario del dominio y del servicio con seudonimizador y proveedor falsos |
 | AS-255 | Arnés (`eval/`), fuera del verify |
 | AS-256 a AS-259 | Componente y composable; recorrido F-03 con el audio de prueba, `clinica-ai` y el modo de demostración |
+| AS-280 | Unitario del lector de números, con los falsos positivos |
+| AS-281 a AS-283 | Unitario del dominio y del servicio con seudonimizador y proveedor falsos, y del proveedor de demostración |
+| AS-284 | Arnés (`eval/`), fuera del verify |
+| AS-285, AS-286 | Componente; recorrido F-03 con el modo de demostración |
 
 ## Preguntas abiertas
 

@@ -185,3 +185,18 @@ describe('AS-181 AS-182 interpretDictation (SigmAI, as is)', () => {
     ]);
   });
 });
+
+describe('AS-280 a tens or hundreds in figures, «y» and one unit is one number', () => {
+  it('AS-280 reads «150 y 8» as 158, as whisper writes «ciento cincuenta y ocho»', () => {
+    expect(interpretDictation('Talla 150 y 8 centímetros').signs.heightCm).toBe(158); // prettier-ignore
+    expect(interpretDictation('Peso 90 y 4 kilos').signs.weightKg).toBe(94);
+    expect(interpretDictation('Talla 150 y ocho').signs.heightCm).toBe(158);
+    expect(interpretDictation('Talla ciento cincuenta y ocho').signs.heightCm).toBe(158); // prettier-ignore
+  });
+
+  it('AS-280 never joins what is not that form: a pressure, a half, a list', () => {
+    expect(interpretDictation('Presión 120 y 80').signs).toMatchObject({ systolic: 120, diastolic: 80 }); // prettier-ignore
+    expect(interpretDictation('Temperatura 36 y medio').signs.temperatureC).toBe(36.5); // prettier-ignore
+    expect(interpretDictation('Peso 70 y medio').signs.weightKg).toBe(70.5);
+  });
+});

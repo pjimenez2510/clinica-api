@@ -369,3 +369,44 @@ describe('AS-247 AS-249 the barrier against what the review found (13-10-2026)',
     expect(proposal.unclear).toContain('heartRate');
   });
 });
+
+describe('AS-280 the height whisper writes «150 y 8»', () => {
+  const ROSA: TranscriptLine[] = [
+    { startMs: 0, endMs: 6_000, text: 'Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada.' }, // prettier-ignore
+    { startMs: 6_000, endMs: 12_000, text: 'Bueno, pesa 72 kilos y la talla 150 y 8 centímetros un medida de pie.' }, // prettier-ignore
+  ];
+
+  it('AS-280 saidIn reads «150 y 8» as 158, and leaves a pressure, a half and a list as they are', () => {
+    expect(saidIn('la talla 150 y 8 centímetros', 'heightCm')).toEqual([158]);
+    expect(saidIn('90 y 4')).toEqual([94]);
+    expect(saidIn('150 y ocho')).toEqual([158]);
+    expect(saidIn('presión 120 y 80')).toEqual([120, 80]);
+    expect(saidIn('36 y medio')).toEqual([36.5]);
+    expect(saidIn('18 y 97')).toEqual([18, 97]);
+    expect(saidIn('100 y 8')).toEqual([100, 8]);
+    expect(saidIn('70 y 2.5')).toEqual([70, 2.5]);
+  });
+
+  it('AS-280 proposes the height 158 with its phrase as said', () => {
+    const proposal = readPreparationAnswer({
+      answer: answer({
+        lines: [
+          { line: 'L1', speaker: 'patient' },
+          { line: 'L2', speaker: 'nursing' },
+        ],
+        values: [{ field: 'heightCm', line: 'L2', quote: 'la talla 150 y 8 centímetros', said: 158, unit: 'cm' }], // prettier-ignore
+      }),
+      lines: ROSA,
+      markers: conversationOf(ROSA).markers,
+      restore: (text) => text,
+    });
+    expect(proposal.values.heightCm).toEqual({ value: 158, startMs: 6_000, quote: 'la talla 150 y 8 centímetros' }); // prettier-ignore
+    expect(proposal.unclear).toEqual([]);
+  });
+
+  it('AS-280 by the rules too, the height is 158 from its one sentence', () => {
+    const proposal = readPreparationByRules(sentencesOf(ROSA));
+    expect(proposal.values.heightCm?.value).toBe(158);
+    expect(proposal.values.weightKg?.value).toBe(72);
+  });
+});

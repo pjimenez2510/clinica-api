@@ -393,7 +393,9 @@ function tokenize(text: string): Token[] {
     return { kind: 'word', text: piece };
   });
 
-  return withDecimals(withSpokenNumbers(withoutPercent(words)));
+  return withDecimals(
+    withTensAndUnit(withSpokenNumbers(withoutPercent(words))),
+  );
 }
 
 function wordAt(tokens: Token[], at: number): string | null {
@@ -457,6 +459,38 @@ function withSpokenNumbers(tokens: Token[]): Token[] {
     out.push({ kind: 'number', value, raw: spoken });
   }
 
+  return out;
+}
+
+/**
+ * AS-280. «150 y 8» is 158: whisper writes «ciento cincuenta y ocho» that way. Only a tens or a
+ * hundreds in figures (20…90, 110…190, never 100 or 200) and one unit from 1 to 9, so «120 y 80»,
+ * «18 y 97» and «36 y medio» stay what they are.
+ */
+function withTensAndUnit(tokens: Token[]): Token[] {
+  const out: Token[] = [];
+  for (let at = 0; at < tokens.length; at++) {
+    const token = tokens[at]!;
+    const unit = tokens[at + 2];
+    if (
+      token.kind === 'number' &&
+      /^\d+$/.test(token.raw) &&
+      token.value >= 20 &&
+      token.value % 10 === 0 &&
+      token.value % 100 !== 0 &&
+      wordAt(tokens, at + 1) === 'y' &&
+      unit?.kind === 'number' &&
+      /^([1-9]|[a-z]+)$/.test(unit.raw) &&
+      Number.isInteger(unit.value) &&
+      unit.value >= 1 &&
+      unit.value <= 9
+    ) {
+      out.push({ kind: 'number', value: token.value + unit.value, raw: `${token.raw} y ${unit.raw}` }); // prettier-ignore
+      at += 2;
+      continue;
+    }
+    out.push(token);
+  }
   return out;
 }
 
