@@ -247,9 +247,10 @@ model User {
   paymentsReversed Payment[]     @relation("PaymentReverser")
   cashSessions     CashSession[] @relation("CashSessionOwner")
 
-  aiSuggestionsDecided AiSuggestion[]     @relation("AiSuggestionDecidedBy")
+  aiSuggestionsDecided AiSuggestion[]      @relation("AiSuggestionDecidedBy")
   listeningsStarted    ListeningSession[]
   noteDraftsRequested  NoteDraft[]
+  noteQuestionChecks   NoteQuestionCheck[] @relation("NoteQuestionCheckRequestedBy")
 
   @@index([email])
   @@map("app_user")
@@ -2834,6 +2835,7 @@ model Encounter {
   listeningSession    ListeningSession?
   transcriptSegments  TranscriptSegment[]
   noteDrafts          NoteDraft[]
+  noteQuestionChecks  NoteQuestionCheck[]
 
   /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
   /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
@@ -6221,8 +6223,9 @@ model AiRun {
 
   exchange AiExchange?
 
-  suggestions AiSuggestion[]
-  noteDrafts  NoteDraft[]
+  suggestions        AiSuggestion[]
+  noteDrafts         NoteDraft[]
+  noteQuestionChecks NoteQuestionCheck[]
 
   @@unique([requestId, attempt])
   /// AS-017. The month's spending is a range scan on this.
@@ -6382,4 +6385,28 @@ model NoteDraft {
 
   @@unique([encounterId, upToMs], map: "note_draft_once_per_stretch")
   @@map("note_draft")
+}
+
+/// C3. Each review «Para completar la nota» that answered (AS-121): which
+/// stretch it read, the digest of what the note had written, and how many
+/// questions it kept and dropped. No text (AS-124); never rewritten.
+model NoteQuestionCheck {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  aiRunId     String    @map("ai_run_id") @db.Uuid
+  aiRun       AiRun     @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  /// The end of the last segment the review read, in the listening's clock.
+  upToMs      Int       @map("up_to_ms")
+  /// SHA-256 in lowercase hex of what the note had written.
+  noteDigest  String    @map("note_digest") @db.VarChar(64)
+  asked       Int       @db.SmallInt
+  dropped     Int       @db.SmallInt
+  requestedBy String    @map("requested_by") @db.Uuid
+  requester   User      @relation("NoteQuestionCheckRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
+  /// The application's clock, never `now()`.
+  checkedAt   DateTime  @map("checked_at") @db.Timestamptz(6)
+
+  @@index([encounterId, checkedAt], map: "note_question_check_encounter_checked_idx")
+  @@map("note_question_check")
 }

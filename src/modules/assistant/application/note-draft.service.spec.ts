@@ -84,6 +84,7 @@ class World {
   };
   note: DraftNote | null = {
     id: NOTE,
+    written: {},
     sections: [
       { key: 'motivoConsulta', title: 'Motivo de consulta', help: '', kind: 'TEXT' }, // prettier-ignore
       { key: 'enfermedadActual', title: 'Enfermedad o problema actual', help: '', kind: 'TEXT' }, // prettier-ignore

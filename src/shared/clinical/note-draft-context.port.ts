@@ -23,6 +23,8 @@ export interface DraftNote {
   id: string;
   /** In the template's order. */
   sections: DraftNoteSection[];
+  /** AS-119. What each section has written now, by its key; text only. */
+  written: Record<string, string>;
 }
 
 /**

@@ -39,6 +39,8 @@ Este módulo **posee**:
 - el **borrador de la nota** (C2): cada borrador pedido en `note_draft`, su
   redacción desde la transcripción y sus secciones propuestas en
   `ai_suggestion`;
+- las **preguntas para completar la nota** (C3): cada revisión en
+  `note_question_check` y sus preguntas en `ai_suggestion`.
 - lo que pasa **al firmar** (E1): firmar no se admite mientras se escucha o
   se redacta; al firmar se detiene la escucha, se cancelan los borradores en
   curso y cada sección propuesta queda revisada en `ai_suggestion_review`, con
@@ -51,7 +53,6 @@ Este módulo **posee**:
   ninguno llama a un proveedor (AS-001).
 - **El interruptor por sede y el permiso `assistant:use`**: es A3. Este módulo
   no expone ninguna ruta HTTP; quien la exponga declara su permiso (REQ-118).
-- Las preguntas «Para completar la nota» (C3).
 - Escribir en la nota: la sección aceptada la guarda la pantalla por la ruta
   de la nota, con su `If-Match` (EN-281); el asistente sólo enlaza (P1).
 - Distinguir la voz del médico de la del paciente (dato biométrico, plan §3).
@@ -283,6 +284,34 @@ evaluación, fuera del verify).
 la pestaña Exámenes y su paso al borrador; la mitad del servidor es AS-103,
 AS-106, AS-108 y AS-109, que ya se prueban con esos números.
 
+### E9 — «Para completar la nota» _(C3, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 C3: en la pestaña Nota, lo que todavía falta. Dos
+capas, como en SigmAI (`modules/drafting/questions.ts`, RC-20): la primera
+**sin modelo** —las secciones de la plantilla que siguen vacías, que se ven
+también con el asistente apagado—; la segunda, hasta **5 preguntas** que el
+médico todavía podría hacer, cada una con la línea de la conversación que la
+motiva, pedidas **a demanda o al detener la escucha** y nunca como
+interrupción. Una pregunta deja de verse cuando la nota ya la responde. Nada
+de esto entra en la nota ni impide firmar (P1, P8).
+
+**Por qué va así:** el error típico de un escriba es la omisión (UC Davis 2026:
+18 % de las notas). Lo que la plantilla pide y está vacío no necesita modelo;
+lo que la conversación dejó a medias, sí, y una pregunta cuya razón el médico
+no puede comprobar es peor que ninguna: sin su línea no se muestra, como un
+código que no está en el catálogo (P5).
+**Prueba independiente:** con la nota abierta y «Motivo de consulta» escrito,
+«Para completar la nota» nombra las demás secciones vacías, con el asistente
+apagado; con la transcripción del audio de prueba, el seudonimizador y el
+proveedor falsos, «Sugerir preguntas» trae preguntas, cada una con su línea y
+su minuto, y ninguna cuya línea no se dio; escrita en la nota la respuesta de
+una, la revisión siguiente ya no la trae.
+**Cubre:** AS-118 a AS-133.
+**Solo servidor:** AS-124 (lo que no llega al log), AS-126 (el arnés, fuera del
+verify) y AS-127 (el guion). La pantalla los ve como AS-123 y AS-129.
+**Solo interfaz:** AS-118, AS-129 a AS-133. Son el bloque en la pestaña Nota,
+pedir al detener y revisar de nuevo al escribir; su mitad del servidor es
+AS-119, AS-122 y AS-123, que ya se prueban con esos números.
 ### E10 — Revisión al firmar _(E1, 12-10-2026)_
 
 `PLAN-ASISTENTE-IA.md` §7 E1 y D-247 §7: firmar es declarar que la nota está
@@ -327,6 +356,15 @@ servidor es AS-140, AS-141 y AS-147, que ya se prueban con esos números.
   escribe diagnósticos (D-249 §2 y §10).
 - **SC-092** — En esa misma corrida, el **p90** de lo que tarda un borrador es
   **≤ 15 s** (plan §5).
+
+- **SC-093** — En el set simulado (`eval/casos/nota.json`) y en el reservado,
+  con el proveedor principal: **0** preguntas mostradas sin su línea, y, en la
+  revisión a mano de cada pregunta mostrada, **≤ 10 %** que pregunten lo que la
+  conversación ya respondió; y con la nota de referencia escrita (todos los
+  hechos del caso en su sección), **≤ 10 %** que pregunten lo que la nota ya
+  dice (D-253 §3).
+- **SC-094** — En esa misma corrida, el **p90** de lo que tarda una revisión es
+  **≤ 5 s** (plan §5, propuestas).
 
 ## Supuestos
 
@@ -1493,6 +1531,128 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   DEBERÁ enlazar la propuesta (AS-109) y mostrarla «Aceptada» con el examen;
   SI el enlace falla, ENTONCES DEBERÁ decir que la orden quedó guardada.
 
+### 34. Lo que falta escribir, sin modelo (C3)
+
+- **AS-118** — MIENTRAS la nota 002 de la atención esté en borrador y la cuenta
+  pueda escribirla, la pestaña Nota DEBERÁ mostrar «Para completar la nota»
+  con las secciones de su plantilla que siguen vacías, en su orden y con su
+  título —las opcionales, señaladas como tales, como en el formulario—, sin
+  llamar al servidor y con el asistente apagado o sin `assistant:use`; una
+  sección DEBERÁ salir de la lista en cuanto tenga texto, sin esperar a que
+  se guarde; «Antecedentes» DEBERÁ contar como escrita cuando la ficha la
+  cubre (D-125, como al firmar); pulsar una DEBERÁ llevar a su casilla; y SI
+  no queda ninguna ni hay preguntas, ENTONCES el bloque NO DEBERÁ mostrarse.
+  > SigmAI `templateQuestions`: la plantilla de SigmAI traía una pregunta por
+  > sección; la de esta clínica trae su ayuda (D-124), que es lo que se lee.
+  > Es la misma regla de `missingSections` (EN-205), para todas las
+  > secciones y no sólo las obligatorias (D-253 §1, §2).
+
+### 35. Las preguntas del asistente (C3, P2, P5)
+
+- **AS-119** — CUANDO el profesional de la atención pida las preguntas de una
+  atención viva cuya nota 002 está en borrador, el sistema DEBERÁ mandar al
+  modelo, seudonimizadas juntas (AS-025), la transcripción —corregida con el
+  léxico de AS-092, cada línea con su marcador— y lo que la nota tiene escrito
+  en cada sección de texto, delimitados como datos, con la plantilla como
+  contexto; y DEBERÁ pedir hasta **5** preguntas cortas que el médico todavía
+  podría hacerle al paciente para completar la nota, cada una con el marcador
+  de la línea que la motiva y la sección a la que pertenece. SI la
+  transcripción está vacía, ENTONCES DEBERÁ rechazarlo con
+  `ASSISTANT_TRANSCRIPT_EMPTY`; SI la nota no está abierta en borrador, con
+  `ASSISTANT_NOTE_NOT_OPEN`; SI ya hay una revisión de esa atención en curso,
+  con `ASSISTANT_READING_IN_PROGRESS`; y quién, dónde y la atención viva, como
+  AS-039.
+  > La ficha no va (D-249 §1). No se pregunta lo que la conversación o la nota
+  > ya responden, ni un diagnóstico (D-249 §2).
+- **AS-120** — Una pregunta DEBERÁ mostrarse sólo si su marcador es de una
+  línea que se le dio al modelo y esa línea sigue en la transcripción; una sin
+  marcador, con uno que no se dio o vacía DEBERÁ descartarse y contarse, nunca
+  mostrarse sin su línea; DEBERÁN quedar como mucho **5**, sin dos con el mismo
+  texto (sin mayúsculas, tildes ni signos) ni una igual a otra que el
+  profesional descartó en esa atención; una sección que no es de texto de la
+  plantilla DEBERÁ quedar sin sección; y antes de guardarla DEBERÁ devolver al
+  texto los nombres y las fechas, como AS-091.
+  > SigmAI `backedQuestions` con el marcador de C2 en vez de una cita
+  > literal: el marcador lleva a la línea sin buscar la frase (AS-089).
+- **AS-121** — CUANDO el modelo responda, el sistema DEBERÁ guardar la revisión
+  —su atención, el intento que respondió, hasta qué milisegundo de la
+  transcripción leyó, la huella de lo que la nota tenía escrito, quién la pidió
+  y cuándo, cuántas preguntas guardó y cuántas descartó; ningún texto— y cada
+  pregunta como una propuesta `note-question` de `ai_suggestion` con su texto,
+  su sección y el tramo (`fromMs`, `toMs`) de su línea; la línea NO DEBERÁ
+  guardarse fuera de `transcript_segment` (AS-058). La base DEBERÁ rechazar
+  aceptar una `note-question`: una pregunta no es un dato de la historia (P1).
+- **AS-122** — CUANDO el profesional pida ver las preguntas, el sistema DEBERÁ
+  responder las de la última revisión guardada, sin las descartadas, cada una
+  con su texto, su sección, su minuto y su línea leída otra vez de la
+  transcripción, y si son de demostración; una revisión que no dejó ninguna
+  DEBERÁ dejar la lista vacía; una pregunta cuya línea la purga ya borró NO
+  DEBERÁ mostrarse; y a cualquier otro que el profesional, lo de AS-039.
+  Leer DEBERÁ dejar su `READ` en la bitácora.
+- **AS-123** — Una revisión nueva DEBERÁ sustituir a la anterior en pantalla, y
+  el modelo DEBERÁ recibir lo que la nota tiene escrito en ese momento, de modo
+  que una pregunta que la nota ya responde no vuelva; SI la transcripción leída
+  y la huella de la nota son las de la última revisión, ENTONCES el sistema
+  DEBERÁ responder ésa sin llamar a nadie.
+  > «Desaparece cuando la nota ya la responde» (plan §7 C3): lo decide el
+  > modelo al releer, y lo mide SC-093; la pantalla pide la revisión al
+  > escribir (AS-131), y repetirla sin cambios no cuesta una llamada.
+- **AS-124** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
+  (**45 s**) o el techo no admite el intento, ENTONCES el sistema DEBERÁ
+  responder el error con su código sin guardar ninguna revisión ni tocar la
+  anterior; SI la atención se cerró mientras se revisaba, ENTONCES NO DEBERÁ
+  guardar nada; la respuesta NO DEBERÁ guardarse en ningún caché
+  (`no-store`); ninguna línea de log, mensaje de error ni fila de la revisión
+  DEBERÁ contener la transcripción, la nota ni una pregunta (sólo cuántas);
+  mandarlas DEBERÁ dejar su `EXPORT` en la bitácora; y las marcas que separan
+  la conversación de la nota, y el título de la plantilla, DEBERÁN romperse
+  si el texto los contiene, también escondidos tras un carácter invisible
+  (AS-095).
+- **AS-125** — CUANDO el profesional descarte una pregunta («No hace falta»), el
+  sistema DEBERÁ hacer lo de AS-038 y exigir lo de AS-039; una pregunta igual
+  NO DEBERÁ volver en las revisiones siguientes de esa atención (AS-120), ni
+  en la que ya estaba en curso al descartarla.
+
+### 36. Medir y demostrar las preguntas
+
+- **AS-126** — `pnpm eval -- --tareas preguntas` DEBERÁ medir con la función
+  del producto, sobre `casos/nota.json` y `casos/nota-reservada.json`, cada
+  caso dos veces —con la nota vacía y con la nota de referencia escrita (sus
+  hechos en su sección)—, las preguntas mostradas y descartadas por falta de
+  línea y el p50 y el p90 de lo que tarda, y DEBERÁ dejar cada pregunta con su
+  línea para la revisión a mano de SC-093; fuera del verify y con el tope de
+  `--tope-proveedor` de AS-098.
+- **AS-127** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el proveedor de
+  demostración DEBERÁ preguntar desde el guion —cada pregunta cuya frase dice
+  una línea, con el marcador de esa línea, salvo que la nota ya contenga sus
+  palabras de respuesta—, más una con un marcador que no se le dio, para que se
+  vea que la barrera no la muestra; y cada pregunta DEBERÁ decir que es de
+  demostración (AS-029).
+
+### 37. En la pestaña Nota, las preguntas
+
+- **AS-128** — MIENTRAS la cuenta pueda pedir las preguntas (AS-119) y haya
+  transcripción, «Para completar la nota» DEBERÁ ofrecer «Sugerir preguntas»
+  —«Revisar de nuevo» si ya hay una revisión— y mostrar debajo de
+  «Preguntas del asistente», con borde punteado y «Propuesta», cada pregunta
+  con su minuto y su línea, y «No hace falta» en cada una; MIENTRAS revisa,
+  DEBERÁ decirlo y dejar la nota usable; SI falla, ENTONCES DEBERÁ decir el
+  motivo con «Volver a intentar» sin quitar las que había; y SI las preguntas
+  responden 404, ENTONCES NO DEBERÁ mostrar nada del asistente, sólo lo de
+  AS-118.
+- **AS-129** — CUANDO la escucha se detenga con la nota en borrador, la pantalla
+  DEBERÁ pedir una revisión por su cuenta, una vez; NO DEBERÁ pedirla mientras
+  se escucha ni al pausar.
+- **AS-130** — Lo que llega de una revisión NO DEBERÁ interrumpir: ni aviso
+  flotante, ni diálogo, ni mover el foco o la página; sólo cambia el bloque.
+- **AS-131** — MIENTRAS haya preguntas del asistente a la vista, CUANDO el médico
+  cambie lo escrito en la nota y la nota se guarde, la pantalla DEBERÁ pedir
+  una revisión tras **20 s** sin más cambios, y una pregunta que la revisión ya
+  no trae DEBERÁ dejar de verse.
+- **AS-132** — Una pregunta descartada DEBERÁ dejar de verse en el acto y SI el
+  descarte falla, ENTONCES DEBERÁ volver a verse con el motivo.
+- **AS-133** — En el teléfono, el bloque DEBERÁ caber sin desbordar a lo ancho
+  y cada acción DEBERÁ medir al menos 44 px de alto (ESTANDAR-UI).
 ### 38. Firmar con el asistente en marcha (E1, U-03, D-247 §7)
 
 - **AS-140** — MIENTRAS el asistente esté capturando la escucha de una
@@ -1661,6 +1821,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-087, AS-088, AS-089, AS-091, AS-092, AS-093, AS-095, AS-099 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
 | AS-098 | Arnés (`eval/`), fuera del verify |
 | AS-100, AS-101, AS-102 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-119 a AS-125 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
+| AS-119, AS-121 (la base), AS-122, AS-123, AS-125 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-126 | Arnés (`eval/`), fuera del verify |
+| AS-127 | Unitario del proveedor de demostración |
+| AS-118, AS-128 a AS-133 | Componente y composable; recorrido F-04 con el audio de prueba |
 | AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
 | AS-063 a AS-073, AS-077, AS-078 | Unitario con seudonimizador, proveedor y lector de alergias falsos |
 | AS-064, AS-069, AS-070, AS-072 a AS-076 | Integración HTTP contra PostgreSQL, con control positivo |
@@ -1691,6 +1856,9 @@ diagnóstico dicho, de qué reloj son los 3 minutos, el borrador con la nota
 abierta, el vocabulario protegido del léxico y la redacción en el proceso.
 En **D-250**: los procedimientos ordenables, lo que pide el paciente en la
 conversación, el umbral para encender, el catálogo entero en el prompt y la
+prioridad que nadie marca. En **D-253**: las secciones vacías con el asistente
+apagado, las opcionales en la lista, revisar de nuevo al escribir, preguntar
+por alergias y lo que la ficha ya sabe.
 prioridad que nadie marca. En **D-252**: interrumpir sin bloqueo, la escucha
 en pausa, firmar cualquier nota de la atención, qué secciones se miden y
 «Dejar de esperar».

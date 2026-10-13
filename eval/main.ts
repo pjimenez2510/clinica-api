@@ -46,6 +46,7 @@ import { cie10ByProblemTask } from './tasks/cie10-by-problem.ts';
 import { JUDGE_PROMPT_VERSION, noteTask } from './tasks/note.ts';
 import { prescriptionTask } from './tasks/prescription.ts';
 import { draftTask } from './tasks/draft.ts';
+import { questionsCases, questionsTask } from './tasks/questions.ts';
 import { EVAL_PROVIDER_CAP_USD, ProviderCapStore } from './ledger.ts';
 import { ordersFromNoteTask } from './tasks/orders-from-note.ts';
 import { prescriptionFromNoteTask } from './tasks/prescription-from-note.ts';
@@ -56,7 +57,7 @@ export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5
   pnpm eval -- --codiesp <carpeta train_dev> corrida real con las claves del .env
 
 Opciones:
-  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042), receta-nota mide D2 (AS-079), borrador mide C2 (AS-098), examenes-nota mide D3 (AS-114)
+  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042), receta-nota mide D2 (AS-079), borrador mide C2 (AS-098), examenes-nota mide D3 (AS-114), preguntas mide C3 (AS-126)
   --codiesp <carpeta>          CodiEsp train_dev (CC BY 4.0, Zenodo 3837305); sin ella, la CIE-10 usa sólo el set propio
   --muestra <n>                frases de CodiEsp (por defecto 200)
   --casos <n>                  como mucho n casos de cada set propio (por defecto, todos)
@@ -68,7 +69,7 @@ Opciones:
   --salida <carpeta>           por defecto eval/resultados
   --estimar                    sólo dice cuántas llamadas y el peor caso de gasto, sin llamar
   --tope-proveedor <usd>       lo más que cada proveedor puede llevar gastado en el registro, contando el intento (D-241)
-  --set-borrador <nota|reservado>  casos del borrador: nota.json (por defecto) o nota-reservada.json, que no se usa para ajustar el prompt
+  --set-borrador <nota|reservado>  casos del borrador y de las preguntas: nota.json (por defecto) o nota-reservada.json, que no se usa para ajustar el prompt
   --revision <carpeta>         escribe, fuera del repositorio, cada frase del borrador y cada hecho con el veredicto del juez, para revisarlo a mano
 `;
 
@@ -84,7 +85,9 @@ function reviewWriter(dir: string | undefined) {
   const folder = resolve(dir);
   const inside = relative(process.cwd(), folder);
   if (!inside.startsWith('..') && !inside.startsWith('/')) {
-    throw new Error('--revision: la carpeta tiene que estar fuera del repositorio');
+    throw new Error(
+      '--revision: la carpeta tiene que estar fuera del repositorio',
+    );
   }
   mkdirSync(folder, { recursive: true });
   const file = join(folder, 'revision.jsonl');
@@ -97,7 +100,8 @@ type TaskKey =
   | 'receta-nota'
   | 'examenes-nota'
   | 'nota'
-  | 'borrador';
+  | 'borrador'
+  | 'preguntas';
 
 export interface Dependencies {
   env: Env;
@@ -220,6 +224,7 @@ export async function runFromArgs(
         'examenes-nota',
         'nota',
         'borrador',
+        'preguntas',
       ].includes(t),
   );
   if (unknown.length > 0)
@@ -357,6 +362,24 @@ export async function runFromArgs(
     add(draftTask(catalogues, { review: reviewWriter(values.revision) }), own);
     casesMeta.push({
       task: 'draft',
+      source: heldOut ? 'nota-reservada.json' : 'nota.json',
+      sha256: set.sha256,
+      n: own.length,
+    });
+  }
+
+  // AS-126 (C3). The product's review on the same consultations, each with
+  // the note empty and with its reference note written (SC-093).
+  if (wanted.includes('preguntas')) {
+    const heldOut = values['set-borrador'] === 'reservado';
+    if (!heldOut && values['set-borrador'] !== 'nota') {
+      throw new Error('--set-borrador: nota o reservado');
+    }
+    const set = heldOut ? invented.noteHeldOut : invented.note;
+    const own = questionsCases(set.cases.slice(0, limit));
+    add(questionsTask(catalogues, { review: reviewWriter(values.revision) }), own); // prettier-ignore
+    casesMeta.push({
+      task: 'questions',
       source: heldOut ? 'nota-reservada.json' : 'nota.json',
       sha256: set.sha256,
       n: own.length,

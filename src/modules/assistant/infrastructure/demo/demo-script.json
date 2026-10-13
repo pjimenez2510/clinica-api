@@ -152,5 +152,32 @@
     "unsaid": {
       "text": "Acudir antes si la fiebre no cede."
     }
-  }
+  },
+  "aboutQuestions": "Preguntas «Para completar la nota» (C3, AS-127): cada pregunta se hace si una línea de la conversación contiene su frase, con el marcador de esa línea, salvo que lo escrito en la nota contenga una de sus palabras de respuesta; «¿Fuma?» lleva un marcador que no se dio, para que se vea que la barrera no la muestra.",
+  "questions": [
+    {
+      "phrase": "tengo fiebre",
+      "text": "¿Hasta qué temperatura llegó la fiebre?",
+      "section": "enfermedadActual",
+      "answeredBy": ["°", "grados", "38", "39", "40"]
+    },
+    {
+      "phrase": "me duele la garganta",
+      "text": "¿Tiene tos o le cuesta tragar?",
+      "section": "revisionOrganosSistemas",
+      "answeredBy": ["tos", "tragar", "disfagia"]
+    },
+    {
+      "phrase": "acetamol",
+      "text": "¿Toma algún otro medicamento?",
+      "section": "enfermedadActual",
+      "answeredBy": ["otro medicamento", "otros medicamentos", "no toma"]
+    },
+    {
+      "phrase": null,
+      "text": "¿Fuma?",
+      "section": null,
+      "answeredBy": ["fuma", "tabaco"]
+    }
+  ]
 }
