@@ -1834,7 +1834,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   concepto del CNMB o, sin él, por su nombre genérico y su concentración, con
   cuándo se recetó la primera y la última vez, cuántas veces, la última dosis
   y frecuencia escritas y, si la última receta dice cuántos días, hasta qué
-  día del calendario de Guayaquil dura (el día de la emisión es el primero).
+  día del calendario de Guayaquil dura: el más lejano que alcanza alguna de
+  sus recetas (el día de la emisión es el primero), para que una de cinco
+  días escrita mientras corre una de treinta no la acorte.
 - **AS-204** — El estado de un medicamento DEBERÁ ser «activo» MIENTRAS el día
   de hoy —por el reloj de la aplicación, en `America/Guayaquil`— no pase del
   último día de su última receta; «terminado» cuando ya pasó; y «sin duración
