@@ -1,9 +1,9 @@
 # Signos dictados — b2-signos-dictados-reservado
 
-- **Fecha:** 2026-10-12 23:23:10 (America/Guayaquil) · **Commit:** `1e7afecb+cambios`
+- **Fecha:** 2026-10-13 00:04:54 (America/Guayaquil) · **Commit:** `148b2237+cambios`
 - **Set:** reservado
 - **Casos:** 30 frases inventadas (`signos-dictados-reservado.json`, SHA-256 `7ebddcad4f8db5f8…`)
-- **Lo oído:** (SHA-256 `0e15b87955d9cd61…`), voces sintéticas de macOS (Paulina, Eddy (Español (México)), Flo (Español (México)), Mónica), a su velocidad y a 220 palabras por minuto, sin ruido, transcritas por `clinica-ai` (whisper + VAD) en esta máquina.
+- **Lo oído:** (SHA-256 `5484a2db293cacf3…`), voces sintéticas de macOS (Paulina, Eddy (Español (México)), Flo (Español (México)), Mónica), a su velocidad y a 220 palabras por minuto, sin ruido, transcritas por `clinica-ai` (whisper + VAD) en esta máquina.
 - **Lectura medida:** `readDictatedVitals`, de `src/modules/assistant/domain/dictated-vitals.ts`, la misma de la ruta. Ningún proveedor de modelo.
 
 ## Criterios (escritos antes de medir)
@@ -82,8 +82,10 @@
 
 ## Graves
 
-- **V30** · oido · Flo (Español (México)) · Sistólica: esperado 141, leído 140 — «presión 140,89, pulso 74, saturación 97, temperatura 36,5, peso 76, talla 156.»
-- **V30** · oido · Flo (Español (México)) · 220 · Sistólica: esperado 141, leído 140 — «presión 140,89, pulso 74, saturación 97, temperatura 36,5, peso 76, talla 156.»
+- **V30** · oido · Flo (Español (México)) · Sistólica: esperado 141, leído 140
+- **V30** · oido · Flo (Español (México)) · 220 · Sistólica: esperado 141, leído 140
+
+Del set reservado no se copian frases: sólo cifras.
 
 ## Lo que no mide
 

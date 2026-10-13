@@ -1,10 +1,10 @@
 {
   "label": "b2-signos-dictados-reservado",
   "set": "reservado",
-  "startedAt": "2026-10-12 23:23:10",
-  "commit": "1e7afecb+cambios",
+  "startedAt": "2026-10-13 00:04:54",
+  "commit": "148b2237+cambios",
   "casesSha256": "7ebddcad4f8db5f8b212985c77d550fa02e586a3616d7555b759a1541c2f9e9e",
-  "heardSha256": "0e15b87955d9cd61e0b112f249886a4a905705b0b45112effb1ecb4579addb6a",
+  "heardSha256": "5484a2db293cacf389a7731af45b5f7c1aefbe9a95cd640158b371b6a8d9df15",
   "voices": [
     "Paulina",
     "Eddy (Español (México))",
@@ -60,7 +60,7 @@
       "expected": 141,
       "got": 140,
       "outcome": "wrong",
-      "text": "presión 140,89, pulso 74, saturación 97, temperatura 36,5, peso 76, talla 156."
+      "text": ""
     },
     {
       "id": "V30",
@@ -71,7 +71,7 @@
       "expected": 141,
       "got": 140,
       "outcome": "wrong",
-      "text": "presión 140,89, pulso 74, saturación 97, temperatura 36,5, peso 76, talla 156."
+      "text": ""
     }
   ]
 }
