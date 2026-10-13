@@ -353,6 +353,27 @@ describe('el borrador de la nota por HTTP (AS-086 a AS-097)', () => {
     expect((await prisma.aiSuggestion.findUniqueOrThrow({ where: { id: sections[0]!.id } })).status).toBe('DISCARDED'); // prettier-ignore
   });
 
+  it('AS-096 no cache on the way keeps the draft: every route of it answers no-store', async () => {
+    const asked = await post(encounterId, '', doctor.token).expect(202);
+    const cancelled = await post(encounterId, '/cancel', doctor.token).expect(200); // prettier-ignore
+    const { sections } = await drafted();
+    const plan = sections.find((each) => each.section === 'planTratamiento')!;
+    await saveSection('planTratamiento', plan.text);
+    const accepted = await post(encounterId, `/sections/${plan.id}/accept`, doctor.token, { noteId }).expect(200); // prettier-ignore
+    const discarded = await post(encounterId, `/sections/${sections[0]!.id}/discard`, doctor.token).expect(200); // prettier-ignore
+    const read = await get(encounterId, doctor.token).expect(200);
+
+    for (const response of [asked, cancelled, accepted, discarded, read]) {
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+    // Positive control: the header is the draft's, not one every answer carries.
+    const note = await request(app.getHttpServer())
+      .get(`/api/v1/encounters/${encounterId}/notes`)
+      .set('Authorization', `Bearer ${doctor.token}`)
+      .expect(200);
+    expect(note.headers['cache-control']).not.toBe('no-store');
+  });
+
   it('AS-093 without pseudonymizer the draft fails with its code and keeps nothing; «Volver a pedir» writes it', async () => {
     pseudonymizer.current = new MissingPseudonymizer();
     const failed = await drafted();

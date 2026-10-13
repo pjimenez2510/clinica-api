@@ -148,6 +148,7 @@ diagnóstico registrado.
 **Solo interfaz:** AS-043, AS-044. Son la tarjeta de la propuesta y su fallo
 en la pestaña Diagnósticos; la mitad del servidor es AS-027, AS-028, AS-035 y
 AS-040, que ya se prueban con esos números.
+
 ### E4 — La escucha de la consulta _(C1, 12-10-2026)_
 
 `PLAN-ASISTENTE-IA.md` §7 C1 y §3 («Escucha»): el médico inicia, pausa y
@@ -312,6 +313,7 @@ verify) y AS-127 (el guion). La pantalla los ve como AS-123 y AS-129.
 **Solo interfaz:** AS-118, AS-129 a AS-133. Son el bloque en la pestaña Nota,
 pedir al detener y revisar de nuevo al escribir; su mitad del servidor es
 AS-119, AS-122 y AS-123, que ya se prueban con esos números.
+
 ### E10 — Revisión al firmar _(E1, 12-10-2026)_
 
 `PLAN-ASISTENTE-IA.md` §7 E1 y D-247 §7: firmar es declarar que la nota está
@@ -619,6 +621,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-026** — MIENTRAS `ASSISTANT_ENABLED` no sea `true`, toda ruta del
   asistente DEBERÁ responder 404 como si no existiera; y con él, DEBERÁ exigir
   el permiso `assistant:use`, que el rol `MEDICO` trae de fábrica.
+
   > D-244 §3: el interruptor por sede llega con A3; hasta entonces la
   > instalación y la cuenta. Un 404 y no un 403 sin interruptor: la pantalla no
   > debe enseñar nada de IA en una instalación que no lo encendió. El 404 lo
@@ -789,6 +792,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-044** — MIENTRAS la lectura está en curso la pestaña DEBERÁ decirlo y
   seguir usable; y SI falla, ENTONCES DEBERÁ decir el motivo con «Volver a
   pedir», sin quitar la línea base ni las propuestas que ya había.
+
 ### 15. El seudonimizador local (A5)
 
 - **AS-030** — CUANDO se pida seudonimizar un texto, el adaptador DEBERÁ
@@ -1318,7 +1322,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   responder el estado del último —en cola, redactando, listo o fallido con su
   código—, su tramo, cuánto de la transcripción queda sin redactar y las
   secciones vigentes (AS-090) con sus frases, fuentes, marcas y si son de
-  demostración; a cualquier otro, lo de AS-039.
+  demostración; a cualquier otro, lo de AS-039. Esa respuesta, y la de pedir
+  (AS-086), dejar de esperar (AS-147), aceptar y descartar una sección
+  (AS-094), NO DEBERÁ guardarse en ningún caché (`no-store`), como las
+  preguntas (AS-124).
+  > Sus secciones son la consulta (revisión de C3, 12-10-2026).
 - **AS-097** — CUANDO un borrador se ponga en cola o termine, listo o fallido,
   y CUANDO se acepte o descarte una sección, el sistema DEBERÁ publicar
   `assistant-draft` dirigido a quien lo pidió o decidió, sin contenido
@@ -1600,8 +1608,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-124** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
   (**45 s**) o el techo no admite el intento, ENTONCES el sistema DEBERÁ
   responder el error con su código sin guardar ninguna revisión ni tocar la
-  anterior; SI la atención se cerró mientras se revisaba, ENTONCES NO DEBERÁ
-  guardar nada; la respuesta NO DEBERÁ guardarse en ningún caché
+  anterior; SI la atención se cerró, o su 002 se firmó, mientras se revisaba,
+  ENTONCES NO DEBERÁ guardar nada, ni la revisión ni sus preguntas —una
+  atención dada de alta al firmar responde `ASSISTANT_ENCOUNTER_CLOSED`; una
+  002 firmada con la atención aún viva (en espera), `ASSISTANT_NOTE_NOT_OPEN`—,
+  y la base DEBERÁ rechazar una pregunta o una revisión de una atención sin su
+  002 en borrador, también cuando la firma se cruza con el guardado; la respuesta NO DEBERÁ guardarse en ningún caché
   (`no-store`); ninguna línea de log, mensaje de error ni fila de la revisión
   DEBERÁ contener la transcripción, la nota ni una pregunta (sólo cuántas);
   mandarlas DEBERÁ dejar su `EXPORT` en la bitácora; y las marcas que separan
@@ -1653,6 +1665,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   descarte falla, ENTONCES DEBERÁ volver a verse con el motivo.
 - **AS-133** — En el teléfono, el bloque DEBERÁ caber sin desbordar a lo ancho
   y cada acción DEBERÁ medir al menos 44 px de alto (ESTANDAR-UI).
+
 ### 38. Firmar con el asistente en marcha (E1, U-03, D-247 §7)
 
 - **AS-140** — MIENTRAS el asistente esté capturando la escucha de una
@@ -1685,6 +1698,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   nada de lo que devuelva se guarda. Un fallo de estos pasos NO DEBERÁ
   convertir la firma en un error: la firma ya está guardada, y el fallo
   queda en el log sin texto.
+
   > Lo que se cuela entre la comprobación y la firma —una escucha que
   > empieza, un borrador que pide la escucha al detenerse— se detiene aquí.
   > Fuera de la respuesta: detener espera a que el reconocedor entregue lo
@@ -1762,84 +1776,84 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 
 ## Códigos de error nuevos
 
-| Código                               | Clase base             | HTTP      | Cuándo                                                                       |
-| ------------------------------------ | ---------------------- | --------- | ---------------------------------------------------------------------------- |
-| `ASSISTANT_NOT_CONFIGURED`           | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                |
-| `ASSISTANT_PROVIDER_FAILED`          | `ExternalServiceError` | 503 / 502 | Ningún proveedor respondió (reintentable, AS-007) o el modelo falló (AS-008) |
-| `SUGGESTION_ALREADY_DECIDED`         | `ConflictError`        | 409       | La propuesta ya se aceptó o se descartó (AS-023)                             |
-| `SUGGESTION_NOT_FOUND`               | `NotFoundError`        | 404       | La propuesta, o su atención, no existe o está fuera del alcance (AS-021)     |
-| `SUGGESTION_INVALID`                 | `ValidationError`      | 422       | Fuentes que no son un lugar conocido, o aceptar sin nada guardado (AS-020)   |
-| `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)               |
-| `ASSISTANT_NOTE_EMPTY`               | `ValidationError`      | 422       | La nota de la atención no tiene texto del que leer problemas (AS-028)        |
-| `ASSISTANT_NOT_ENCOUNTER_OWNER`      | `ForbiddenError`       | 403       | Quien pide no es el profesional de la atención (AS-039)                      |
-| `SUGGESTION_DIAGNOSIS_MISMATCH`      | `ValidationError`      | 422       | El diagnóstico con que se acepta no es de esa atención o no está (AS-037)   |
-| `ASSISTANT_ENCOUNTER_NOT_FOUND`      | `NotFoundError`        | 404       | La atención no existe o es de una sede fuera del alcance (AS-039, EN-121)    |
-| `ASSISTANT_ENCOUNTER_CLOSED`         | `ConflictError`        | 409       | La atención ya no admite contenido clínico nuevo (AS-039)                    |
-| `ASSISTANT_PROPOSAL_NOT_KEPT`        | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)    |
-| `ASSISTANT_READING_IN_PROGRESS`      | `ConflictError`        | 409       | Ya hay una lectura de esa atención en curso (AS-040)                         |
-| `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
-| `ASSISTANT_LISTENING_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz o caído (AS-048) |
-| `ASSISTANT_LISTENING_NOT_OPEN`       | `ConflictError`        | 409       | Una orden de pausar o una trama sin escucha abierta en ese canal (AS-049) |
-| `ASSISTANT_LISTENING_FAILED`         | `ExternalServiceError` | 503       | Una orden de la escucha falló por algo que no es del médico: la base, un fallo (AS-058) |
-| `ASSISTANT_ALLERGY_CHECK_FAILED`     | `ExternalServiceError` | 503       | Las alergias del paciente no se pudieron leer o comparar: nada se propone ni se confirma (AS-070) |
-| `ASSISTANT_ALLERGY_CONTRAINDICATION` | `ConflictError`        | 409       | Una línea a confirmar coincide exactamente con una alergia (AS-071, AS-073)  |
-| `ASSISTANT_PRESCRIPTION_LINE_NOT_READY` | `ValidationError`   | 422       | Una línea a confirmar no es de la última lectura, ya se decidió, no tiene medicamento del CNMB o ya está en la receta (AS-073) |
-| `SUGGESTION_PRESCRIPTION_MISMATCH`   | `ValidationError`      | 422       | La receta con que se enlaza no es de la atención, está descartada o no tiene esa línea (AS-074) |
-| `SUGGESTION_ORDER_MISMATCH`          | `ValidationError`      | 422       | La orden con que se enlaza no es de la atención, está descartada, no tiene ese examen o el examen no es un candidato de la propuesta (AS-109) |
+| Código                                  | Clase base             | HTTP      | Cuándo                                                                                                                                        |
+| --------------------------------------- | ---------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ASSISTANT_NOT_CONFIGURED`              | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                                                                                 |
+| `ASSISTANT_PROVIDER_FAILED`             | `ExternalServiceError` | 503 / 502 | Ningún proveedor respondió (reintentable, AS-007) o el modelo falló (AS-008)                                                                  |
+| `SUGGESTION_ALREADY_DECIDED`            | `ConflictError`        | 409       | La propuesta ya se aceptó o se descartó (AS-023)                                                                                              |
+| `SUGGESTION_NOT_FOUND`                  | `NotFoundError`        | 404       | La propuesta, o su atención, no existe o está fuera del alcance (AS-021)                                                                      |
+| `SUGGESTION_INVALID`                    | `ValidationError`      | 422       | Fuentes que no son un lugar conocido, o aceptar sin nada guardado (AS-020)                                                                    |
+| `ASSISTANT_SPENDING_CEILING_REACHED`    | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)                                                                                |
+| `ASSISTANT_NOTE_EMPTY`                  | `ValidationError`      | 422       | La nota de la atención no tiene texto del que leer problemas (AS-028)                                                                         |
+| `ASSISTANT_NOT_ENCOUNTER_OWNER`         | `ForbiddenError`       | 403       | Quien pide no es el profesional de la atención (AS-039)                                                                                       |
+| `SUGGESTION_DIAGNOSIS_MISMATCH`         | `ValidationError`      | 422       | El diagnóstico con que se acepta no es de esa atención o no está (AS-037)                                                                     |
+| `ASSISTANT_ENCOUNTER_NOT_FOUND`         | `NotFoundError`        | 404       | La atención no existe o es de una sede fuera del alcance (AS-039, EN-121)                                                                     |
+| `ASSISTANT_ENCOUNTER_CLOSED`            | `ConflictError`        | 409       | La atención ya no admite contenido clínico nuevo (AS-039)                                                                                     |
+| `ASSISTANT_PROPOSAL_NOT_KEPT`           | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)                                                                     |
+| `ASSISTANT_READING_IN_PROGRESS`         | `ConflictError`        | 409       | Ya hay una lectura de esa atención en curso (AS-040)                                                                                          |
+| `ASSISTANT_PSEUDONYMIZER_FAILED`        | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033)                                                               |
+| `ASSISTANT_LISTENING_UNAVAILABLE`       | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz o caído (AS-048)                                                         |
+| `ASSISTANT_LISTENING_NOT_OPEN`          | `ConflictError`        | 409       | Una orden de pausar o una trama sin escucha abierta en ese canal (AS-049)                                                                     |
+| `ASSISTANT_LISTENING_FAILED`            | `ExternalServiceError` | 503       | Una orden de la escucha falló por algo que no es del médico: la base, un fallo (AS-058)                                                       |
+| `ASSISTANT_ALLERGY_CHECK_FAILED`        | `ExternalServiceError` | 503       | Las alergias del paciente no se pudieron leer o comparar: nada se propone ni se confirma (AS-070)                                             |
+| `ASSISTANT_ALLERGY_CONTRAINDICATION`    | `ConflictError`        | 409       | Una línea a confirmar coincide exactamente con una alergia (AS-071, AS-073)                                                                   |
+| `ASSISTANT_PRESCRIPTION_LINE_NOT_READY` | `ValidationError`      | 422       | Una línea a confirmar no es de la última lectura, ya se decidió, no tiene medicamento del CNMB o ya está en la receta (AS-073)                |
+| `SUGGESTION_PRESCRIPTION_MISMATCH`      | `ValidationError`      | 422       | La receta con que se enlaza no es de la atención, está descartada o no tiene esa línea (AS-074)                                               |
+| `SUGGESTION_ORDER_MISMATCH`             | `ValidationError`      | 422       | La orden con que se enlaza no es de la atención, está descartada, no tiene ese examen o el examen no es un candidato de la propuesta (AS-109) |
 
-| `ASSISTANT_TRANSCRIPT_EMPTY`         | `ValidationError`      | 422       | No hay transcripción de la que redactar el borrador (AS-086) |
-| `ASSISTANT_NOTE_NOT_OPEN`            | `ConflictError`        | 409       | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
-| `ASSISTANT_DRAFT_INTERRUPTED`        | `ExternalServiceError` | 503       | La API se reinició mientras redactaba el borrador (AS-093) |
-| `ASSISTANT_DRAFT_FAILED`             | `ExternalServiceError` | 503       | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
-| `ASSISTANT_DRAFT_RETRY_LIMIT`        | `QuotaExceededError`   | 429       | «Volver a pedir» sobre un tramo que ya falló tres veces (AS-093) |
-| `ASSISTANT_DRAFT_CANCELLED`          | `ConflictError`        | 409       | El borrador se canceló: se firmó la nota o el médico dejó de esperarlo (AS-143, AS-147) |
-| `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
-| `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
+| `ASSISTANT_TRANSCRIPT_EMPTY` | `ValidationError` | 422 | No hay transcripción de la que redactar el borrador (AS-086) |
+| `ASSISTANT_NOTE_NOT_OPEN` | `ConflictError` | 409 | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
+| `ASSISTANT_DRAFT_INTERRUPTED` | `ExternalServiceError` | 503 | La API se reinició mientras redactaba el borrador (AS-093) |
+| `ASSISTANT_DRAFT_FAILED` | `ExternalServiceError` | 503 | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
+| `ASSISTANT_DRAFT_RETRY_LIMIT` | `QuotaExceededError` | 429 | «Volver a pedir» sobre un tramo que ya falló tres veces (AS-093) |
+| `ASSISTANT_DRAFT_CANCELLED` | `ConflictError` | 409 | El borrador se canceló: se firmó la nota o el médico dejó de esperarlo (AS-143, AS-147) |
+| `NOTE_SIGN_WHILE_LISTENING` | `ConflictError` | 409 | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
+| `NOTE_SIGN_WHILE_DRAFTING` | `ConflictError` | 409 | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
 
 ## Niveles de prueba
 
-| Requisito                              | Nivel                                                                |
-| -------------------------------------- | -------------------------------------------------------------------- |
-| AS-001                                 | Tipos (`@ts-expect-error`, lo comprueba `tsc`) y recorrido de `src/` |
-| AS-002 a AS-010                        | Unitario, con `fetch` y proveedores falsos                           |
-| AS-015 (al arrancar y cada día)        | Unitario del módulo con reloj falso                                  |
-| AS-011, AS-012, AS-014, AS-015, AS-017 | Integración contra PostgreSQL, con control positivo                  |
-| AS-020 a AS-024 (la base)              | Integración contra PostgreSQL, con control positivo                  |
-| AS-022 (el cálculo)                    | Unitario del dominio                                                 |
-| AS-013, AS-016, AS-018, AS-019         | Unitario (AS-018 sobre `pruneToAllowlist`)                           |
-| AS-025, AS-028, AS-035, AS-036, AS-039, AS-040, AS-041 | Unitario con seudonimizador y proveedor falsos |
-| AS-026, AS-027, AS-036, AS-037, AS-038 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-042 | Arnés (`eval/`), fuera del verify |
-| AS-043, AS-044 | Componente de la pestaña y recorrido F-04 |
-| AS-045, AS-046, AS-047, AS-056 | Integración HTTP y del canal contra PostgreSQL, con control positivo |
-| AS-048, AS-049, AS-050, AS-051, AS-054, AS-055, AS-058 | Unitario con reconocedor y reloj falsos; AS-051 también de punta a punta en la integración |
-| AS-052, AS-053 (la base), AS-057 | Integración contra PostgreSQL, con control positivo |
-| AS-053 (el código) | Recorrido de los archivos de la escucha |
-| AS-059, AS-060, AS-061 | Componente y composable; recorrido F-04 con el audio de prueba |
-| AS-062 | Guion contra la API y `clinica-ai` en marcha, fuera del verify |
-| AS-086 (la base), AS-090, AS-094, AS-096, AS-097 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-087, AS-088, AS-089, AS-091, AS-092, AS-093, AS-095, AS-099 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
-| AS-098 | Arnés (`eval/`), fuera del verify |
-| AS-100, AS-101, AS-102 | Componente y composable; recorrido F-04 con el audio de prueba |
-| AS-119 a AS-125 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
-| AS-119, AS-121 (la base), AS-122, AS-123, AS-125 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-126 | Arnés (`eval/`), fuera del verify |
-| AS-127 | Unitario del proveedor de demostración |
-| AS-118, AS-128 a AS-133 | Componente y composable; recorrido F-04 con el audio de prueba |
-| AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
-| AS-063 a AS-073, AS-077, AS-078 | Unitario con seudonimizador, proveedor y lector de alergias falsos |
-| AS-064, AS-069, AS-070, AS-072 a AS-076 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-079 | Arnés (`eval/`), fuera del verify |
-| AS-080 a AS-082 | Componente de la pestaña y recorrido F-05 |
-| AS-103 a AS-108, AS-110, AS-112, AS-113 | Unitario con seudonimizador, proveedor y catálogo falsos |
-| AS-104, AS-106, AS-107, AS-109 a AS-111 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-109 (la base) | Integración contra PostgreSQL, con control positivo |
-| AS-114 | Arnés (`eval/`), fuera del verify |
-| AS-115 a AS-117 | Componente de la pestaña y recorrido F-05 |
-| AS-140 a AS-142, AS-144, AS-147 | Integración HTTP contra PostgreSQL, con control positivo |
-| AS-143, AS-146, AS-151 | Unitario con almacenes, reloj, reconocedor y proveedor falsos |
-| AS-145 | Integración contra PostgreSQL, con control positivo |
-| AS-148 a AS-150, AS-152 | Componente y composable; recorrido F-04 con el audio de prueba |
+| Requisito                                                      | Nivel                                                                                                       |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| AS-001                                                         | Tipos (`@ts-expect-error`, lo comprueba `tsc`) y recorrido de `src/`                                        |
+| AS-002 a AS-010                                                | Unitario, con `fetch` y proveedores falsos                                                                  |
+| AS-015 (al arrancar y cada día)                                | Unitario del módulo con reloj falso                                                                         |
+| AS-011, AS-012, AS-014, AS-015, AS-017                         | Integración contra PostgreSQL, con control positivo                                                         |
+| AS-020 a AS-024 (la base)                                      | Integración contra PostgreSQL, con control positivo                                                         |
+| AS-022 (el cálculo)                                            | Unitario del dominio                                                                                        |
+| AS-013, AS-016, AS-018, AS-019                                 | Unitario (AS-018 sobre `pruneToAllowlist`)                                                                  |
+| AS-025, AS-028, AS-035, AS-036, AS-039, AS-040, AS-041         | Unitario con seudonimizador y proveedor falsos                                                              |
+| AS-026, AS-027, AS-036, AS-037, AS-038                         | Integración HTTP contra PostgreSQL, con control positivo                                                    |
+| AS-042                                                         | Arnés (`eval/`), fuera del verify                                                                           |
+| AS-043, AS-044                                                 | Componente de la pestaña y recorrido F-04                                                                   |
+| AS-045, AS-046, AS-047, AS-056                                 | Integración HTTP y del canal contra PostgreSQL, con control positivo                                        |
+| AS-048, AS-049, AS-050, AS-051, AS-054, AS-055, AS-058         | Unitario con reconocedor y reloj falsos; AS-051 también de punta a punta en la integración                  |
+| AS-052, AS-053 (la base), AS-057                               | Integración contra PostgreSQL, con control positivo                                                         |
+| AS-053 (el código)                                             | Recorrido de los archivos de la escucha                                                                     |
+| AS-059, AS-060, AS-061                                         | Componente y composable; recorrido F-04 con el audio de prueba                                              |
+| AS-062                                                         | Guion contra la API y `clinica-ai` en marcha, fuera del verify                                              |
+| AS-086 (la base), AS-090, AS-094, AS-096, AS-097               | Integración HTTP contra PostgreSQL, con control positivo                                                    |
+| AS-087, AS-088, AS-089, AS-091, AS-092, AS-093, AS-095, AS-099 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos                                            |
+| AS-098                                                         | Arnés (`eval/`), fuera del verify                                                                           |
+| AS-100, AS-101, AS-102                                         | Componente y composable; recorrido F-04 con el audio de prueba                                              |
+| AS-119 a AS-125                                                | Unitario con seudonimizador, proveedor, reloj y almacenes falsos                                            |
+| AS-119, AS-121 (la base), AS-122, AS-123, AS-125               | Integración HTTP contra PostgreSQL, con control positivo                                                    |
+| AS-126                                                         | Arnés (`eval/`), fuera del verify                                                                           |
+| AS-127                                                         | Unitario del proveedor de demostración                                                                      |
+| AS-118, AS-128 a AS-133                                        | Componente y composable; recorrido F-04 con el audio de prueba                                              |
+| AS-030 a AS-034                                                | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
+| AS-063 a AS-073, AS-077, AS-078                                | Unitario con seudonimizador, proveedor y lector de alergias falsos                                          |
+| AS-064, AS-069, AS-070, AS-072 a AS-076                        | Integración HTTP contra PostgreSQL, con control positivo                                                    |
+| AS-079                                                         | Arnés (`eval/`), fuera del verify                                                                           |
+| AS-080 a AS-082                                                | Componente de la pestaña y recorrido F-05                                                                   |
+| AS-103 a AS-108, AS-110, AS-112, AS-113                        | Unitario con seudonimizador, proveedor y catálogo falsos                                                    |
+| AS-104, AS-106, AS-107, AS-109 a AS-111                        | Integración HTTP contra PostgreSQL, con control positivo                                                    |
+| AS-109 (la base)                                               | Integración contra PostgreSQL, con control positivo                                                         |
+| AS-114                                                         | Arnés (`eval/`), fuera del verify                                                                           |
+| AS-115 a AS-117                                                | Componente de la pestaña y recorrido F-05                                                                   |
+| AS-140 a AS-142, AS-144, AS-147                                | Integración HTTP contra PostgreSQL, con control positivo                                                    |
+| AS-143, AS-146, AS-151                                         | Unitario con almacenes, reloj, reconocedor y proveedor falsos                                               |
+| AS-145                                                         | Integración contra PostgreSQL, con control positivo                                                         |
+| AS-148 a AS-150, AS-152                                        | Componente y composable; recorrido F-04 con el audio de prueba                                              |
 
 ## Preguntas abiertas
 
