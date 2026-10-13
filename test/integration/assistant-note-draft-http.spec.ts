@@ -40,6 +40,7 @@ import {
   createPatient,
   createSite,
   enableAssistant,
+  authorizeRecording,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 import { withReadRevision } from './setup/read-revision';
@@ -144,6 +145,8 @@ describe('el borrador de la nota por HTTP (AS-086 a AS-097)', () => {
     await enableAssistant(prisma, siteId);
     patientId = (await createPatient(prisma)).id;
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
+    // AS-169. The draft and the questions read the conversation: authorized.
+    await authorizeRecording(prisma, patientId, doctor.userId);
     secondDoctor = await signIn('MEDICO', 'medico2@clinica.ec', '0602910945');
     nurseToken = (await signIn('ENFERMERIA', 'enfermeria@clinica.ec', '1104637283')).token; // prettier-ignore
     ({ encounterId, noteId } = await attentionHeard(doctor.practitionerId));
