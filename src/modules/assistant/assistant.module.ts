@@ -262,7 +262,8 @@ const PURGE_EVERY_MS = 86_400_000;
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>): boolean =>
         config.get('ASSISTANT_FAKE_PROVIDER', { infer: true }) === true ||
-        config.get('ASSISTANT_ALLOW_REMOTE', { infer: true }) === true,
+        (config.get('ASSISTANT_ALLOW_REMOTE', { infer: true }) === true &&
+          config.get('ASSISTANT_PREPARATION_REMOTE', { infer: true }) === true),
     },
     PreparationReadingService,
     // AS-086 to AS-097. The draft of the note (C2), told by the listening.

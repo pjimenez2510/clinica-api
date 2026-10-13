@@ -312,6 +312,27 @@ describe('la escucha de la preparación (AS-240 a AS-244)', () => {
     });
   });
 
+  describe('la preparación termina donde empieza la consulta (AS-240, AS-244)', () => {
+    it('AS-240 once the consultation is listened to, the preparation answers ASSISTANT_PREPARATION_OVER (409)', async () => {
+      await authorizeRecording(prisma, patientId, doctor.userId);
+      // Control: before the consultation, the ticket is given.
+      await ticketFor(encounterId, nurse.token).expect(200);
+      const now = new Date();
+      await prisma.listeningSession.create({ data: { encounterId, state: 'STOPPED', offsetMs: 1_000, device: 'computador', startedBy: doctor.userId, startedAt: now, updatedAt: now } }); // prettier-ignore
+
+      const over = await ticketFor(encounterId, nurse.token).expect(409);
+      expect(over.body).toMatchObject({ code: 'ASSISTANT_PREPARATION_OVER', title: 'La consulta ya empezó a escucharse: dicte o escriba los signos' }); // prettier-ignore
+    });
+
+    it('AS-243 once the attention is closed, only its professional reads the preparation', async () => {
+      await discharge(encounterId);
+      const closed = await readAs(encounterId, nurse.token).expect(409);
+      expect((closed.body as { code: string }).code).toBe('ASSISTANT_ENCOUNTER_CLOSED'); // prettier-ignore
+      // Control: the attention's professional still reads it.
+      await readAs(encounterId, doctor.token).expect(200);
+    });
+  });
+
   describe('lo oído, aparte de la consulta (AS-241 a AS-243)', () => {
     it('AS-241 AS-243 keeps what the preparation heard in its own scope, and shows it to whoever prepares', async () => {
       await authorizeRecording(prisma, patientId, doctor.userId);

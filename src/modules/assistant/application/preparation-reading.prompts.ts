@@ -16,7 +16,7 @@ import { instruction } from './llm-client.port';
  */
 
 /** The version stored beside every attempt (`ai_run.prompt_version`). */
-export const PREPARATION_PROMPT_VERSION = 'b3-preparation-1';
+export const PREPARATION_PROMPT_VERSION = 'b3-preparation-2';
 export const PREPARATION_PURPOSE = 'preparation-reading';
 /** A preparation's lines and a dozen readings fit well within this. */
 export const PREPARATION_MAX_TOKENS = 2_400;
@@ -34,6 +34,7 @@ Reglas de las medidas:
 - "unit" es la unidad dicha o que se entiende: "kg", "lb", "cm", "m" o "none" para las medidas que no la necesitan (presión, pulso, temperatura…).
 - "quote" es un trozo copiado tal cual de esa línea, palabra por palabra, que contiene el número. No lo resumas ni lo corrijas.
 - Si una medida se dijo y luego se corrigió, da sólo la corregida. Si no se entiende el número, no la des.
+- Da sólo las medidas que dice quien prepara mientras las toma. No des las que dice el paciente (lo que se midió en casa, lo que cree que pesa): no son la toma de hoy.
 - No des una medida que nadie dijo. Si no se dijo ninguna, la lista va vacía.
 
 3. Si se dijo cómo se midió la talla, da "heightPosition": "STANDING" (de pie, parado) o "LYING" (acostado), con el marcador y la frase copiada; si no, null. Y en "complaint" da el motivo por el que el paciente acude, como una frase copiada tal cual de una línea que dijo el paciente ("me duele la espalda y el pecho"), con su marcador; si el paciente no lo dijo, null.
@@ -49,20 +50,18 @@ const phrase = z.string().max(600);
 
 /** AS-245. The shape of the answer; anything outside it fails the call (AS-003). */
 export const preparationAnswer = z.object({
-  lines: z
-    .array(z.object({ line: marker, speaker: z.enum(SPEAKERS) }))
-    .max(400),
-  values: z
-    .array(
-      z.object({
-        field: z.enum(PREPARATION_FIELDS),
-        line: marker,
-        quote: phrase,
-        said: z.number(),
-        unit: z.enum(SAID_UNITS),
-      }),
-    )
-    .max(48),
+  // No `maxItems`: Gemini answers 400 to it on these lists (13-10-2026); the
+  // reading takes as many as it can use (`readPreparationAnswer`).
+  lines: z.array(z.object({ line: marker, speaker: z.enum(SPEAKERS) })),
+  values: z.array(
+    z.object({
+      field: z.enum(PREPARATION_FIELDS),
+      line: marker,
+      quote: phrase,
+      said: z.number(),
+      unit: z.enum(SAID_UNITS),
+    }),
+  ),
   heightPosition: z
     .object({
       position: z.enum(['STANDING', 'LYING']),

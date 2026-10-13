@@ -19,7 +19,12 @@ import {
   DemoLlmProvider,
 } from '../../src/modules/assistant/infrastructure/demo/demo-llm.provider.ts';
 import { caseText } from '../case-text.ts';
-import { FileAiRunStore, ledgerDirFrom, ProviderCapStore } from '../ledger.ts';
+import {
+  EVAL_PROVIDER_CAP_USD,
+  FileAiRunStore,
+  ledgerDirFrom,
+  ProviderCapStore,
+} from '../ledger.ts';
 import { ceilingFrom, clientFor, realProviders } from '../providers.ts';
 
 import {
@@ -141,12 +146,20 @@ async function main(): Promise<void> {
       runs.push(...own.map((item) => ({ item, arm: 'oido' as const, voice: 'por persona', texts: heard.get(item.id) ?? [] }))); // prettier-ignore
     }
   }
+  if (
+    sets.includes('reservado-b2') &&
+    arms.includes('oido') &&
+    !sets.includes('reservado-b2-oido')
+  ) {
+    // prettier-ignore
+    print('Del reservado de B2 sólo el texto escrito: lo oído, con --sets …,reservado-b2-oido (240 lecturas).'); // prettier-ignore
+  }
   if (sets.includes('reservado-b2')) {
     const reserved = reservedDictations().slice(0, limit);
     if (arms.includes('escrito')) {
       runs.push(...reserved.map((item) => ({ item, arm: 'escrito' as const, voice: '—', texts: item.lines.map((line) => line.text) }))); // prettier-ignore
     }
-    if (arms.includes('oido') && values.sets.includes('reservado-b2-oido')) {
+    if (arms.includes('oido') && sets.includes('reservado-b2-oido')) {
       const byId = new Map(reserved.map((item) => [item.id, item]));
       for (const clip of reservedDictationsHeard()) {
         const item = byId.get(clip.id);
@@ -172,13 +185,17 @@ async function main(): Promise<void> {
     if (ceilingUsd === undefined) throw new Error('Sin ASSISTANT_MONTHLY_SPEND_CEILING_USD no hay ninguna llamada (AS-017)'); // prettier-ignore
     const ledger = new FileAiRunStore(ledgerDirFrom(process.env));
     const before = new ProviderCapStore(ledger, ledger, measured.name, 0, 0).spentByProvider(); // prettier-ignore
-    const store = new ProviderCapStore(ledger, ledger, measured.name, before + budget, ceilingUsd); // prettier-ignore
+    // D-241: never above the 2 USD a provider may spend in total (revisión I1).
+    if (before >= EVAL_PROVIDER_CAP_USD) throw new Error(`${measured.name} ya gastó su tope de ${EVAL_PROVIDER_CAP_USD} USD (D-241)`); // prettier-ignore
+    const cap = Math.min(before + budget, EVAL_PROVIDER_CAP_USD);
+    const store = new ProviderCapStore(ledger, ledger, measured.name, cap, ceilingUsd); // prettier-ignore
     llm = clientFor(measured, { store, ceilingUsd, timeoutMs: Number(process.env.ASSISTANT_PROVIDER_TIMEOUT_MS) || 60_000, clock: () => new Date() }); // prettier-ignore
     provider = measured.name;
     print(`${measured.name} llevaba ${before.toFixed(3)} USD en el registro; esta corrida, como mucho ${budget.toFixed(2)} USD.`); // prettier-ignore
   }
 
   const scored: ScoredCase[] = [];
+  const failures: Record<string, number> = {};
   let stopped: string | null = null;
   for (const [index, run] of runs.entries()) {
     const lines = asLines(run.texts).filter((line) => line.text.trim() !== '');
@@ -194,6 +211,9 @@ async function main(): Promise<void> {
           stopped = 'el tope de gasto de la corrida';
           break;
         }
+        // A code, never a message: a provider's error can quote the input.
+        const code = (error as { code?: string }).code ?? (error as Error).name;
+        failures[code] = (failures[code] ?? 0) + 1;
       }
     }
     // The sentences the reading answered by (AS-250); a silent line has none.
@@ -219,6 +239,7 @@ async function main(): Promise<void> {
     provider,
     casesSha256: sha256,
     stopped,
+    failures,
     cases: scored.length,
     planned: runs.length,
   };
@@ -233,12 +254,19 @@ async function main(): Promise<void> {
       .filter((value) => value.outcome === 'wrong' || value.outcome === 'invented') // prettier-ignore
       .map((value) => ({ id: each.id, arm: each.arm, voice: each.voice, ...value })), // prettier-ignore
   );
-  writeFileSync(join(folder, 'resultado.json'), `${JSON.stringify({ ...meta, summaries, verdicts, serious, scored }, null, 2)}\n`); // prettier-ignore
+  // Revisión (seguridad): B2's reserved set leaves no value in the results,
+  // only whether each was right — nothing to tune it on.
+  const figuresOnly = <T extends { id: string }>(row: T) =>
+    row.id.startsWith('B2-') ? { ...row, values: undefined, expected: undefined, got: undefined } : row; // prettier-ignore
+  writeFileSync(join(folder, 'resultado.json'), `${JSON.stringify({ ...meta, summaries, verdicts, serious: serious.map(figuresOnly), scored: scored.map(figuresOnly) }, null, 2)}\n`); // prettier-ignore
   writeFileSync(join(folder, 'informe.md'), renderPreparationReport({ meta, summaries, verdicts, scored, cases })); // prettier-ignore
 
   for (const [name, summary] of Object.entries(summaries)) {
     const v = verdicts[name]!;
     print(`${name}: ${summary.correct}/${summary.expected} (${(summary.correctRate.rate * 100).toFixed(1)} %), graves ${summary.serious}, fuera de su frase ${summary.notLiteral}, motivo ${summary.complaintRight}/${summary.complaintSaid} (inventados ${summary.complaintInvented}), hablante ${summary.speakersRight}/${summary.lines}, p90 ${summary.p90Ms ?? '—'} ms · SC-099 ${v.sc099 ? '✓' : '✗'} SC-100 ${v.sc100 ? '✓' : '✗'} SC-101 ${v.sc101 ? '✓' : '✗'}`); // prettier-ignore
+  }
+  if (Object.keys(failures).length > 0) {
+    print(`Sin respuesta, por código: ${JSON.stringify(failures)}`);
   }
   if (stopped)
     print(`Detenida por ${stopped}: ${scored.length}/${runs.length} lecturas.`);

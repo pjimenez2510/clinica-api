@@ -273,14 +273,95 @@ function positionIn(tokens: Token[]): HeightPosition | null {
 }
 
 /**
- * AS-247 (B3). Every number a phrase says, as this reader understands numbers: in figures, in
- * words («ciento veinte»), with «y medio», «punto» or «coma». What a model says was said is checked
- * against this list, so a number the phrase does not say never reaches a field.
+ * AS-247 (B3). The numbers a phrase says, as this reader understands them —in figures, in words
+ * («ciento veinte»), with «y medio», «punto» or «coma»— in runs of numbers said one right after the
+ * other, with nothing between them. Two numbers are only ever read as one when they are in a run.
  */
-export function spokenNumbers(text: string): number[] {
-  return tokenize(text).flatMap((token) =>
-    token.kind === 'number' ? [token.value] : [],
-  );
+export function spokenNumberRuns(
+  text: string,
+): { value: number; raw: string }[][] {
+  const runs: { value: number; raw: string }[][] = [];
+  let run: { value: number; raw: string }[] = [];
+  for (const token of tokenize(text)) {
+    if (token.kind === 'number') {
+      run.push({ value: token.value, raw: token.raw });
+      continue;
+    }
+    if (run.length > 0) runs.push(run);
+    run = [];
+  }
+  if (run.length > 0) runs.push(run);
+  return runs;
+}
+
+/** AS-247. Two numbers said together, read as one: «uno sesenta» is 1.60, «treinta y seis ocho» 36.8. */
+export function joinedNumbers(first: number, second: number): number[] {
+  const joined: number[] = [];
+  if (
+    (first === 1 || first === 2) &&
+    Number.isInteger(second) &&
+    second < 100
+  ) {
+    joined.push(first + second / 100);
+  }
+  if (
+    Number.isInteger(first) &&
+    first >= 10 &&
+    Number.isInteger(second) &&
+    second <= 9
+  ) {
+    joined.push(first + second / 10);
+  }
+  return joined;
+}
+
+/** AS-247. Where a number was said: the field that owns it, and whether a correction came after. */
+export interface SaidOwner {
+  fields: VitalField[];
+  /** «150 con 95, perdón, 130 con 85»: the 150 was taken back. */
+  superseded: boolean;
+}
+
+/**
+ * AS-247 (B3). The readings that own a number in a conversation: each field named aloud owns what
+ * is said until the next field is named or an unknown word ends it (AS-253), so «saturación noventa
+ * y ocho, pulso ochenta y ocho» gives the 88 to the pulse, never to the saturation.
+ */
+export function ownersOf(text: string, said: number): SaidOwner[] {
+  const near = (value: number) => Math.abs(value - said) < 1e-9;
+  const tokens = tokenize(text);
+  const owned = topicsIn(tokens, true).flatMap((span) => {
+    const body = span.body;
+    let last = -1;
+    body.forEach((token, at) => {
+      if (token.kind !== 'number') return;
+      const next = body[at + 1];
+      const values = [token.value];
+      if (next?.kind === 'number') values.push(...joinedNumbers(token.value, next.value)); // prettier-ignore
+      const pair = /^(\d{2,3})[.,](\d{2,3})$/.exec(token.raw);
+      if (pair && span.topic === 'pressure') values.push(Number(pair[1]), Number(pair[2])); // prettier-ignore
+      if (values.some(near)) last = at;
+    });
+    if (last < 0) return [];
+    const after = body.slice(last + 1);
+    const superseded = after.some(
+      (token, at) =>
+        token.kind === 'word' &&
+        (CORRECTIONS.has(token.text) ||
+          (token.text === 'dicho' && wordAt(after, at - 1) === 'mejor')) &&
+        after.slice(at + 1).some((later) => later.kind === 'number'),
+    );
+    return [{ fields: fieldsOf(span.topic), superseded }];
+  });
+  if (owned.length > 0) return owned;
+  // «treinta y seis y medio de temperatura», «setenta y ocho de pulso»: the
+  // field named right after its number, joined by «de».
+  return tokens.flatMap((token, at) => {
+    if (token.kind !== 'number' || !near(token.value)) return [];
+    if (wordAt(tokens, at + 1) !== 'de') return [];
+    const topic = topicAt(tokens, at + 2);
+    return topic ? [{ fields: fieldsOf(topic.topic), superseded: false }] : [];
+  });
 }
 
 /**

@@ -31,6 +31,11 @@ describe('AS-255 the scoring of a preparation', () => {
     expect(literal('systolicBp', 130, 'Presión 120 con 80', LINES[2])).toBe(false); // prettier-ignore
     expect(literal('systolicBp', 120, 'Presión 120 sobre 80', LINES[2])).toBe(false); // prettier-ignore
     expect(literal('systolicBp', 120, null, LINES[2])).toBe(false);
+    // Independent of the barrier: numbers with words between them are not one.
+    const fever = { startMs: 0, endMs: 9_000, text: 'Desde hace 2 días con fiebre de 38.' }; // prettier-ignore
+    expect(literal('heightCm', 238, 'hace 2 días con fiebre de 38', fever)).toBe(false); // prettier-ignore
+    expect(literal('temperatureC', 36.5, 'treinta y seis y medio', { startMs: 0, endMs: 1, text: 'Temperatura treinta y seis y medio.' })).toBe(true); // prettier-ignore
+    expect(literal('heightCm', 160, 'mide uno sesenta', { startMs: 0, endMs: 1, text: 'Mide uno sesenta.' })).toBe(true); // prettier-ignore
   });
 
   it('SC-100 SC-101 counts right, wrong, empty and invented values, the reason and the speakers', () => {

@@ -50,6 +50,8 @@ const LONGEST_CHANNEL_MS = 15 * 60_000;
 const DISCARD_HELD: ReadonlySet<string> = new Set([
   'ASSISTANT_RECORDING_NOT_AUTHORIZED',
   'ASSISTANT_ENCOUNTER_NOT_FOUND',
+  // AS-244 (B3). The consultation began: what was held is the consultation's.
+  'ASSISTANT_PREPARATION_OVER',
 ]);
 
 const LIVE_CHECK_MS = 5_000;

@@ -24,11 +24,13 @@ import {
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   AssistantNotEncounterOwnerError,
+  AssistantPreparationOverError,
   AssistantRecordingNotAuthorizedError,
 } from '../domain/assistant.errors';
 import type { ListeningScope } from '../domain/listening';
 
 import { LISTENING_CLOCK, type ListeningClock } from './listening.service';
+import { LISTENING_STORE, type ListeningStore } from './listening.store';
 
 /** AS-045. How long a ticket waits for its channel. */
 export const TICKET_TTL_MS = 30_000;
@@ -93,6 +95,8 @@ export class ListeningAccess {
     private readonly siteSwitch: AssistantSiteSwitch,
     @Inject(RECORDING_AUTHORIZATION)
     private readonly recording: RecordingAuthorization,
+    /** AS-240. The consultation's listening: once it exists, the preparation is over. */
+    @Inject(LISTENING_STORE) private readonly consultation: ListeningStore,
   ) {}
 
   /** AS-045. A ticket for the attention's own professional, while it is live. */
@@ -115,6 +119,7 @@ export class ListeningAccess {
     requester: ListeningRequester,
   ): Promise<{ ticket: string; expiresAt: Date }> {
     const encounter = await this.reachableEncounter(encounterId, requester.writeSites, true); // prettier-ignore
+    await this.requirePreparing(encounter);
     await this.requireAuthorized(encounter);
     return this.ticketFor(encounterId, 'PREPARATION', requester);
   }
@@ -175,6 +180,7 @@ export class ListeningAccess {
       grant.scope === 'PREPARATION'
         ? await this.reachableEncounter(grant.encounterId, writeSites, true)
         : await this.ownEncounter(grant.encounterId, { userId: grant.userId, writeSites }, true); // prettier-ignore
+    if (grant.scope === 'PREPARATION') await this.requirePreparing(encounter);
     await this.requireAuthorized(encounter);
   }
 
@@ -200,6 +206,15 @@ export class ListeningAccess {
     requester: ListeningRequester,
   ): Promise<{ recordingAuthorized: boolean }> {
     const encounter = await this.reachableEncounter(encounterId, requester.writeSites, false); // prettier-ignore
+    // Revisión (seguridad): once the attention is closed, only its own
+    // professional reads what was said in the room, until it is purged.
+    if (
+      !acceptsNewContent(encounter.status) &&
+      encounter.practitionerUserId !== requester.userId
+    ) {
+      // prettier-ignore
+      throw new AssistantEncounterClosedError();
+    }
     return this.readOf(encounter, 'PREPARATION', requester);
   }
 
@@ -241,6 +256,17 @@ export class ListeningAccess {
       this.now(),
     );
     return { recordingAuthorized: true };
+  }
+
+  /**
+   * AS-240, AS-244 (revisión). The preparation ends where the consultation's
+   * listening begins: what the physician's consultation says is never kept
+   * where everyone who prepares reads it.
+   */
+  private async requirePreparing(encounter: CodingEncounter): Promise<void> {
+    if (await this.consultation.find(encounter.id)) {
+      throw new AssistantPreparationOverError();
+    }
   }
 
   /** AS-165, AS-166. Answered after the attention's own refusals. */

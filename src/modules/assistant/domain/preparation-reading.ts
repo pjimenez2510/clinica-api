@@ -1,8 +1,16 @@
-import type { DictatedVitalField } from './dictated-vitals';
-import { readDictatedVitals } from './dictated-vitals';
+import {
+  FIELD_OF,
+  readDictatedVitals,
+  type DictatedVitalField,
+} from './dictated-vitals';
 import { lineOf, type TranscriptLine } from './note-draft';
 import { foldText } from './problem-coding';
-import { spokenNumbers, type HeightPosition } from './vitals-dictation';
+import {
+  joinedNumbers,
+  ownersOf,
+  spokenNumberRuns,
+  type HeightPosition,
+} from './vitals-dictation';
 import { PLAUSIBLE, type PlausibleRange } from './vitals-plausibility';
 
 /**
@@ -114,40 +122,40 @@ const POSITION_WORDS: Readonly<Record<HeightPosition, RegExp>> = {
 };
 
 /**
- * AS-247. The numbers a phrase says, and the readings two numbers said
- * together have: a height in metres («uno sesenta» is 1.60), a tenth after its
- * whole («treinta y seis ocho» is 36.8) and a pressure written as one number
- * («110,70»).
+ * AS-247. The numbers a phrase says, and, for the field they are read for,
+ * the readings two numbers said ONE RIGHT AFTER THE OTHER have: a height in
+ * metres («uno sesenta» is 1.60), a tenth after its whole for a temperature
+ * or a haemoglobin («treinta y seis ocho» is 36.8), and a pressure written as
+ * one number («110,70»). Numbers with words between them never join: «desde
+ * hace 2 días con fiebre de 38» says 2 and 38, never 2.38 (revisión).
  */
-export function saidIn(phrase: string): number[] {
-  const numbers = spokenNumbers(phrase);
-  const said = [...numbers];
-  numbers.forEach((first, at) => {
-    const second = numbers[at + 1];
-    if (
-      (first === 1 || first === 2) &&
-      second !== undefined &&
-      Number.isInteger(second) &&
-      second < 100
-    ) {
-      said.push(first + second / 100);
-    }
-    // «treinta y seis ocho»: a tenth said after its whole.
-    if (
-      Number.isInteger(first) &&
-      first >= 10 &&
-      second !== undefined &&
-      Number.isInteger(second) &&
-      second <= 9
-    ) {
-      said.push(first + second / 10);
-    }
-  });
-  for (const pair of phrase.matchAll(/\b(\d{2,3})[.,](\d{2,3})\b/g)) {
-    said.push(Number(pair[1]), Number(pair[2]));
+export function saidIn(phrase: string, field?: DictatedVitalField): number[] {
+  const said: number[] = [];
+  for (const run of spokenNumberRuns(phrase)) {
+    run.forEach((number, at) => {
+      said.push(number.value);
+      const pair = /^(\d{2,3})[.,](\d{2,3})$/.exec(number.raw);
+      if (pair && (field === 'systolicBp' || field === 'diastolicBp')) {
+        said.push(Number(pair[1]), Number(pair[2]));
+      }
+      const next = run[at + 1];
+      if (!next) return;
+      for (const joined of joinedNumbers(number.value, next.value)) {
+        const metres = joined < 3;
+        if (metres ? field === 'heightCm' : TENTHS.has(field))
+          said.push(joined);
+      }
+    });
   }
   return said;
 }
+
+/** AS-247. The readings a tenth said after its whole belongs to. */
+const TENTHS = new Set<DictatedVitalField | undefined>([
+  'temperatureC',
+  'hemoglobinGDl',
+  'hemoglobinCorrectedGDl',
+]);
 
 /**
  * AS-245 to AS-250. The model's answer, believed only where the transcript
@@ -160,15 +168,28 @@ export function readPreparationAnswer(input: {
   markers: ReadonlyMap<string, TranscriptLine>;
   restore: (text: string) => string;
 }): PreparationProposal {
-  const { answer, markers, restore } = input;
+  const { answer, markers, restore, lines } = input;
   const unclear = new Set<DictatedVitalField>();
   const found = new Map<DictatedVitalField, Provenanced<number>[]>();
+  const speakerOf = new Map(
+    answer.lines.map((each) => [each.line.trim().replace(/^\[|\]$/g, '').toUpperCase(), each.speaker]), // prettier-ignore
+  );
+  const speakers = lines.map((_, at) => speakerOf.get(`L${at + 1}`) ?? 'other');
 
   for (const answered of answer.values) {
     const line = lineOf(answered.line, markers);
+    const at = line ? lines.indexOf(line) : -1;
     const quote = restore(answered.quote).trim();
+    // AS-247 (revisión M3). What the patient says («en la casa me tomé…»,
+    // «peso como setenta») is not the taking: left out, so it neither fills a
+    // box nor casts doubt on what whoever prepares measured and said.
+    if (line !== null && speakers[at] === 'patient') continue;
     const value =
-      line !== null && holds(line.text, quote) && says(quote, answered.said)
+      line !== null &&
+      holds(line.text, quote) &&
+      says(quote, answered.said, answered.field) &&
+      ownedBy(answered.field, answered.said, quote, line, lines[at - 1]) &&
+      unitSaid(answered.field, answered.said, answered.unit, line.text)
         ? measured(answered.field, answered.said, answered.unit)
         : null;
     if (value === null) {
@@ -183,18 +204,12 @@ export function readPreparationAnswer(input: {
 
   const values = settled(found, unclear);
   const heightPosition = positionOf(answer, values, markers, restore);
-  const speakerOf = new Map(
-    answer.lines.map((each) => [each.line.trim().replace(/^\[|\]$/g, '').toUpperCase(), each.speaker]), // prettier-ignore
-  );
-  const speakers = input.lines.map(
-    (_, at) => speakerOf.get(`L${at + 1}`) ?? 'other',
-  );
 
   return {
     values,
     heightPosition,
     unclear: [...unclear],
-    complaint: complaintOf(answer, markers, speakers, input.lines, restore),
+    complaint: complaintOf(answer, markers, speakers, lines, restore),
     speakers,
   };
 }
@@ -212,26 +227,28 @@ export function readPreparationByRules(
     endAtUnknownWord: true,
   });
   const values: PreparationProposal['values'] = {};
+  const unclear = new Set(read.unclear);
   for (const [field, value] of Object.entries(read.signs) as [
     DictatedVitalField,
     number,
   ][]) {
     const saying = lines.filter((line) =>
-      saidIn(line.text).some((said) => sameAsSaid(field, value, said)),
+      saidIn(line.text, field).some((said) => sameAsSaid(field, value, said)),
     );
-    const only = saying.length === 1 ? saying[0]! : null;
-    values[field] = {
-      value,
-      startMs: only?.startMs ?? null,
-      quote: only?.text ?? null,
-    };
+    // REQ-187 (revisión M3): every value cites its phrase; one no single
+    // sentence holds is typed by hand.
+    if (saying.length !== 1) {
+      unclear.add(field);
+      continue;
+    }
+    values[field] = { value, startMs: saying[0]!.startMs, quote: saying[0]!.text }; // prettier-ignore
   }
   return {
     values,
     heightPosition: read.heightPosition
       ? { value: read.heightPosition, startMs: null, quote: null }
       : null,
-    unclear: read.unclear,
+    unclear: [...unclear],
     complaint: null,
     speakers: lines.map(() => null),
   };
@@ -252,12 +269,68 @@ function plain(text: string): string {
 }
 
 /** AS-247. The number the model says was said is one the phrase says. */
-function says(quote: string, said: number): boolean {
+function says(quote: string, said: number, field: DictatedVitalField): boolean {
   return (
     Number.isFinite(said) &&
-    saidIn(quote).some((number) => Math.abs(number - said) < 1e-9)
+    saidIn(quote, field).some((number) => Math.abs(number - said) < 1e-9)
   );
 }
+
+/**
+ * AS-247 (revisión G1). The number belongs to the field: in the sentence, up
+ * to the end of the phrase —and the sentence before, the question it may
+ * answer («¿Cuánto pesa?» «Setenta kilos»)— the field named last before the
+ * number is this one, and nothing corrected it after.
+ */
+function ownedBy(
+  field: DictatedVitalField,
+  said: number,
+  quote: string,
+  line: TranscriptLine,
+  before: TranscriptLine | undefined,
+): boolean {
+  const at = line.text.toLowerCase().indexOf(quote.toLowerCase());
+  const upTo = at < 0 ? line.text : line.text.slice(0, at + quote.length);
+  const owners = ownersOf(`${before?.text ?? ''} ${upTo}`, said);
+  const owner = owners.at(-1);
+  if (!owner || !owner.fields.some((each) => FIELD_OF[each] === field)) {
+    return false;
+  }
+  // A correction said after it, anywhere in the sentence, takes it back.
+  const whole = ownersOf(`${before?.text ?? ''} ${line.text}`, said).at(-1);
+  return !owner.superseded && !whole?.superseded;
+}
+
+/**
+ * AS-247 (revisión G2). The unit is the one said: pounds only where the
+ * sentence says pounds, kilos never where it says pounds, metres only for a
+ * number below three, and no unit at all for what has none.
+ */
+function unitSaid(
+  field: DictatedVitalField,
+  said: number,
+  unit: SaidUnit,
+  sentence: string,
+): boolean {
+  const words = plain(sentence);
+  const pounds = /(^| )(libras?|lbs?)( |$)/.test(words);
+  const kilos = /(^| )(kilos?|kilogramos?|kg)( |$)/.test(words);
+  if (field === 'weightKg') {
+    if (unit === 'lb') return pounds && !kilos;
+    return (unit === 'kg' || unit === 'none') && !pounds;
+  }
+  if (LENGTHS.has(field)) {
+    if (unit === 'm') return said < 3;
+    return (unit === 'cm' || unit === 'none') && (said >= 3 || field === 'heightCm'); // prettier-ignore
+  }
+  return unit === 'none';
+}
+
+const LENGTHS = new Set<DictatedVitalField>([
+  'heightCm',
+  'headCircumferenceCm',
+  'abdominalCircumferenceCm',
+]);
 
 /** AS-251. A value read by the rules, against a number a line says. */
 function sameAsSaid(field: DictatedVitalField, value: number, said: number) {
@@ -350,8 +423,10 @@ function complaintOf(
   if (!said) return null;
   const line = lineOf(said.line, markers);
   if (line === null || speakers[lines.indexOf(line)] !== 'patient') return null;
-  const text = restore(said.quote).trim();
-  if (text.length > LONGEST_COMPLAINT || !holds(line.text, text)) return null;
+  const quote = restore(said.quote).trim();
+  // Revisión G3: the whole sentence, so a «no» before the phrase is never cut off.
+  const text = line.text.trim();
+  if (text.length > LONGEST_COMPLAINT || !holds(text, quote)) return null;
   return { text, startMs: line.startMs };
 }
 
@@ -379,13 +454,14 @@ export function sentencesOf(
       from = at + piece.length;
       return line.startMs + Math.floor((span * at) / line.text.length);
     });
-    // Strictly increasing, and inside the line, however the letters fall.
+    // Strictly increasing, however the letters fall (revisión M3): a line too
+    // short for its sentences spills past its end rather than repeat a start.
     for (let at = 1; at < starts.length; at++) {
-      starts[at] = Math.min(Math.max(starts[at]!, starts[at - 1]! + 1), line.endMs - (starts.length - at)); // prettier-ignore
+      starts[at] = Math.max(starts[at]!, starts[at - 1]! + 1);
     }
     return pieces.map((text, at) => ({
       startMs: starts[at]!,
-      endMs: starts[at + 1] ?? line.endMs,
+      endMs: starts[at + 1] ?? Math.max(line.endMs, starts[at]! + 1),
       text,
     }));
   });

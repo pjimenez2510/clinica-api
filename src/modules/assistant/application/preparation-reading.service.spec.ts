@@ -140,7 +140,7 @@ describe('AS-245 AS-251 AS-252 PreparationReadingService', () => {
         heartRate: { value: 72, startMs: 6_000, quote: 'pulso 72' },
       },
       unclear: [],
-      complaint: { text: 'Me duele la espalda y el pecho', startMs: 3_000 },
+      complaint: { text: 'Me duele la espalda y el pecho.', startMs: 3_000 },
     });
     expect(reading.lines.map((line) => line.speaker)).toEqual(['nursing', 'patient', 'nursing']); // prettier-ignore
     expect(pseudonymize).toHaveBeenCalledWith(
@@ -220,5 +220,14 @@ describe('AS-245 AS-251 AS-252 PreparationReadingService', () => {
     for (const said of ['espalda', 'Presión', 'Quishpe', '120']) {
       expect(text).not.toContain(said);
     }
+  });
+});
+
+describe('PreparationReadingService, revisión', () => {
+  it('AS-245 the same preparation read again with nothing new said costs nothing', async () => {
+    const { service, generate } = scene();
+    await service.read(ENCOUNTER_ID, REQUESTER);
+    await expect(service.read(ENCOUNTER_ID, REQUESTER)).resolves.toMatchObject({ reader: 'assistant' }); // prettier-ignore
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 });

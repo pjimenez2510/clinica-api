@@ -37,7 +37,7 @@ export interface DictatedVitals {
  * AS-183. The taking keeps one temperature and form 020 does not say where it
  * was taken, so SigmAI's oral and axillary land in the same field.
  */
-const FIELD_OF: Readonly<Record<VitalField, DictatedVitalField>> = {
+export const FIELD_OF: Readonly<Record<VitalField, DictatedVitalField>> = {
   systolic: 'systolicBp',
   diastolic: 'diastolicBp',
   heartRate: 'heartRate',

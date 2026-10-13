@@ -53,9 +53,11 @@ describe('AS-247 saidIn: the numbers a phrase says', () => {
     expect(saidIn('treinta y seis y medio de temperatura')).toContain(36.5);
     expect(saidIn('Hemoglobina 22.5')).toContain(22.5);
     expect(saidIn('frecuencia respiratoria 92,5')).toContain(92.5);
-    expect(saidIn('Mide uno sesenta')).toContain(1.6);
+    expect(saidIn('Mide uno sesenta', 'heightCm')).toContain(1.6);
     expect(saidIn('Presión 120/80')).toEqual(expect.arrayContaining([120, 80]));
-    expect(saidIn('temperatura treinta y seis ocho')).toContain(36.8);
+    expect(saidIn('temperatura treinta y seis ocho', 'temperatureC')).toContain(
+      36.8,
+    );
   });
 
   it('AS-247 says no number where there is none', () => {
@@ -86,7 +88,7 @@ describe('AS-246 AS-247 readPreparationAnswer: the number comes from the phrase'
 
   it('AS-247 refuses a phrase that is not in its line, and a line it was never given', () => {
     const elsewhere = read({
-      values: [{ field: 'diastolicBp', line: 'L2', quote: 'presión diastólica 100', said: 100, unit: 'none' }], // prettier-ignore
+      values: [{ field: 'diastolicBp', line: 'L1', quote: 'presión diastólica 100', said: 100, unit: 'none' }], // prettier-ignore
     });
     expect(elsewhere.unclear).toEqual(['diastolicBp']);
     const unknown = read({
@@ -215,7 +217,7 @@ describe('AS-249 AS-250 readPreparationAnswer: the reason, and who said each lin
     const proposal = read({
       complaint: { line: 'L2', quote: 'Me duele la espalda y el pecho' },
     });
-    expect(proposal.complaint).toEqual({ text: 'Me duele la espalda y el pecho', startMs: 3_000 }); // prettier-ignore
+    expect(proposal.complaint).toEqual({ text: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }); // prettier-ignore
   });
 
   it('AS-249 proposes no reason from a line of the nurse, nor one that is not in its line', () => {
@@ -275,5 +277,95 @@ describe('AS-250 sentencesOf: who speaks changes within a window of the recognis
   it('AS-250 leaves a line of one sentence as it is', () => {
     const line = { startMs: 3_000, endMs: 5_000, text: 'Pulso 72' };
     expect(sentencesOf([line])).toEqual([line]);
+  });
+});
+
+describe('AS-247 AS-249 the barrier against what the review found (13-10-2026)', () => {
+  const one = (
+    text: string,
+    values: AnsweredPreparation['values'],
+    speaker: 'nursing' | 'patient' = 'nursing',
+  ) => {
+    // prettier-ignore
+    const lines = [{ startMs: 0, endMs: 4_000, text }];
+    return readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker }], values, heightPosition: null, complaint: null }, // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (phrase) => phrase,
+    });
+  };
+
+  it('AS-247 never joins numbers with words between them', () => {
+    expect(saidIn('Desde hace 2 días con fiebre de 38', 'heightCm')).not.toContain(2.38); // prettier-ignore
+    expect(saidIn('Tengo 38 de fiebre desde hace 3 días', 'temperatureC')).not.toContain(38.3); // prettier-ignore
+    expect(saidIn('tomo 1 pastilla y peso 70 kilos', 'heightCm')).not.toContain(1.7); // prettier-ignore
+    expect(one('Temperatura treinta y siete desde hace cinco días.', [{ field: 'temperatureC', line: 'L1', quote: 'Temperatura treinta y siete desde hace cinco', said: 37.5, unit: 'none' }]).unclear).toEqual(['temperatureC']); // prettier-ignore
+  });
+
+  it('AS-247 a number goes only to the field named before it (saturation and pulse swapped)', () => {
+    const swapped = one('Saturación noventa y ocho, pulso ochenta y ocho.', [
+      { field: 'oxygenSaturation', line: 'L1', quote: 'ochenta y ocho', said: 88, unit: 'none' }, // prettier-ignore
+      { field: 'heartRate', line: 'L1', quote: 'noventa y ocho', said: 98, unit: 'none' }, // prettier-ignore
+    ]);
+    expect(swapped.values).toEqual({});
+    expect(swapped.unclear.sort()).toEqual(['heartRate', 'oxygenSaturation']);
+    // Control: the right fields pass.
+    const right = one('Saturación noventa y ocho, pulso ochenta y ocho.', [
+      { field: 'oxygenSaturation', line: 'L1', quote: 'Saturación noventa y ocho', said: 98, unit: 'none' }, // prettier-ignore
+      { field: 'heartRate', line: 'L1', quote: 'pulso ochenta y ocho', said: 88, unit: 'none' }, // prettier-ignore
+    ]);
+    expect(right.values).toMatchObject({ oxygenSaturation: { value: 98 }, heartRate: { value: 88 } }); // prettier-ignore
+  });
+
+  it('AS-247 the answer to a question belongs to the field the question named', () => {
+    const lines = [
+      { startMs: 0, endMs: 2_000, text: '¿Cuánto pesa?' },
+      { startMs: 2_000, endMs: 4_000, text: 'Setenta kilos.' },
+    ];
+    const proposal = readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker: 'nursing' }, { line: 'L2', speaker: 'nursing' }], values: [{ field: 'weightKg', line: 'L2', quote: 'Setenta kilos', said: 70, unit: 'kg' }], heightPosition: null, complaint: null }, // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (phrase) => phrase,
+    });
+    expect(proposal.values.weightKg?.value).toBe(70);
+  });
+
+  it('AS-247 the unit is the one said: pounds only where pounds were said, never kilos', () => {
+    expect(one('Pesa ciento cincuenta libras.', [{ field: 'weightKg', line: 'L1', quote: 'Pesa ciento cincuenta libras', said: 150, unit: 'kg' }]).unclear).toEqual(['weightKg']); // prettier-ignore
+    expect(one('Pesa 70 kilos.', [{ field: 'weightKg', line: 'L1', quote: 'Pesa 70 kilos', said: 70, unit: 'lb' }]).unclear).toEqual(['weightKg']); // prettier-ignore
+    expect(one('Pulso 72.', [{ field: 'heartRate', line: 'L1', quote: 'Pulso 72', said: 72, unit: 'kg' }]).unclear).toEqual(['heartRate']); // prettier-ignore
+  });
+
+  it('AS-247 a value taken back by a correction is not proposed', () => {
+    expect(one('Presión 150 con 95, perdón, 130 con 85.', [{ field: 'systolicBp', line: 'L1', quote: 'Presión 150 con 95', said: 150, unit: 'none' }]).unclear).toEqual(['systolicBp']); // prettier-ignore
+    expect(one('Presión 150 con 95, perdón, 130 con 85.', [{ field: 'systolicBp', line: 'L1', quote: '130 con 85', said: 130, unit: 'none' }]).values.systolicBp?.value).toBe(130); // prettier-ignore
+  });
+
+  it('AS-247 what the patient says was measured elsewhere is not the taking', () => {
+    const home = one('En la casa me tomé la presión y tenía ciento sesenta con cien.', [{ field: 'systolicBp', line: 'L1', quote: 'presión y tenía ciento sesenta', said: 160, unit: 'none' }], 'patient'); // prettier-ignore
+    expect(home.values).toEqual({});
+    expect(home.unclear).toEqual([]);
+  });
+
+  it('AS-249 the reason is the whole sentence, so a «no» is never cut off', () => {
+    const lines = [{ startMs: 0, endMs: 4_000, text: 'No me duele el pecho, me duele la espalda.' }]; // prettier-ignore
+    const proposal = readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'me duele el pecho' } }, // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (phrase) => phrase,
+    });
+    expect(proposal.complaint?.text).toBe('No me duele el pecho, me duele la espalda.'); // prettier-ignore
+  });
+
+  it('AS-251 by the rules, a value no single sentence holds is typed by hand', () => {
+    const proposal = readPreparationByRules([
+      { startMs: 0, endMs: 2_000, text: 'Pulso 72.' },
+      { startMs: 2_000, endMs: 4_000, text: 'Repito, 72.' },
+    ]);
+    expect(proposal.values.heartRate).toBeUndefined();
+    expect(proposal.unclear).toContain('heartRate');
   });
 });

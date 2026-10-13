@@ -43,10 +43,18 @@ export const PREPARATION_READING_LIMIT_MS = 20_000;
 
 /**
  * AS-251. Whether the assistant may read at all: the demonstration, or the
- * remote switch on (`ASSISTANT_ALLOW_REMOTE`). Off, nothing is pseudonymized,
- * sent or trailed as sent.
+ * remote switch on (`ASSISTANT_ALLOW_REMOTE`) AND the preparation's own
+ * (`ASSISTANT_PREPARATION_REMOTE`, off until measured, P7). Off, nothing is
+ * pseudonymized, sent or trailed as sent.
  */
 export const PREPARATION_ASSISTANT = Symbol('PREPARATION_ASSISTANT');
+
+/**
+ * Revisión (seguridad): the same preparation read again with nothing new said
+ * is answered from memory, not paid again, for this long.
+ */
+const KEPT_READING_MS = 10 * 60_000;
+const KEPT_READINGS = 100;
 
 /** The audit trail's name (EN-122): the preparation left for a provider. */
 const EXPORT_RESOURCE = 'assistant_preparation_reading';
@@ -79,6 +87,8 @@ export interface PreparationReading extends Omit<
 @Injectable()
 export class PreparationReadingService {
   private readonly logger = new Logger(PreparationReadingService.name);
+  /** By attention: the last reading by the assistant, the stretch it read, and when. */
+  private readonly kept = new Map<string, { upToMs: number; at: number; proposal: PreparationProposal }>(); // prettier-ignore
 
   constructor(
     @Inject(CODING_CONTEXT_READER) private readonly context: CodingContextReader, // prettier-ignore
@@ -108,9 +118,12 @@ export class PreparationReadingService {
 
     // AS-250. Read by sentence: a line of the recogniser holds more than one turn.
     const sentences = sentencesOf(lines);
+    const upToMs = lines.reduce((most, line) => Math.max(most, line.endMs), 0);
     const proposal = this.assistant
-      ? await this.byAssistant(encounter, lines, requester)
+      ? (this.keptFor(encounter.id, upToMs) ??
+        (await this.byAssistant(encounter, lines, requester)))
       : null;
+    if (proposal) this.keep(encounter.id, upToMs, proposal);
     const read = proposal ?? readPreparationByRules(sentences);
     // AS-252. Counts and the reader: never a line, a phrase or a value.
     this.logger.log(
@@ -129,7 +142,7 @@ export class PreparationReadingService {
       reader: proposal ? 'assistant' : 'rules',
       demo: proposal !== null && this.demo,
       lines: sentences.map((line, at) => ({ ...line, speaker: speakers[at] ?? null })), // prettier-ignore
-      upToMs: lines.reduce((most, line) => Math.max(most, line.endMs), 0),
+      upToMs,
     };
   }
 
@@ -141,7 +154,7 @@ export class PreparationReadingService {
   ): Promise<PreparationProposal | null> {
     // AS-251. The deadline of the person waiting, cleared as soon as it is read.
     const deadline = new AbortController();
-    const timer = setTimeout(() => deadline.abort(), PREPARATION_READING_LIMIT_MS); // prettier-ignore
+    const timer = setTimeout(() => deadline.abort(new DOMException('plazo', 'TimeoutError')), PREPARATION_READING_LIMIT_MS); // prettier-ignore
     try {
       const people = await this.context.people(encounter.id);
       // EN-122. The conversation leaves for a provider: who asked, first.
@@ -177,6 +190,30 @@ export class PreparationReadingService {
       return null;
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private keptFor(
+    encounterId: string,
+    upToMs: number,
+  ): PreparationProposal | null {
+    // prettier-ignore
+    const kept = this.kept.get(encounterId);
+    if (!kept || kept.upToMs !== upToMs) return null;
+    return Date.now() - kept.at <= KEPT_READING_MS ? kept.proposal : null;
+  }
+
+  private keep(
+    encounterId: string,
+    upToMs: number,
+    proposal: PreparationProposal,
+  ): void {
+    // prettier-ignore
+    this.kept.delete(encounterId);
+    this.kept.set(encounterId, { upToMs, at: Date.now(), proposal });
+    // The oldest go first: a map, kept in the order of insertion.
+    while (this.kept.size > KEPT_READINGS) {
+      this.kept.delete(this.kept.keys().next().value!);
     }
   }
 

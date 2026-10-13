@@ -1,9 +1,5 @@
 import type { TranscriptLine } from '../../src/modules/assistant/domain/note-draft.ts';
-import {
-  saidIn,
-  type PreparationProposal,
-} from '../../src/modules/assistant/domain/preparation-reading.ts';
-import { foldText } from '../../src/modules/assistant/domain/problem-coding.ts';
+import type { PreparationProposal } from '../../src/modules/assistant/domain/preparation-reading.ts';
 import { quantile, wilson, type Interval } from '../stats.ts';
 
 import type { PreparationCase } from './cases.ts';
@@ -30,9 +26,10 @@ const POUND_KG = 0.45359237;
 const near = (a: number, b: number) => Math.abs(a - b) < 0.051;
 
 /**
- * SC-099, checked apart from the barrier: the phrase is inside its line,
- * compared folded, and one number it says is the value — as said, in metres
- * for a height, or in pounds for a weight.
+ * SC-099, checked apart from the barrier — with nothing of its code: the
+ * phrase is inside its line, compared folded, and it writes the value, in
+ * figures or in words, as said (or in metres for a height, in pounds for a
+ * weight).
  */
 export function literal(
   field: string,
@@ -41,13 +38,75 @@ export function literal(
   line: TranscriptLine | undefined,
 ): boolean {
   if (quote === null || line === undefined) return false;
-  if (!foldText(line.text).includes(foldText(quote).replace(/[.,;:!?¿¡]+$/u, ''))) return false; // prettier-ignore
-  return saidIn(quote).some(
-    (said) =>
-      near(said, value) ||
-      (field === 'heightCm' && near(said * 100, value)) ||
-      (field === 'weightKg' && near(Math.round(said * POUND_KG * 10) / 10, value)), // prettier-ignore
+  const phrase = fold(quote);
+  if (!fold(line.text).includes(phrase)) return false;
+  const said = [value];
+  if (field === 'heightCm') said.push(value / 100);
+  if (field === 'weightKg') {
+    const pounds = value / POUND_KG;
+    said.push(Math.round(pounds), Math.round(pounds * 2) / 2);
+  }
+  return said.some((number) =>
+    spellings(number).some((written) => ` ${phrase} `.includes(` ${written} `)),
   );
+}
+
+/** Folded, with a point or a comma kept only between two figures. */
+const fold = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/(\d)([.,])(\d)/g, '$1\u0000$2$3')
+    .replace(/[.,](?!\d)|(?<!\u0000)[.,]/g, ' ')
+    .replace(/\u0000/g, '')
+    .replace(/[^a-z0-9.,/ ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const UNITS = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve']; // prettier-ignore
+const TEENS = ['diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciseis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidos', 'veintitres', 'veinticuatro', 'veinticinco', 'veintiseis', 'veintisiete', 'veintiocho', 'veintinueve']; // prettier-ignore
+const TENS = ['', '', '', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa']; // prettier-ignore
+const HUNDREDS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos']; // prettier-ignore
+
+/** A whole number from 0 to 499, in words. */
+function words(n: number): string[] {
+  if (n < 10) return n === 1 ? ['uno', 'un'] : [UNITS[n]!];
+  if (n < 30) return [TEENS[n - 10]!];
+  if (n < 100) {
+    const unit = n % 10;
+    return unit === 0 ? [TENS[Math.floor(n / 10)]!] : words(unit).map((u) => `${TENS[Math.floor(n / 10)]} y ${u}`); // prettier-ignore
+  }
+  if (n === 100) return ['cien'];
+  const rest = n % 100;
+  const head = HUNDREDS[Math.floor(n / 100)]!;
+  return rest === 0 ? [head] : words(rest).map((r) => `${head} ${r}`);
+}
+
+/** Every way the harness accepts a number written: «36.5», «36,5», «treinta y seis y medio», «uno sesenta». */
+function spellings(n: number): string[] {
+  const out: string[] = [];
+  const whole = Math.floor(n);
+  const tenths = Math.round((n - whole) * 100);
+  if (tenths === 0) {
+    out.push(String(whole), ...words(whole));
+    return out;
+  }
+  const two = String(tenths).padStart(2, '0');
+  const decimals = two.endsWith('0') ? [two[0]!, two] : [two];
+  for (const d of decimals) {
+    out.push(`${whole}.${d}`, `${whole},${d}`, `${whole} punto ${d}`, `${whole} coma ${d}`); // prettier-ignore
+  }
+  if (tenths === 50) out.push(`${whole} y medio`, `${whole} kilos y medio`);
+  for (const w of words(whole)) {
+    for (const d of decimals) {
+      const said = words(Number(d));
+      for (const s of said) out.push(`${w} punto ${s}`, `${w} coma ${s}`, `${w} ${s}`); // prettier-ignore
+    }
+    if (tenths === 50) out.push(`${w} y medio`, `${w} kilos y medio`);
+    if (whole <= 2) for (const s of words(tenths)) out.push(`${w} metro ${s}`, `${w} metros ${s}`); // prettier-ignore
+  }
+  return out;
 }
 
 /** Where the harness puts each line of a case: ten seconds apart (`main.ts`). */
@@ -183,6 +242,10 @@ export function summarise(scored: readonly ScoredCase[]): Summary {
 
 /** SC-099 to SC-101: the verdict of one summary. */
 export function verdict(summary: Summary) {
+  // Revisión I2: a reading that did not answer is not a reading that passed.
+  if (summary.answered < summary.cases) {
+    return { sc099: false, sc100: false, sc101: false };
+  }
   return {
     sc099: summary.notLiteral === 0,
     sc100: summary.correctRate.rate >= 0.95 && summary.serious === 0 && (summary.p90Ms ?? Infinity) <= 5_000, // prettier-ignore

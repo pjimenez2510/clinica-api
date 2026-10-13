@@ -10,10 +10,12 @@ import {
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   AssistantNotEncounterOwnerError,
+  AssistantPreparationOverError,
   AssistantRecordingNotAuthorizedError,
 } from '../domain/assistant.errors';
 
 import { ListeningAccess, type ListeningRequester } from './listening-access';
+import type { ListeningStore } from './listening.store';
 
 const NOW = new Date(Date.UTC(2030, 0, 7, 15)); // fecha-fija: reloj falso de la prueba
 
@@ -30,7 +32,7 @@ function scene({
   enabled?: string[];
   authorized?: boolean;
 } = {}) {
-  const state = { enabled, authorized };
+  const state = { enabled, authorized, consulting: false };
   const encounter = { id: 'enc-1', siteId: site, patientId: 'patient-1', practitionerUserId: owner, status } as unknown as CodingEncounter; // prettier-ignore
   const context = {
     encounter: vi.fn((_id: string, sites: 'all' | readonly string[]) =>
@@ -53,6 +55,9 @@ function scene({
     () => NOW,
     { enabledSites: () => Promise.resolve(state.enabled) },
     recording,
+    {
+      find: () => Promise.resolve(state.consulting ? ({} as never) : null),
+    } as unknown as ListeningStore,
   );
   const requester: ListeningRequester = {
     userId: 'doctor',
@@ -183,8 +188,24 @@ describe('ListeningAccess, the preparation (B3)', () => {
     await expect(access.confirm(grant)).rejects.toBeInstanceOf(AssistantEncounterNotFoundError); // prettier-ignore
   });
 
-  it('AS-243 the read of the preparation needs no ownership, is trailed, and says whether the authorization stands', async () => {
-    const { access, requester } = scene({ owner: 'doctor', authorized: false, status: 'DISCHARGED' }); // prettier-ignore
+  it('AS-243 the read of the preparation needs no ownership while the attention is live, and says whether the authorization stands', async () => {
+    const { access, requester } = scene({ owner: 'doctor', authorized: false }); // prettier-ignore
     await expect(access.readPreparation('enc-1', nurse(requester))).resolves.toEqual({ recordingAuthorized: false }); // prettier-ignore
+  });
+
+  it('AS-243 once the attention is closed, only its professional reads the preparation', async () => {
+    const { access, requester } = scene({ owner: 'doctor', status: 'DISCHARGED' }); // prettier-ignore
+    await expect(access.readPreparation('enc-1', nurse(requester))).rejects.toBeInstanceOf(AssistantEncounterClosedError); // prettier-ignore
+    await expect(access.readPreparation('enc-1', requester)).resolves.toEqual({ recordingAuthorized: true }); // prettier-ignore
+  });
+
+  it('AS-240 AS-244 the preparation is over once the consultation is listened to: no ticket, and an open one stops', async () => {
+    const { access, state, requester } = scene({ owner: 'doctor' });
+    const grant = access.redeem((await access.issuePreparation('enc-1', nurse(requester))).ticket)!; // prettier-ignore
+    state.consulting = true;
+    await expect(access.confirm(grant)).rejects.toBeInstanceOf(AssistantPreparationOverError); // prettier-ignore
+    await expect(access.issuePreparation('enc-1', nurse(requester))).rejects.toBeInstanceOf(AssistantPreparationOverError); // prettier-ignore
+    // Control: the consultation's own ticket is still given.
+    await expect(access.issue('enc-1', requester)).resolves.toMatchObject({ ticket: expect.any(String) as string }); // prettier-ignore
   });
 });

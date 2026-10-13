@@ -1,7 +1,7 @@
 {
   "origin": "invented",
-  "description": "Lo que clinica-ai oyó de cada línea de preparaciones.json dicha por una voz sintética de macOS por persona (nursing: Paulina, patient: Eddy (Español (México)), other: Mónica), sin ruido (AS-255). El audio no se guardó.",
-  "casesSha256": "800b228762795db8bb6e85038f28fb4a6900fd018de5b95cba061c44261e0c6f",
+  "description": "Lo que clinica-ai oyó de cada línea de preparaciones.json dicha por una voz sintética de macOS por persona (nursing: Paulina, patient: Eddy (Español (México)), other: Mónica), sin ruido (AS-255). El audio no se guardó. casesSha256 puesto al día el 13-10-2026: sólo cambió lo esperado de P06; las líneas son las mismas.",
+  "casesSha256": "ba6db0bcc29dd193432d80d2057c4de336f235b798304516460bebfdc8923bc5",
   "heard": [
     {
       "id": "P01",
