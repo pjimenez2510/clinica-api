@@ -249,6 +249,21 @@ módulo y un comprobante: cada uno lo atiende sólo su trabajador, y la
 integración entera del SRI sigue en verde.
 **Cubre:** SRI-105 a SRI-107. **Solo servidor:** SRI-105 a SRI-107.
 
+### S12 — El secuencial que el SRI ya tiene: renumerar lo devuelto con el error 45 _(P1, 13-10-2026)_
+
+D-262 (plan `feat-f06-secuencial-punto-emision`); el «Próximo número» de cada
+punto está en `billing/SPEC.md` B23.
+**Prueba independiente:** con el doble local del SRI declarando ocupado el
+número de la próxima factura, emitirla con `caja@` y verla devuelta con
+«45 · secuencial registrado»; en Facturación → SRI y en la fila de la factura
+leer que el SRI ya tiene ese número y pulsar «Renumerar con el siguiente
+libre»: sale con el número siguiente y otra clave, queda autorizada, el RIDE y
+el XML dicen el número nuevo, y la fila dice de qué número viene, quién y
+cuándo. Contra PostgreSQL: la base rechaza cambiar el número o la clave de una
+factura sin su fila de renumeración (control positivo: con ella entra).
+**Cubre:** SRI-108 a SRI-115. **Solo servidor:** SRI-111, SRI-112, SRI-115.
+**Solo interfaz:** SRI-113.
+
 ---
 
 ## Criterios de éxito
@@ -919,6 +934,63 @@ integración entera del SRI sigue en verde.
   > propia que olvidara su interruptor habría creado `pgboss` y trabajos en
   > la base del autor. Ahora no depende de acordarse.
 
+## 7 ter. El secuencial que el SRI ya tiene (S12, D-262)
+
+El error 45 («secuencial registrado») dice que el SRI ya tiene un comprobante
+con ese RUC, tipo, establecimiento, punto y secuencial. Reenviarlo con la misma
+clave vuelve a chocar (SRI-058 no sirve), y el número no es nuestro aunque la
+base no lo tenga: salió de otra base o de otro sistema con el mismo RUC. Como el
+SRI nunca autorizó este comprobante, no hay nada que anular: se le da otro
+número. SRI-005 sigue valiendo para todo lo demás — 43 y 70 nunca regeneran la
+clave.
+
+- **SRI-108** — CUANDO el SRI devuelva un comprobante (`DEVUELTA`) cuyos
+  errores sean todos el `45`, el sistema DEBERÁ servirlo como renumerable
+  (`renumberable`) en el monitor y en el resumen de su factura o nota de
+  crédito, MIENTRAS siga `RETURNED`, no tenga número de autorización y ningún
+  intento suyo haya recibido `AUTORIZADO`.
+  > D-262 §1. «Todos el 45»: con otro error al lado, renumerar no basta y
+  > ocultaría ese otro. **Confirmar con:** contador.
+- **SRI-109** — CUANDO quien tenga `billing:write` en la sede del comprobante
+  pida renumerar uno renumerable, el sistema DEBERÁ, en una transacción, tomar
+  el siguiente secuencial de su punto y tipo (`billing` BI-308), registrar en
+  `voucher_renumbering` el secuencial y la clave anteriores, el nuevo, el
+  mensaje del SRI, quién y cuándo, dejar el comprobante anterior `SUPERSEDED`
+  sin documento —con sus intentos y su XML firmado— y su factura o nota de
+  crédito `ISSUED` con el número nuevo y sin clave; y después DEBERÁ preparar,
+  firmar y encolar uno nuevo con clave nueva (otro secuencial y otro código
+  numérico) y la misma fecha de emisión, receptor, líneas y forma de pago. Las
+  renumeraciones de un documento DEBERÁN servirse en el monitor y en su
+  resumen (anterior, nuevo, quién y cuándo).
+  > La cuenta, los cargos, los cobros y el correo del comprador no se tocan: son
+  > de la factura, no de su número.
+- **SRI-110** — SI el comprobante no es renumerable (otro estado, otro código,
+  autorizado alguna vez, de un documento desistido, o renumerado ya por otra
+  persona) ENTONCES el sistema DEBERÁ rechazarlo con
+  `SRI_VOUCHER_NOT_RENUMBERABLE` sin tocar nada; y SI es de una sede fuera del
+  alcance ENTONCES DEBERÁ responder `SRI_VOUCHER_NOT_FOUND`.
+- **SRI-111** — La base DEBERÁ rechazar que cambien el secuencial o la clave de
+  acceso de una factura o una nota de crédito, que un comprobante pierda su
+  documento y que pase a `SUPERSEDED`, salvo cuando una fila de
+  `voucher_renumbering` nombre ese cambio (comprobante, número y clave
+  anteriores y número nuevo) y el comprobante estuviera `RETURNED` sin
+  autorización; y `voucher_renumbering` NO DEBERÁ admitir `UPDATE` ni
+  `DELETE`.
+- **SRI-112** — Un comprobante `SUPERSEDED` NO DEBERÁ enviarse, consultarse,
+  reintentarse, barrerse ni aparecer en el monitor como pendiente; un trabajo
+  de la cola que lo encuentre DEBERÁ terminar sin llamar al SRI.
+- **SRI-113** — CUANDO un comprobante sea renumerable, el monitor y la fila de
+  su factura o nota de crédito DEBERÁN decir «El SRI ya tiene ese número: este
+  comprobante nunca fue autorizado. Renumérelo con el siguiente libre.» y
+  ofrecer «Renumerar con el siguiente libre» a quien tenga `billing:write`; y
+  la fila de un documento renumerado DEBERÁ decir de qué número viene.
+- **SRI-114** — CUANDO el comprobante renumerado vuelva con el error 45, el
+  sistema DEBERÁ ofrecerlo otra vez como renumerable, con el siguiente.
+- **SRI-115** — El doble local del SRI DEBERÁ devolver `DEVUELTA` con el `45`
+  a un comprobante cuyo RUC, tipo, establecimiento, punto y secuencial ya
+  recibió con otra clave, o que se le declararon ocupados
+  (`POST /__double/state` con `taken`), para probar todo esto sin `celcer`.
+
 ## 8. Códigos de error nuevos
 
 | Código                       | Categoría | Cuándo                                                                                       |
@@ -932,6 +1004,7 @@ integración entera del SRI sigue en verde.
 | `SRI_RESEND_FAILED`          | 503       | SRI-096. El servidor de correo no aceptó el reenvío; no va a la cola                         |
 | `SRI_RESEND_DAILY_LIMIT`     | 429       | SRI-101. Quien pide ya hizo hoy los reenvíos del tope diario                                 |
 | `SRI_RESEND_DELIVERY_NOT_FAILED` | 409   | SRI-099. Sin `billing:write`, sólo se reenvía un correo que no salió                         |
+| `SRI_VOUCHER_NOT_RENUMBERABLE` | 409 | SRI-110. Sólo se renumera lo devuelto únicamente con el 45 y nunca autorizado |
 
 ## 9. La conexión real, que hace el autor
 
@@ -972,6 +1045,7 @@ el autor quiera hacerlo:
 | SRI-095, SRI-099 a SRI-101                             | Integración por HTTP con PostgreSQL real: la entrega `SENT` sólo a la dirección del comprador, la fila de envío, el disparador de sólo inserción por SQL directo con control positivo, el tope diario |
 | SRI-102                                                | Unitarias del inspector con un `.p12` que lleva la extensión; integración por HTTP de la carga y del estado               |
 | SRI-103, SRI-104                                       | Integración contra PostgreSQL y el doble del SRI                                                                            |
+| SRI-108 a SRI-115 | Unitarias de lo renumerable; integración contra PostgreSQL real y el doble del SRI respondiendo 45 (renumerar, autorizar, repetir el 45, dos pedidos a la vez); SRI-111 por SQL directo con control positivo; e2e del recorrido de caja |
 | SRI-085 a SRI-090                                      | Unitarias del XML contra el XSD oficial y de la firma; integración contra PostgreSQL (SRI-086 por SQL directo) y el doble del SRI; e2e del recorrido de caja                                                 |
 
 ## 11. Preguntas abiertas
