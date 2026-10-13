@@ -38,7 +38,8 @@ describe('AS-254 the demonstration reads a preparation without a network', () =>
     });
     expect(proposal.heightPosition).toMatchObject({ value: 'STANDING' });
     expect(proposal.complaint).toEqual({
-      text: 'Me duele la espalda y el pecho desde ayer.',
+      text: 'Dolor en la espalda y el pecho desde ayer.',
+      quote: 'Me duele la espalda y el pecho desde ayer.',
       startMs: 3_000,
     });
     expect(proposal.speakers).toEqual(['nursing', 'patient', 'nursing', 'nursing', 'nursing', 'nursing', 'other']); // prettier-ignore
@@ -53,5 +54,26 @@ describe('AS-254 the demonstration reads a preparation without a network', () =>
       restore: (phrase) => phrase,
     });
     expect(proposal.unclear).toEqual(['respiratoryRate']);
+  });
+});
+
+describe('AS-283 the demonstration words the reason without a network', () => {
+  it('AS-283 drops the fillers and the «tengo» at the start, says «se siente», and the barrier believes it', () => {
+    const lines = [
+      { startMs: 0, endMs: 3_000, text: 'Buenos días, ¿qué le trae por aquí?' },
+      { startMs: 3_000, endMs: 9_000, text: 'Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada.' }, // prettier-ignore
+    ];
+    const { text, markers } = conversationOf(lines);
+    const proposal = readPreparationAnswer({
+      answer: preparationAnswer.parse(preparationOf(text)),
+      lines,
+      markers,
+      restore: (phrase) => phrase,
+    });
+    expect(proposal.complaint).toEqual({
+      text: 'Dolor de cabeza muy fuerte desde hace dos días y se siente mareada.',
+      quote: lines[1]!.text,
+      startMs: 3_000,
+    });
   });
 });

@@ -2581,8 +2581,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > pasan, y entonces queda lo literal, que nunca se inventa.
 - **AS-283** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el lector de
   demostración DEBERÁ redactar el motivo sin red: quitar del comienzo de la
-  frase las muletillas y los vocativos y un «tengo», y pasar «me siento» a
-  «se siente»; y su redacción DEBERÁ pasar las mismas barreras (AS-282).
+  frase las muletillas y los vocativos y un «tengo», empezar «me duele…»
+  como «Dolor en…» y pasar «me siento» a «se siente»; y su redacción DEBERÁ
+  pasar las mismas barreras (AS-282).
 - **AS-284** — El arnés (`pnpm eval:preparacion`) DEBERÁ medir además un set
   propio (`eval/casos/preparaciones-motivo.json`, inventado, escrito antes
   de medir) con la frase del autor tal como la escribió el reconocedor,

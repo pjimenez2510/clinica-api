@@ -39,9 +39,9 @@ export const preparationReadingSchema = z.object({
     .nullable(),
   /** AS-247, AS-248. Named but not proposed: typed by hand. */
   unclear: z.array(field),
-  /** AS-249. The patient's own phrase. */
+  /** AS-249, AS-282. The reason proposed, and the patient's sentence it comes from. */
   complaint: z
-    .object({ text: z.string(), startMs: z.number().int() })
+    .object({ text: z.string(), quote: z.string(), startMs: z.number().int() })
     .nullable(),
   /** How far the transcript read goes, in the listening's clock. */
   upToMs: z.number().int(),

@@ -53,7 +53,11 @@ describe('AS-255 the scoring of a preparation', () => {
         values: { systolicBp: v(120, 'Presión 120 con 80'), diastolicBp: v(70, 'Presión 120 con 80'), heartRate: v(80, 'Presión 120 con 80') }, // prettier-ignore
         heightPosition: null,
         unclear: ['weightKg'],
-        complaint: { text: 'Me duele la cabeza.', startMs: 10_000 },
+        complaint: {
+          text: 'Me duele la cabeza.',
+          quote: 'Me duele la cabeza.',
+          startMs: 10_000,
+        },
         speakers: ['nursing', 'patient', 'patient'],
       },
     });
@@ -74,7 +78,7 @@ describe('AS-255 the scoring of a preparation', () => {
 
   it('SC-101 a reason proposed where the patient gave none is invented; an unanswered reading counts apart', () => {
     const none = { ...ITEM, complaint: null };
-    const scored = scoreCase({ item: none, arm: 'oido', voice: 'x', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], complaint: { text: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
+    const scored = scoreCase({ item: none, arm: 'oido', voice: 'x', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], complaint: { text: 'Me duele la cabeza.', quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
     expect(scored.complaint).toBe('invented');
     const failed = scoreCase({ item: ITEM, arm: 'oido', voice: 'x', lines: LINES, latencyMs: null, reading: null }); // prettier-ignore
     expect(summarise([failed])).toMatchObject({ cases: 1, answered: 0, expected: 0 }); // prettier-ignore

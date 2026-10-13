@@ -217,7 +217,7 @@ describe('AS-249 AS-250 readPreparationAnswer: the reason, and who said each lin
     const proposal = read({
       complaint: { line: 'L2', quote: 'Me duele la espalda y el pecho' },
     });
-    expect(proposal.complaint).toEqual({ text: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }); // prettier-ignore
+    expect(proposal.complaint).toEqual({ text: 'Me duele la espalda y el pecho desde ayer.', quote: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }); // prettier-ignore
   });
 
   it('AS-249 proposes no reason from a line of the nurse, nor one that is not in its line', () => {
@@ -408,5 +408,36 @@ describe('AS-280 the height whisper writes «150 y 8»', () => {
     const proposal = readPreparationByRules(sentencesOf(ROSA));
     expect(proposal.values.heightCm?.value).toBe(158);
     expect(proposal.values.weightKg?.value).toBe(72);
+  });
+});
+
+describe('AS-282 the reason worded as the nurse writes it, with the patient’s phrase as its source', () => {
+  const ROSA: TranscriptLine[] = [
+    { startMs: 7_000, endMs: 13_000, text: 'Ay, señorita, tengo un dolor de cabeza muy fuerte desde hace dos días y me siento mareada.' }, // prettier-ignore
+  ];
+  const reason = (written: string | undefined) =>
+    readPreparationAnswer({
+      answer: { lines: [{ line: 'L1', speaker: 'patient' }], values: [], heightPosition: null, complaint: { line: 'L1', quote: 'tengo un dolor de cabeza', written } }, // prettier-ignore
+      lines: ROSA,
+      markers: conversationOf(ROSA).markers,
+      restore: (phrase) => phrase,
+    }).complaint;
+
+  it('AS-282 proposes the wording, and keeps the whole phrase as its source', () => {
+    expect(
+      reason(
+        'Dolor de cabeza muy fuerte desde hace dos días, con sensación de mareo',
+      ),
+    ).toEqual({
+      // prettier-ignore
+      text: 'Dolor de cabeza muy fuerte desde hace dos días, con sensación de mareo',
+      quote: ROSA[0]!.text,
+      startMs: 7_000,
+    });
+  });
+
+  it('AS-282 falls back to the whole phrase when the wording adds what was not said, or is missing', () => {
+    expect(reason('Dolor de cabeza desde hace dos semanas')?.text).toBe(ROSA[0]!.text); // prettier-ignore
+    expect(reason(undefined)?.text).toBe(ROSA[0]!.text);
   });
 });

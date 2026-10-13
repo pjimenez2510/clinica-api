@@ -1,3 +1,4 @@
+import { groundedWording } from './complaint-wording';
 import {
   FIELD_OF,
   readDictatedVitals,
@@ -64,7 +65,8 @@ export interface AnsweredPreparation {
     line: string;
     quote: string;
   } | null;
-  complaint: { line: string; quote: string } | null;
+  /** AS-281. `written`: the reason worded as the nurse writes it. */
+  complaint: { line: string; quote: string; written?: string | null } | null;
 }
 
 /** AS-246. One value proposed, with where it was said (null when no single line holds it). */
@@ -79,8 +81,12 @@ export interface PreparationProposal {
   heightPosition: Provenanced<HeightPosition> | null;
   /** Named, but not proposed: typed by hand (AS-247, AS-248). */
   unclear: DictatedVitalField[];
-  /** AS-249. The patient's own phrase. */
-  complaint: { text: string; startMs: number } | null;
+  /**
+   * AS-249, AS-282. The reason proposed (`text`): its wording if the barrier
+   * believes it, else the patient's whole sentence, which is always its source
+   * (`quote`).
+   */
+  complaint: { text: string; quote: string; startMs: number } | null;
   /** AS-250. By line, in the order of the transcript; null when the rules read it. */
   speakers: (Speaker | null)[];
 }
@@ -411,7 +417,10 @@ function positionOf(
   return { value: said.position, startMs: line.startMs, quote };
 }
 
-/** AS-249. The patient's own phrase, as it is in a line the patient said. */
+/**
+ * AS-249, AS-282. The patient's own sentence, as it is in a line the patient
+ * said, and the reason worded from it when nothing of the wording is new.
+ */
 function complaintOf(
   answer: AnsweredPreparation,
   markers: ReadonlyMap<string, TranscriptLine>,
@@ -427,7 +436,9 @@ function complaintOf(
   // Revisión G3: the whole sentence, so a «no» before the phrase is never cut off.
   const text = line.text.trim();
   if (text.length > LONGEST_COMPLAINT || !holds(text, quote)) return null;
-  return { text, startMs: line.startMs };
+  const written = restore(said.written ?? '').trim();
+  const worded = groundedWording(written, text) ? written : text;
+  return { text: worded, quote: text, startMs: line.startMs };
 }
 
 /**
