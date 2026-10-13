@@ -227,6 +227,34 @@ describe('timelineOf (AS-205)', () => {
     ]);
   });
 
+  it('AS-205 reads a renewal a few days late as the same treatment, and a longer gap as a new one', () => {
+    const monthly = timelineOf({
+      visits: [],
+      lines: [
+        line(-92, { durationDays: 30 }), // ends on day -63
+        line(-61, { durationDays: 30 }), // a day late: goes on; ends -32
+        line(-25, { durationDays: 30 }), // a week late: still goes on
+      ],
+      results: [],
+      today: TODAY,
+    });
+    expect(monthly.flatMap((d) => d.items).map((i) => i.kind)).toEqual([
+      'medication-started',
+    ]);
+
+    const gap = timelineOf({
+      visits: [],
+      lines: [line(-40, { durationDays: 10 }), line(-20, { durationDays: 30 })], // prettier-ignore
+      results: [],
+      today: TODAY,
+    });
+    expect(gap.flatMap((d) => d.items.map((i) => [d.date, i.kind]))).toEqual([
+      [day(-20), 'medication-started'],
+      [day(-31), 'medication-ended'],
+      [day(-40), 'medication-started'],
+    ]);
+  });
+
   it('AS-205 writes no end for a course still running or with no days', () => {
     const days = timelineOf({
       visits: [],

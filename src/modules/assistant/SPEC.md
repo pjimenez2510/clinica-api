@@ -1851,7 +1851,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   de nuevo tras haber terminado— y el día que termina, si ya pasó y nadie lo
   volvió a recetar antes; y cada resultado **fuera de rango** —bajo, alto o
   crítico— con su valor y su bandera. Lo que se repite NO DEBERÁ escribirse
-  otra vez: un medicamento renovado antes de terminar sigue, sin línea nueva.
+  otra vez: un medicamento renovado antes de terminar, o hasta **7 días**
+  después de su último día, sigue, sin línea nueva (D-256 §2): la receta
+  mensual recogida un día tarde no es un tratamiento que se suspende.
 - **AS-206** — Las tendencias DEBERÁN poder dibujarse sin juntar lo que no se
   compara: cada resultado numérico DEBERÁ llevar la clave de su serie
   (`seriesKey`: la determinación del catálogo, o su nombre, **con su unidad**),

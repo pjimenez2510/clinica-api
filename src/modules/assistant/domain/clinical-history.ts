@@ -130,6 +130,14 @@ const OUT_OF_RANGE: ReadonlySet<HistoryFlag> = new Set([
   'CRITICAL_HIGH',
 ]);
 
+/**
+ * AS-205, D-256 §2. A prescription issued up to a week after the last day of
+ * the previous one is a RENEWAL of the same treatment, not a stop and a new
+ * start: the monthly enalapril picked up a day late would otherwise write
+ * «Termina» and «Empieza» every month and bury what did change.
+ */
+export const RENEWAL_GRACE_DAYS = 7;
+
 const STATUS_ORDER: Record<MedicationStatus, number> = {
   ACTIVE: 0,
   NO_DURATION: 1,
@@ -241,7 +249,7 @@ const nameOf = (line: PrescribedLine): string =>
  * AS-205. The history as dated lines, built from the record and nothing else.
  *
  * A medicine is written the day it starts and the day it ends; renewed before
- * its end it simply goes on. A course with no days goes on until a later one
+ * its end, or within `RENEWAL_GRACE_DAYS` of it, it simply goes on. A course with no days goes on until a later one
  * says otherwise — and writes no end. Only results out of range: the rest are
  * in «Laboratorio», and a timeline of normal glucoses hides the high one.
  */
@@ -277,7 +285,7 @@ export function timelineOf(input: {
       if (
         runningEnd !== undefined &&
         runningEnd !== null &&
-        runningEnd < issued
+        addDays(runningEnd, RENEWAL_GRACE_DAYS) < issued
       ) {
         add(runningEnd, { kind: 'medication-ended', medicationKey: key, name: nameOf(line) }); // prettier-ignore
         runningEnd = undefined;
