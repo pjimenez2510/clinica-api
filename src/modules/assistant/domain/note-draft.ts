@@ -169,7 +169,7 @@ export interface StoredDraftSection {
 
 /** AS-090, AS-144. A kept proposal of a section, read back from `ai_suggestion`. */
 export function asStoredSection(view: SuggestionView): StoredDraftSection {
-  const proposal = view.proposal as Partial<Record<'draftId' | 'section' | 'text', unknown>>; // prettier-ignore
+  const proposal = view.proposal as Partial<Record<'draftId' | 'section' | 'text', string>>; // prettier-ignore
   return {
     id: view.id,
     draftId: String(proposal.draftId ?? ''),
