@@ -943,17 +943,21 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 
 ### 14. En la pestaña Diagnósticos
 
-- **AS-043** — La pestaña Diagnósticos DEBERÁ mostrar la línea base como
-  códigos que se registran con un clic en «Registrar diagnóstico» con el código
-  puesto, y cada propuesta del modelo con borde punteado, «Propuesta», su
-  problema, su frase y sus códigos, con «Aceptar» —que abre ese diálogo con el
-  código puesto y, al guardar, la enlaza— y «Descartar»; y sin el permiso o
-  con el asistente apagado NO DEBERÁ mostrar nada de esto.
-  > Estándar de propuestas de SigmAI (`18-ESTANDAR-UI.md` §6 bis): borde
-  > punteado, «Aceptar» escribe, «Descartar»; la procedencia una vez por grupo.
+- **AS-043** — La pestaña Diagnósticos DEBERÁ mostrar cada propuesta del
+  modelo en una fila con borde punteado y «Propuesta»: su problema, su frase,
+  el código propuesto y una alternativa, con «Registrar <código>» —que abre
+  «Registrar diagnóstico» con el código puesto y, al guardar, la enlaza— y
+  «Descartar»; la línea base NO DEBERÁ verse como bloque fijo: DEBERÁ ser las
+  primeras opciones del buscador de CIE-10 al enfocarlo vacío y, al escribir,
+  las que coinciden, antes que las demás; y sin el permiso o con el asistente
+  apagado NO DEBERÁ mostrar nada de esto.
+  > Estándar de propuestas (ESTANDAR-UI §6 bis): borde punteado, «Propuesta»,
+  > la procedencia una vez. Rediseño aprobado por el autor el 12-10-2026
+  > (`fix/asistente-rediseno`): «los CIE-10 con frecuencia clínica me hacen
+  > ruido visual».
 - **AS-044** — MIENTRAS la lectura está en curso la pestaña DEBERÁ decirlo y
   seguir usable; y SI falla, ENTONCES DEBERÁ decir el motivo con «Volver a
-  pedir», sin quitar la línea base ni las propuestas que ya había.
+  pedir», sin quitar las propuestas que ya había.
 
 ### 15. El seudonimizador local (A5)
 
@@ -1141,9 +1145,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   de la atención y la atención admita contenido nuevo, la consulta DEBERÁ
   ofrecer «Escuchar»; con la escucha abierta, DEBERÁ mostrar su estado
   —«Escuchando» con el tiempo, «En pausa» con su motivo—, «Pausar»,
-  «Reanudar» y «Detener», y la transcripción en la pestaña Nota a medida que
-  llega cada línea. SI la escucha responde 404, ENTONCES NO DEBERÁ mostrar nada
-  de ella.
+  «Reanudar» y «Detener» en una sola píldora en la banda del paciente; y en la
+  pestaña Nota, la transcripción en una sola línea —«Transcripción · N frases»
+  con la última frase, que cambia a medida que llega cada línea— con «Ver
+  todo», que abre la transcripción entera en una hoja lateral no modal que no
+  se lleva el foco de la nota y sólo se cierra con su ✕. SI la escucha
+  responde 404, ENTONCES NO DEBERÁ mostrar nada de ella.
 - **AS-060** — CUANDO el canal se corte sin que el médico lo pida, la pantalla
   DEBERÁ seguir capturando en memoria —como mucho **60 s**—, pedir un vale
   nuevo, reconectar y mandar lo capturado desde el reloj que responde el
@@ -1355,7 +1362,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   asistente» y «Revise cada medicamento antes de aceptarlo», cada línea con
   borde punteado: la oración de la nota, el medicamento y la presentación del
   cuadro, la dosis, la frecuencia, la duración y la cantidad, cada campo que
-  nadie dijo marcado «Nadie lo dijo», su aviso de alergia, y «Aceptar» y
+  nadie dijo resaltado en ámbar como «Nadie lo dijo», su aviso de alergia, y «Aceptar» y
   «Descartar»; y «Confirmar la receta», que pasa las aceptadas al borrador
   abierto —o a uno nuevo— y lo guarda, sin emitirlo. Sin el permiso o con el
   asistente apagado NO DEBERÁ mostrar nada de esto; en modo demostración, cada
@@ -1517,22 +1524,39 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 ### 29. En la pestaña Nota
 
 - **AS-100** — MIENTRAS la cuenta pueda pedir el borrador (AS-086), la pestaña
-  Nota DEBERÁ mostrar «Borrador del asistente» con su estado —redactando,
-  hasta qué minuto cubre, cuánto falta, el motivo del fallo con «Volver a
-  pedir»— y «Pedir borrador»; cada sección con borde punteado y «Propuesta»,
-  lado a lado con lo que la nota tiene en esa sección, cada frase con su
-  minuto y las «Nadie lo dijo» marcadas, con «Nadie lo dijo, revise lo
-  marcado» una vez por sección; y «Aceptar» y «Descartar» por sección. SI el
-  borrador responde 404, ENTONCES NO DEBERÁ mostrar nada de esto.
+  Nota DEBERÁ mostrar sobre la nota un único aviso del borrador con su estado
+  —redactando, hasta qué minuto cubre, el motivo del fallo con «Volver a
+  pedir»— y «Pedir borrador»; con secciones propuestas, «El asistente propone
+  N secciones con lo que se dijo», «Revise lo marcado en ámbar: nadie lo
+  dijo», «Aceptar las N» y «Descartar». En cada sección: vacía, el texto
+  propuesto dentro de la casilla con borde punteado, «Propuesta» y «Aceptar» y
+  «Descartar» junto a su título; con texto del médico, una fila debajo
+  «Añadir: «…»» con «Añadir», «Reemplazar lo mío» y «Descartar»; igual a lo
+  escrito, nada; aceptada, «Aceptado del asistente» con «Deshacer». Cada
+  frase dicha DEBERÁ ir subrayada y, al tocarla, abrir la hoja de la
+  transcripción (AS-059) con su línea iluminada; lo que nadie dijo, resaltado
+  en ámbar. SI el borrador responde 404, ENTONCES NO DEBERÁ mostrar nada de
+  esto.
+  > Rediseño aprobado por el autor el 12-10-2026 (`fix/asistente-rediseno`):
+  > «el diseño de la aceptación se ve cero entendible y quita demasiado
+  > espacio».
 - **AS-101** — CUANDO el médico acepte una sección, la pantalla DEBERÁ escribir
   su texto en esa sección de la nota —en una vacía, tal cual; en una que ya
   tiene lo aceptado antes, en su lugar («Actualizar»); en una con texto del
-  médico, «Añadir» al final o «Reemplazar» tras confirmarlo—, guardarla con
+  médico, «Añadir» al final o «Reemplazar lo mío» tras confirmarlo—, guardarla con
   `If-Match` y sólo después enlazar la propuesta; SI el guardado responde que
   otra persona cambió la nota, ENTONCES NO DEBERÁ enlazarla y DEBERÁ decirlo
   (EN-284); SI el guardado falla por otra causa, ENTONCES DEBERÁ devolver la
   sección a lo que tenía; y SI lo que falla es el enlace, el siguiente
-  «Aceptar» DEBERÁ sólo enlazar, sin escribir el texto otra vez.
+  «Aceptar» DEBERÁ sólo enlazar, sin escribir el texto otra vez. «Aceptar las
+  N» DEBERÁ hacer, sección por sección, lo mismo que su «Aceptar» —en una con
+  texto del médico, «Añadir»—, sin reemplazar nada ni firmar; y «Deshacer»
+  DEBERÁ devolver la sección a lo que tenía antes de aceptar, sólo mientras
+  la pantalla lo conserve y la sección siga siendo lo que dejó la aceptación,
+  y decir «Se quitó lo aceptado del asistente»; el enlace queda en el
+  servidor y la distancia al firmar (E1) lo registra como cambiado. MIENTRAS
+  quede alguna propuesta sin decidir, junto a «Firmar…» DEBERÁ decir cuántas
+  y que no están en la nota.
 - **AS-102** — CUANDO llegue `assistant-draft`, la pantalla DEBERÁ releer el
   borrador sin recargar la página ni tocar lo que el médico está escribiendo.
 
@@ -1686,7 +1710,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   con el asistente encendido, «Proponer exámenes» y, debajo de «Propuesta del
   asistente» y «Revise cada examen antes de añadirlo», dentro del borde
   punteado, cada oración una vez, con de dónde sale (la nota o el minuto de
-  la conversación) y las palabras que nombran cada examen marcadas; debajo,
+  la conversación) y las palabras que nombran cada examen subrayadas; debajo,
   cada examen que pide, titulado con esas palabras de la propia oración
   (`named`, el lugar donde el servidor las encontró; nunca el texto del
   modelo), y sus candidatos con su nombre y su tipo, cada uno con
@@ -1707,8 +1731,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 ### 34. Lo que falta escribir, sin modelo (C3)
 
 - **AS-118** — MIENTRAS la nota 002 de la atención esté en borrador y la cuenta
-  pueda escribirla, la pestaña Nota DEBERÁ mostrar «Para completar la nota»
-  con las secciones de su plantilla que siguen vacías, en su orden y con su
+  pueda escribirla, la pestaña Nota DEBERÁ mostrar, en una franja al final de
+  la nota, «Sin escribir» con las secciones de su plantilla que siguen vacías, en su orden y con su
   título —las opcionales, señaladas como tales, como en el formulario—, sin
   llamar al servidor y con el asistente apagado o sin `assistant:use`; una
   sección DEBERÁ salir de la lista en cuanto tenga texto, sin esperar a que
@@ -1809,10 +1833,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 ### 37. En la pestaña Nota, las preguntas
 
 - **AS-128** — MIENTRAS la cuenta pueda pedir las preguntas (AS-119) y haya
-  transcripción, «Para completar la nota» DEBERÁ ofrecer «Sugerir preguntas»
-  —«Revisar de nuevo» si ya hay una revisión— y mostrar debajo de
-  «Preguntas del asistente», con borde punteado y «Propuesta», cada pregunta
-  con su minuto y su línea, y «No hace falta» en cada una; MIENTRAS revisa,
+  transcripción, la franja del final de la nota DEBERÁ ofrecer «Sugerir
+  preguntas» —«Revisar de nuevo» si ya hay una revisión— y mostrar en
+  «Podría preguntar» cada pregunta con su minuto, su línea al pasar por
+  encima y un ✕ que dice «No hace falta»; MIENTRAS revisa,
   DEBERÁ decirlo y dejar la nota usable; SI falla, ENTONCES DEBERÁ decir el
   motivo con «Volver a intentar» sin quitar las que había; y SI las preguntas
   responden 404, ENTONCES NO DEBERÁ mostrar nada del asistente, sólo lo de
