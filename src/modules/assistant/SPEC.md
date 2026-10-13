@@ -2331,7 +2331,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   reglas de AS-045 (un uso, 30 s, en memoria) sin exigir que sea el
   profesional de la atención ni `assistant:use`; SI el paciente no tiene
   vigente la autorización de grabar (AS-164), ENTONCES DEBERÁ responder
-  `ASSISTANT_RECORDING_NOT_AUTHORIZED` (409); y como AS-185: sin el permiso en
+  `ASSISTANT_RECORDING_NOT_AUTHORIZED` (409); SI la atención ya tiene escucha
+  de la consulta, ENTONCES `ASSISTANT_PREPARATION_OVER` (409): la preparación
+  termina donde empieza la consulta; y como AS-185: sin el permiso en
   ninguna sede 403, fuera del alcance 404, atención cerrada 409, asistente
   apagado 404 antes de todo. Cada vale deja su `CREATE` en la bitácora
   (`assistant_preparation_listening`).
@@ -2354,14 +2356,21 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   (`GET /v1/encounters/:id/assistant/preparation-listening`), el sistema
   DEBERÁ responder su estado, sus líneas en orden y si el paciente tiene la
   autorización de grabar (`recordingAuthorized`), con los permisos y rechazos
-  de AS-240 salvo la autorización, y dejar su `READ` en la bitácora.
+  de AS-240 salvo la autorización y la consulta empezada, y dejar su `READ`
+  en la bitácora; con la atención ya cerrada, sólo a su profesional
+  (`ASSISTANT_ENCOUNTER_CLOSED` a los demás).
   > La leen quienes pueden tomar los signos en la sede, no sólo el
   > profesional (D-260 §2; contrasta con D-247 §3).
 - **AS-244** — MIENTRAS la escucha de la preparación esté abierta, al iniciar
   o reanudar y cada ≤ 5 s, el sistema DEBERÁ volver a comprobar la sede
-  encendida, la autorización de grabar, los permisos de quien escucha en esa
-  sede y que la atención admita contenido; SI algo falta, ENTONCES DEBERÁ
-  detenerla y decir por qué, como AS-045, AS-163 y AS-166.
+  encendida, la autorización de grabar, que la consulta no haya empezado a
+  escucharse y que la atención admita contenido; SI algo falta, ENTONCES
+  DEBERÁ detenerla, sin guardar lo que el reconocedor retenía cuando la
+  causa es la autorización, la sede o la consulta, y decir por qué, como
+  AS-045, AS-163 y AS-166. Firmar la nota también la detiene (AS-143).
+  > Los permisos de quien escucha se leen al dar el vale y el canal vive como
+  > mucho lo que su sesión (15 min); no se releen cada 5 s, como en la
+  > escucha de la consulta (D-260 §12).
 
 ### 52. Leer la preparación (B3, P2, P5)
 
@@ -2390,9 +2399,20 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   **dicho** está en la frase, escrito en cifras o en palabras («ciento
   veinte», «treinta y seis y medio», «uno sesenta», «22.5»); el modelo DEBERÁ
   dar el número tal como se dijo y su unidad, y el paso de libras a
-  kilogramos y de metros a centímetros DEBERÁ hacerlo el código. SI no se
-  cumple, ENTONCES el campo NO DEBERÁ proponerse y DEBERÁ nombrarse en
-  `unclear`. **Ningún número de la propuesta sale del modelo.**
+  kilogramos y de metros a centímetros DEBERÁ hacerlo el código. Además: dos
+  números sólo se leen como uno («uno sesenta», «treinta y seis ocho») si se
+  dijeron seguidos y para el campo que les corresponde (metros para la
+  talla, décimas para temperatura y hemoglobina); el número DEBERÁ ser del
+  campo que lo nombra —el último nombrado antes de él en su frase, o en la
+  frase anterior si es la respuesta a una pregunta («¿Cuánto pesa?»
+  «Setenta kilos»), o el que le sigue con «de» («treinta y seis y medio de
+  temperatura»)— y no estar retirado por una corrección posterior
+  («perdón», «mejor dicho»); y la unidad DEBERÁ ser la dicha (libras sólo
+  donde se dijo libras, nunca kilos donde se dijo libras; metros sólo bajo
+  tres; ninguna para lo que no la lleva). SI no se cumple, ENTONCES el campo
+  NO DEBERÁ proponerse y DEBERÁ nombrarse en `unclear`. **Ningún número de
+  la propuesta sale del modelo.** Lo que dice el **paciente** (lo que se
+  midió en casa, lo que cree que pesa) NO DEBERÁ proponerse: no es la toma.
   > Es lo que hacía preferir las reglas: el modelo puede elegir de qué frase
   > sale un número y a qué casilla va, nunca escribirlo.
 - **AS-248** — SI un valor que pasa AS-247 está fuera de lo que una persona
@@ -2404,9 +2424,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   en `unclear`. La posición de la talla DEBERÁ proponerse sólo si su frase
   dice «de pie», «parado», «acostado», «echado» o «decúbito», y nunca sin la
   talla en la misma lectura.
-- **AS-249** — El motivo DEBERÁ ser la frase literal (≤ 500 caracteres) de
-  una línea que la lectura atribuye al **paciente**, que pasa AS-247 sin
-  número; SI no la hay, ENTONCES NO DEBERÁ proponerse ningún motivo.
+- **AS-249** — El motivo DEBERÁ ser la **frase entera** (≤ 500 caracteres)
+  de la transcripción que la lectura atribuye al **paciente** y que contiene
+  lo que el lector señaló, así una negación («no me duele el pecho») nunca
+  queda fuera; SI no la hay, ENTONCES NO DEBERÁ proponerse ningún motivo.
   > En palabras del paciente, como pide el formulario 020: no se resume ni se
   > reescribe, así no puede inventarse (D-260 §5).
 - **AS-250** — La lectura DEBERÁ hacerse **por frase**: cada línea de la
@@ -2422,16 +2443,23 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > (visto en el recorrido de F-03, 13-10-2026).
   > La huella de voz es un dato biométrico (LOPDP art. 26) y midió 85,8 %
   > (`PLAN-ASISTENTE-IA.md` §3).
-- **AS-251** — SI el asistente no puede leer —`ASSISTANT_ALLOW_REMOTE`
-  apagado, el techo no admite el intento, el seudonimizador o el proveedor
-  fallan, o pasan **20 s**—, ENTONCES el sistema DEBERÁ leer la
-  transcripción con las reglas (AS-253) y responder `reader: rules`, sin
-  hablantes ni motivo y con la frase de cada valor cuando una sola línea la
-  contiene; sin mandar nada al proveedor en el primer caso.
+- **AS-251** — La lectura con proveedor DEBERÁ pedir, además de
+  `ASSISTANT_ALLOW_REMOTE`, su propio interruptor
+  `ASSISTANT_PREPARATION_REMOTE`, apagado de fábrica hasta medirla (P7).
+  SI el asistente no puede leer —cualquiera de los dos apagado, el techo no
+  admite el intento, el seudonimizador o el proveedor fallan, o pasan
+  **20 s**—, ENTONCES el sistema DEBERÁ leer la transcripción con las
+  reglas (AS-253) y responder `reader: rules`, sin hablantes ni motivo, cada
+  valor con la única frase que lo dice y, si no hay una sola, en `unclear`;
+  sin mandar nada al proveedor si está apagado. La misma preparación leída
+  otra vez sin nada nuevo dicho DEBERÁ responderse de memoria (10 min), sin
+  volver a pagarla.
 - **AS-252** — Ni la propuesta, ni la transcripción, ni las frases DEBERÁN
   guardarse fuera de `transcript_segment` ni llegar al log, a `ai_run` o a un
   mensaje de error; la respuesta DEBERÁ llevar `Cache-Control: no-store`; un
   fallo se registra con su código, la atención y cifras.
+  > Con `ASSISTANT_EXCHANGE_LOG` encendido, el texto seudonimizado queda en
+  > `ai_exchange` con su purga (AS-014), como el de las demás funciones.
 - **AS-253** — La lectura con reglas (AS-181), la misma de «Dictar», DEBERÁ
   además entender la sistólica y la diastólica dichas por separado
   («presión sistólica 120», «diastólica 80»), los perímetros cefálico y
@@ -2527,6 +2555,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `NOTE_SIGN_WHILE_LISTENING`          | `ConflictError`        | 409       | Se pidió firmar mientras el asistente escucha la atención (AS-140). Vive en `encounter` |
 | `NOTE_SIGN_WHILE_DRAFTING`           | `ConflictError`        | 409       | Se pidió firmar mientras se redacta el borrador de la nota (AS-141). Vive en `encounter` |
 | `CLINICAL_HISTORY_CHART_NOT_OPEN`    | `ConflictError`        | 409       | La ficha de la historia no existe o la absorbió una unificación (AS-200)     |
+| `ASSISTANT_PREPARATION_OVER`         | `ConflictError`        | 409       | La consulta de la atención ya se escucha: la preparación terminó (AS-240, AS-244) |
 
 ## Niveles de prueba
 
