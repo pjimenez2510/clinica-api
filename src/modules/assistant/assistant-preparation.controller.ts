@@ -23,6 +23,7 @@ import {
   type AssistantSiteSwitch,
 } from '../../shared/clinical/assistant-site-switch.port';
 import { RequirePermission } from '../../shared/http/auth.decorators';
+import { Timeout } from '../../shared/http/interceptors/timeout.interceptor';
 
 import {
   ListeningAccess,
@@ -32,8 +33,10 @@ import {
   ListeningService,
   PREPARATION_LISTENING,
 } from './application/listening.service';
+import { PreparationReadingService } from './application/preparation-reading.service';
 import { withDictation } from './assistant-sites';
 import { ListeningDto, ListeningTicketDto } from './dto/listening.dto';
+import { PreparationReadingDto } from './dto/preparation.dto';
 
 /**
  * AS-240, AS-243 (B3). The preparation listened to: the ticket for the same
@@ -52,6 +55,7 @@ export class AssistantPreparationController {
     private readonly access: ListeningAccess,
     @Inject(PREPARATION_LISTENING)
     private readonly listening: ListeningService,
+    private readonly reading: PreparationReadingService,
     private readonly currentUser: CurrentUserService,
     @Inject(ASSISTANT_SITE_SWITCH)
     private readonly siteSwitch: AssistantSiteSwitch,
@@ -111,6 +115,34 @@ export class AssistantPreparationController {
       segments,
       recordingAuthorized,
     };
+  }
+
+  /**
+   * AS-245. The preparation read into a proposal for the taking's form; it
+   * writes nothing (P1) and keeps nothing (AS-252).
+   */
+  @Post('preparation-reading')
+  // AS-252. What was said is the patient's readings: no cache keeps it.
+  @Header('Cache-Control', 'no-store')
+  @RequirePermission('assistant:dictate-vitals', 'query')
+  @Throttle({ long: { ttl: 60_000, limit: 30 } })
+  // AS-251. Above the 20 s the assistant is waited for, so the rules answer
+  // and not the global 15 s of every other route.
+  @Timeout(30_000)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Leer la preparación escuchada como propuesta para la toma; no guarda nada' }) // prettier-ignore
+  @ApiOkResponse({ type: PreparationReadingDto })
+  async readPreparation(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Req() req: Request,
+  ): Promise<PreparationReadingDto> {
+    const requester = await this.requester(req);
+    return this.reading.read(encounterId, {
+      userId: requester.userId,
+      sites: requester.writeSites,
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
   }
 
   private async requester(req: Request): Promise<ListeningRequester> {

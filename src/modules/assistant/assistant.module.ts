@@ -117,6 +117,10 @@ import {
 } from './infrastructure/listening.gateway';
 import { PrismaService } from '../../shared/infrastructure/prisma/prisma.service';
 import { AssistantPreparationController } from './assistant-preparation.controller';
+import {
+  PREPARATION_ASSISTANT,
+  PreparationReadingService,
+} from './application/preparation-reading.service';
 import { PrismaListeningStore } from './infrastructure/prisma-listening.store';
 import {
   SUGGESTION_CLOCK,
@@ -252,6 +256,15 @@ const PURGE_EVERY_MS = 86_400_000;
     },
     ListeningAccess,
     ListeningGateway,
+    // AS-245 to AS-252 (B3). The preparation read into a proposal.
+    {
+      provide: PREPARATION_ASSISTANT,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): boolean =>
+        config.get('ASSISTANT_FAKE_PROVIDER', { infer: true }) === true ||
+        config.get('ASSISTANT_ALLOW_REMOTE', { infer: true }) === true,
+    },
+    PreparationReadingService,
     // AS-086 to AS-097. The draft of the note (C2), told by the listening.
     { provide: NOTE_DRAFT_STORE, useClass: PrismaNoteDraftStore },
     { provide: NOTE_DRAFT_CONTEXT_READER, useClass: PrismaNoteDraftContextReader }, // prettier-ignore

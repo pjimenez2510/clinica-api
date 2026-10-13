@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net';
 
+import type { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
@@ -13,20 +14,35 @@ import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import {
+  AI_RUN_STORE,
+  type AiRunStore,
+} from '../../src/modules/assistant/application/ai-run.store';
+import { ASSISTANT_DEMO } from '../../src/modules/assistant/application/diagnosis-proposal.service';
+import { LLM_CLIENT } from '../../src/modules/assistant/application/llm-client.port';
+import { PREPARATION_ASSISTANT } from '../../src/modules/assistant/application/preparation-reading.service';
+import {
+  PSEUDONYMIZER,
+  type Pseudonymizer,
+} from '../../src/modules/assistant/application/pseudonymizer.port';
+import {
   SPEECH_RECOGNIZER,
   type RecognitionSession,
   type RecognizerEvents,
   type SpeechRecognizer,
 } from '../../src/modules/assistant/application/speech-recognizer.port';
 import { ASSISTANT_ENABLED } from '../../src/modules/assistant/assistant-diagnosis.controller';
+import { buildLlmClient } from '../../src/modules/assistant/assistant.module';
+import { PseudonymizerFailedError } from '../../src/modules/assistant/domain/assistant.errors';
 import { BYTES_PER_MS } from '../../src/modules/assistant/domain/listening';
 import {
   LISTENING_GATEWAY_OPTIONS,
   LISTENING_PATH,
 } from '../../src/modules/assistant/infrastructure/listening.gateway';
+import { DemoPseudonymizer } from '../../src/modules/assistant/infrastructure/demo/demo.pseudonymizer';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import type { Env } from '../../src/shared/config/env.schema';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -46,6 +62,22 @@ import { closeApp, listenForTests } from './setup/http-server';
  */
 const PASSWORD = 'el caballo come alfalfa';
 const ORIGIN = 'http://localhost:3391';
+
+/** AS-254. The demonstration's script answers, as with `ASSISTANT_FAKE_PROVIDER`. */
+const demoConfig = {
+  get: (key: keyof Env) =>
+    ({
+      ASSISTANT_FAKE_PROVIDER: true,
+      ASSISTANT_ALLOW_REMOTE: false,
+      ASSISTANT_PROVIDER_TIMEOUT_MS: 60_000,
+      ASSISTANT_EXCHANGE_LOG: false,
+    })[key as string],
+} as unknown as ConfigService<Env, true>;
+
+const pseudonymizer: Pseudonymizer & { current: Pseudonymizer } = {
+  current: new DemoPseudonymizer(),
+  pseudonymize: (input, signal) => pseudonymizer.current.pseudonymize(input, signal), // prettier-ignore
+};
 
 class SecondRecognizer implements SpeechRecognizer {
   open(events: RecognizerEvents): Promise<RecognitionSession> {
@@ -94,6 +126,7 @@ describe('la escucha de la preparación (AS-240 a AS-244)', () => {
   beforeEach(async () => {
     enableBigIntSerialisation();
     prisma = db();
+    pseudonymizer.current = new DemoPseudonymizer();
 
     if (!app) {
       const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -110,6 +143,17 @@ describe('la escucha de la preparación (AS-240 a AS-244)', () => {
         .useValue(new SecondRecognizer())
         .overrideProvider(LISTENING_GATEWAY_OPTIONS)
         .useValue({ origins: [ORIGIN], helloWaitMs: 300, liveCheckMs: 200 })
+        .overrideProvider(ASSISTANT_DEMO)
+        .useValue(true)
+        .overrideProvider(PREPARATION_ASSISTANT)
+        .useValue(true)
+        .overrideProvider(PSEUDONYMIZER)
+        .useValue(pseudonymizer)
+        .overrideProvider(LLM_CLIENT)
+        .useFactory({
+          factory: (store: AiRunStore) => buildLlmClient(demoConfig, store),
+          inject: [AI_RUN_STORE],
+        })
         .compile();
       app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false }); // prettier-ignore
       configureApp(app);
@@ -346,6 +390,87 @@ describe('la escucha de la preparación (AS-240 a AS-244)', () => {
 
       expect(await ch.next('stopped')).toMatchObject({ reason: 'ASSISTANT_ENCOUNTER_CLOSED' }); // prettier-ignore
       expect(await ch.closing).toBe(4409);
+    });
+  });
+
+  describe('leer la preparación (AS-245 a AS-252)', () => {
+    const SAID = [
+      'Buenos días, ¿qué le trae por aquí?',
+      'Me duele la espalda y el pecho desde ayer.',
+      'Presión sistólica 120, presión diastólica 100.',
+      'Talla 160, se lo midió de pie.',
+    ];
+    const heard = () =>
+      prisma.transcriptSegment.createMany({
+        data: SAID.map((text, at) => ({ encounterId, scope: 'PREPARATION', startMs: at * 3_000, endMs: at * 3_000 + 2_500, text, createdAt: new Date() })), // prettier-ignore
+      });
+    const readFor = (id: string, token: string) =>
+      request(app.getHttpServer()).post(url(id, 'preparation-reading')).set('Authorization', `Bearer ${token}`); // prettier-ignore
+
+    it('AS-245 AS-252 proposes each value with its phrase and who said it, writes nothing in the taking, keeps nothing, and trails the export', async () => {
+      await authorizeRecording(prisma, patientId, doctor.userId);
+      await heard();
+
+      const response = await readFor(encounterId, nurse.token).expect(200);
+
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.body).toMatchObject({
+        reader: 'assistant',
+        demo: true,
+        upToMs: 11_500,
+        values: {
+          systolicBp: { value: 120, startMs: 6_000 },
+          diastolicBp: { value: 100, startMs: 6_000 },
+          heightCm: { value: 160, startMs: 9_000 },
+        },
+        heightPosition: { value: 'STANDING', startMs: 9_000 },
+        complaint: { text: 'Me duele la espalda y el pecho desde ayer.', startMs: 3_000 }, // prettier-ignore
+      });
+      const body = response.body as { lines: { speaker: string }[] };
+      expect(body.lines.map((line) => line.speaker)).toEqual(['nursing', 'patient', 'nursing', 'nursing']); // prettier-ignore
+      expect(await prisma.encounterVitals.findUnique({ where: { encounterId } })).toBeNull(); // prettier-ignore
+      expect(await prisma.aiSuggestion.count({ where: { encounterId } })).toBe(0); // prettier-ignore
+      expect(
+        await prisma.accessAudit.count({ where: { resourceType: 'assistant_preparation_reading', resourceId: encounterId, action: 'EXPORT', userId: nurse.userId } }), // prettier-ignore
+      ).toBe(1);
+
+      // Control: the nurse's «Guardar», by the taking's route, does write.
+      await request(app.getHttpServer()).put(`/api/v1/encounters/${encounterId}/vitals`).set('Authorization', `Bearer ${nurse.token}`).send({ systolicBp: 120, diastolicBp: 100 }).expect(200); // prettier-ignore
+      expect(await prisma.encounterVitals.findUnique({ where: { encounterId } })).not.toBeNull(); // prettier-ignore
+    });
+
+    it('AS-251 reads with the rules when the pseudonymizer fails, and says so', async () => {
+      await authorizeRecording(prisma, patientId, doctor.userId);
+      await heard();
+      pseudonymizer.current = { pseudonymize: () => Promise.reject(new PseudonymizerFailedError('unavailable')) }; // prettier-ignore
+
+      const response = await readFor(encounterId, nurse.token).expect(200);
+
+      expect(response.body).toMatchObject({
+        reader: 'rules',
+        demo: false,
+        values: { systolicBp: { value: 120 }, diastolicBp: { value: 100 }, heightCm: { value: 160 } }, // prettier-ignore
+        complaint: null,
+      });
+    });
+
+    it('AS-245 refuses an empty transcript, a patient without the authorization, reception and another site', async () => {
+      await authorizeRecording(prisma, patientId, doctor.userId);
+      const empty = await readFor(encounterId, nurse.token).expect(422);
+      expect((empty.body as { code: string }).code).toBe('ASSISTANT_TRANSCRIPT_EMPTY'); // prettier-ignore
+      await heard();
+      await readFor(encounterId, receptionToken).expect(403);
+      // Control: the same nurse reads it once there is something said.
+      await readFor(encounterId, nurse.token).expect(200);
+
+      const unauthorized = (await createEncounter(prisma, { siteId, practitionerId: doctor.practitionerId, patientId: (await createPatient(prisma)).id })).id; // prettier-ignore
+      const refused = await readFor(unauthorized, nurse.token).expect(409);
+      expect((refused.body as { code: string }).code).toBe('ASSISTANT_RECORDING_NOT_AUTHORIZED'); // prettier-ignore
+
+      const elsewhere = await createSite(prisma, 'Sede Este');
+      await enableAssistant(prisma, elsewhere.id);
+      const other = await createEncounter(prisma, { siteId: elsewhere.id, practitionerId: doctor.practitionerId, patientId }); // prettier-ignore
+      await readFor(other.id, nurse.token).expect(404);
     });
   });
 });

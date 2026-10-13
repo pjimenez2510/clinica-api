@@ -273,6 +273,17 @@ function positionIn(tokens: Token[]): HeightPosition | null {
 }
 
 /**
+ * AS-247 (B3). Every number a phrase says, as this reader understands numbers: in figures, in
+ * words («ciento veinte»), with «y medio», «punto» or «coma». What a model says was said is checked
+ * against this list, so a number the phrase does not say never reaches a field.
+ */
+export function spokenNumbers(text: string): number[] {
+  return tokenize(text).flatMap((token) =>
+    token.kind === 'number' ? [token.value] : [],
+  );
+}
+
+/**
  * «No sé» keeps its accent through the fold: whisper writes the doubt with it and the small talk
  * of a long dictation without it («no se preocupe»), and only the doubt empties a field.
  */
