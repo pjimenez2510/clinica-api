@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   HttpCode,
   HttpStatus,
   Inject,
@@ -55,8 +54,6 @@ export class AssistantNoteDraftController {
 
   /** AS-096. The latest draft and its sections. */
   @Get()
-  // Its sections are the consultation: no cache on the way keeps them (AS-096).
-  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   @ApiOperation({ summary: 'Borrador de la nota propuesto por el asistente' })
   @ApiOkResponse({ type: NoteDraftOverviewDto })
@@ -70,8 +67,6 @@ export class AssistantNoteDraftController {
 
   /** AS-086. «Pedir borrador» and «Volver a pedir»: 202, it is written apart. */
   @Post()
-  // Its sections are the consultation: no cache on the way keeps them (AS-096).
-  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   // A draft pays a call: twelve a minute is a physician asking again, not a
   // loop draining the month's ceiling. The listening asks on its own.
@@ -89,8 +84,6 @@ export class AssistantNoteDraftController {
 
   /** AS-147. «Dejar de esperar»: cancels the draft queued or being written. */
   @Post('cancel')
-  // Its sections are the consultation: no cache on the way keeps them (AS-096).
-  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   // Each one writes the trail: a physician changing their mind, not a loop.
   @Throttle({ long: { ttl: 60_000, limit: 12 } })
@@ -107,8 +100,6 @@ export class AssistantNoteDraftController {
 
   /** AS-094. Links a section to the note it was saved into. Never signs. */
   @Post('sections/:suggestionId/accept')
-  // Its sections are the consultation: no cache on the way keeps them (AS-096).
-  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Aceptar una sección del borrador guardada en la nota' }) // prettier-ignore
@@ -130,8 +121,6 @@ export class AssistantNoteDraftController {
 
   /** AS-094. Discards a section of the draft. */
   @Post('sections/:suggestionId/discard')
-  // Its sections are the consultation: no cache on the way keeps them (AS-096).
-  @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:use', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Descartar una sección del borrador' })

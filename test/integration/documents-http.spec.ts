@@ -314,7 +314,7 @@ describe('los documentos por HTTP', () => {
       showEstablishmentRuc: true,
     };
 
-    it('DOC-038 la vista previa devuelve el PDF de muestra con la identidad real y no guarda nada', async () => {
+    it('DOC-038 AU-061 la vista previa devuelve el PDF de muestra con la identidad real y no guarda nada', async () => {
       const response = await post('/documents/templates/preview', adminToken, {
         kind: 'PRESCRIPTION',
         ...slots,
@@ -328,6 +328,8 @@ describe('los documentos por HTTP', () => {
         .expect(200);
 
       expect(response.headers['content-type']).toContain('application/pdf');
+      // AU-061: the handler's own header wins over the no-store default.
+      expect(response.headers['cache-control']).toBe('no-store, private');
       const proxy = await getDocumentProxy(
         new Uint8Array(response.body as Buffer),
       );

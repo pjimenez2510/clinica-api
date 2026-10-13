@@ -40,6 +40,7 @@ import {
   createPatient,
   createSite,
 } from './setup/fixtures';
+import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 import { withReadRevision } from './setup/read-revision';
 
@@ -295,6 +296,18 @@ describe('la receta propuesta por HTTP (AS-063 a AS-077)', () => {
     await get(encounterId, doctor.token).expect(200);
   });
 
+  it('AU-061 the reading and what it shows again are the consultation: no cache keeps them', async () => {
+    const read = await post(encounterId, '/read', doctor.token).expect(200);
+    const shown = await get(encounterId, doctor.token).expect(200);
+
+    // Both carry sentences of the note.
+    expect((shown.body as { lines: unknown[] }).lines.length).toBeGreaterThan(
+      0,
+    );
+    expect(read.headers['cache-control']).toBe('no-store');
+    expect(shown.headers['cache-control']).toBe('no-store');
+    await expectPublicTariffCacheable(app.getHttpServer());
+  });
   it('AS-063 AS-064 AS-065 AS-067 AS-072 reads the note: the cuadro’s amoxicillin, 21 tablets marked, and a line outside the cuadro with its sentence only', async () => {
     const lines = await readLines();
 
