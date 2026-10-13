@@ -216,6 +216,8 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
        * the first line PROCEDURE, the second EXAM. Needs `encounterId`.
        */
       acts?: { encounterProcedureId: string; serviceOrderItemId: string };
+      /** Another point and number (SRI-111: they are not moved afterwards). */
+      number?: { emissionPointId: string; sequential: string };
     } = {},
   ) {
     const own = (options.site ?? 'own') === 'own';
@@ -282,8 +284,12 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       data: {
         accountId: account.id,
         siteId: site,
-        emissionPointId: own ? emissionPointId : otherEmissionPointId,
-        sequential: String(issued.length + 1).padStart(9, '0'),
+        emissionPointId:
+          options.number?.emissionPointId ??
+          (own ? emissionPointId : otherEmissionPointId),
+        sequential:
+          options.number?.sequential ??
+          String(issued.length + 1).padStart(9, '0'),
         ...(options.finalConsumer
           ? {
               buyerIdentificationType: '07',
@@ -860,9 +866,6 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
   });
 
   it('BI-233 con dos puntos de emisión la más reciente va primero, y el número completo distingue el punto', async () => {
-    const a = await anInvoice({ authorised: false });
-    const b = await anInvoice({ authorised: false });
-    const c = await anInvoice({ authorised: false });
     await prisma.site.update({
       where: { id: siteId },
       data: { sriEstablishmentCode: '001' },
@@ -870,19 +873,21 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     const second = await prisma.emissionPoint.create({
       data: { siteId, code: '002', description: 'Caja dos' },
     });
+    const a = await anInvoice({ authorised: false });
+    // Another point's higher sequential, issued earlier than both.
+    const b = await anInvoice({
+      authorised: false,
+      number: { emissionPointId: second.id, sequential: '000000009' },
+    });
+    const c = await anInvoice({ authorised: false });
     const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
     await prisma.invoice.update({
       where: { id: a.invoiceId },
       data: { issuedAt: daysAgo(1) },
     });
-    // Another point's higher sequential, issued earlier than both.
     await prisma.invoice.update({
       where: { id: b.invoiceId },
-      data: {
-        emissionPointId: second.id,
-        sequential: '000000009',
-        issuedAt: daysAgo(3),
-      },
+      data: { issuedAt: daysAgo(3) },
     });
 
     expect((await listed('invoices')).ids).toEqual([

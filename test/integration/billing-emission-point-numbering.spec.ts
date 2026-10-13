@@ -343,14 +343,14 @@ describe('SRI-111 el número y la clave cambian sólo con su renumeración', () 
 
     expect(
       await rejectionOf(renumberInvoice(returned.invoice.id, '000000002')),
-    ).toMatch(/invoice_number_is_permanent/);
+    ).toMatch(/invoice_(number|access_key)_is_permanent/);
     expect(
       await rejectionOf(
         context.prisma.$executeRaw`
           UPDATE "invoice" SET "access_key" = NULL
            WHERE "id" = ${returned.invoice.id}::uuid`,
       ),
-    ).toMatch(/invoice_number_is_permanent/);
+    ).toMatch(/invoice_access_key_is_permanent/);
 
     // Positive control: the same update, once the renumbering names it.
     await recordRenumbering(returned, '000000002');
@@ -371,7 +371,7 @@ describe('SRI-111 el número y la clave cambian sólo con su renumeración', () 
 
     expect(
       await rejectionOf(renumberInvoice(returned.invoice.id, '000000003')),
-    ).toMatch(/invoice_number_is_permanent/);
+    ).toMatch(/invoice_(number|access_key)_is_permanent/);
   });
 
   it('SRI-111 la base rechaza reemplazar un comprobante sin renumeración, y uno autorizado aunque la tenga', async () => {

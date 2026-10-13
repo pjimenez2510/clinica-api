@@ -341,10 +341,17 @@ BEGIN
                         AND r."new_sequential" = NEW."sequential"
                         AND r."emission_point_id" = OLD."emission_point_id"))
     THEN
-      RAISE EXCEPTION 'invoice_number_is_permanent: the number and the key of an invoice only change renumbered'
+      -- The key keeps the name SRI-005 gave its refusal.
+      IF OLD."access_key" IS NOT NULL AND NEW."access_key" IS DISTINCT FROM OLD."access_key" THEN
+        RAISE EXCEPTION 'invoice_access_key_is_permanent: the key of an invoice only changes renumbered'
+          USING ERRCODE = 'check_violation',
+                CONSTRAINT = 'invoice_number_is_permanent',
+                HINT = 'La clave de acceso no se regenera: los errores 43 y 70 significan ya enviado. Sólo una factura devuelta con el error 45 se renumera.';
+      END IF;
+      RAISE EXCEPTION 'invoice_number_is_permanent: the number of an invoice only changes renumbered'
         USING ERRCODE = 'check_violation',
               CONSTRAINT = 'invoice_number_is_permanent',
-              HINT = 'La clave de acceso no se regenera: los errores 43 y 70 significan ya enviado. Sólo una factura devuelta con el error 45 se renumera.';
+              HINT = 'El número de una factura no cambia. Sólo una factura devuelta con el error 45 se renumera.';
     END IF;
   END IF;
   RETURN NEW;
