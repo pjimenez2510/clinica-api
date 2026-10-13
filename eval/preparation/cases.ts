@@ -32,6 +32,8 @@ export const preparationCaseSchema = z.object({
   heightPosition: z.enum(['STANDING', 'LYING']).nullable(),
   /** The lines of the patient that hold the reason; null: the patient does not say one. */
   complaint: z.array(z.number().int().nonnegative()).min(1).nullable(),
+  /** AS-284. The reason must stay the patient's own sentence: a wording of it is serious. */
+  complaintLiteral: z.boolean().optional(),
 });
 export type PreparationCase = z.infer<typeof preparationCaseSchema>;
 

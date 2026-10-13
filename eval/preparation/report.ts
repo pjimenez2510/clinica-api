@@ -16,7 +16,7 @@ export function renderPreparationReport(input: {
   const byId = new Map(cases.map((item) => [item.id, item]));
   const rows = Object.entries(summaries).map(([name, s]) => {
     const v = verdicts[name]!;
-    return `| ${name} | ${s.answered}/${s.cases} | ${s.correct}/${s.expected} (${pct(s.correctRate.rate)}; ${interval(s.correctRate)}) | **${s.serious}** | **${s.notLiteral}** | ${s.complaintRight}/${s.complaintSaid} (${pct(s.complaintRate.rate)}), inventados ${s.complaintInvented}; redactados ${s.complaintWorded}/${s.complaintProposed} (${pct(s.wordedRate.rate)}; ${interval(s.wordedRate)}) | ${s.speakersRight}/${s.lines} (${pct(s.speakerRate.rate)}) | ${s.p50Ms ?? '—'} / ${s.p90Ms ?? '—'} ms | ${v.sc099 ? '✓' : '✗'} ${v.sc100 ? '✓' : '✗'} ${v.sc101 ? '✓' : '✗'} |`; // prettier-ignore
+    return `| ${name} | ${s.answered}/${s.cases} | ${s.correct}/${s.expected} (${pct(s.correctRate.rate)}; ${interval(s.correctRate)}) | **${s.serious}** | **${s.notLiteral}** | ${s.complaintRight}/${s.complaintSaid} (${pct(s.complaintRate.rate)}), inventados ${s.complaintInvented}; redactados ${s.complaintWorded}/${s.complaintProposed} (${pct(s.wordedRate.rate)}; ${interval(s.wordedRate)}), **redactados sin poder ${s.complaintUnfaithful}** | ${s.speakersRight}/${s.lines} (${pct(s.speakerRate.rate)}) | ${s.p50Ms ?? '—'} / ${s.p90Ms ?? '—'} ms | ${v.sc099 ? '✓' : '✗'} ${v.sc100 ? '✓' : '✗'} ${v.sc101 ? '✓' : '✗'} |`; // prettier-ignore
   });
   const serious = scored.flatMap((each) =>
     each.values

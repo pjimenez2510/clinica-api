@@ -278,7 +278,7 @@ async function main(): Promise<void> {
 
   for (const [name, summary] of Object.entries(summaries)) {
     const v = verdicts[name]!;
-    print(`${name}: ${summary.correct}/${summary.expected} (${(summary.correctRate.rate * 100).toFixed(1)} %), graves ${summary.serious}, fuera de su frase ${summary.notLiteral}, motivo ${summary.complaintRight}/${summary.complaintSaid} (inventados ${summary.complaintInvented}, redactados ${summary.complaintWorded}/${summary.complaintProposed}), hablante ${summary.speakersRight}/${summary.lines}, p90 ${summary.p90Ms ?? '—'} ms · SC-099 ${v.sc099 ? '✓' : '✗'} SC-100 ${v.sc100 ? '✓' : '✗'} SC-101 ${v.sc101 ? '✓' : '✗'}`); // prettier-ignore
+    print(`${name}: ${summary.correct}/${summary.expected} (${(summary.correctRate.rate * 100).toFixed(1)} %), graves ${summary.serious}, fuera de su frase ${summary.notLiteral}, motivo ${summary.complaintRight}/${summary.complaintSaid} (inventados ${summary.complaintInvented}, redactados ${summary.complaintWorded}/${summary.complaintProposed}, redactados sin poder ${summary.complaintUnfaithful}), hablante ${summary.speakersRight}/${summary.lines}, p90 ${summary.p90Ms ?? '—'} ms · SC-099 ${v.sc099 ? '✓' : '✗'} SC-100 ${v.sc100 ? '✓' : '✗'} SC-101 ${v.sc101 ? '✓' : '✗'}`); // prettier-ignore
   }
   if (Object.keys(failures).length > 0) {
     print(`Sin respuesta, por código: ${JSON.stringify(failures)}`);

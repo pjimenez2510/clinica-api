@@ -114,4 +114,17 @@ describe('AS-255 the scoring of a preparation', () => {
     expect(scored.complaintWorded).toBe(true);
     expect(summarise([scored])).toMatchObject({ complaintProposed: 1, complaintWorded: 1 }); // prettier-ignore
   });
+
+  it('AS-284 «150 y 8» is literal only where AS-280 joins, and a worded reason that had to stay literal is serious', () => {
+    const fever = { startMs: 0, endMs: 9_000, text: 'Temperatura 40 y 2.' };
+    expect(literal('temperatureC', 42, 'Temperatura 40 y 2', fever)).toBe(false); // prettier-ignore
+    expect(literal('temperatureC', 40.2, 'Temperatura 40 y 2', fever)).toBe(false); // prettier-ignore
+
+    const item = { ...ITEM, complaintLiteral: true };
+    const reading = (text: string) => ({ values: {}, heightPosition: null, unclear: [], complaint: { text, quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] }); // prettier-ignore
+    const worded = scoreCase({ item, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: reading('Dolor de cabeza.') }); // prettier-ignore
+    const kept = scoreCase({ item, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: reading('Me duele la cabeza.') }); // prettier-ignore
+    expect([worded.complaintUnfaithful, kept.complaintUnfaithful]).toEqual([true, false]); // prettier-ignore
+    expect(summarise([worded, kept])).toMatchObject({ complaintUnfaithful: 1, complaintProposed: 0 }); // prettier-ignore
+  });
 });

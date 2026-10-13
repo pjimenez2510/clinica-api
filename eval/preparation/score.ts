@@ -21,6 +21,10 @@ export interface ScoredCase {
   complaint: ComplaintOutcome;
   /** AS-284. The reason proposed reads as the nurse writes it; null: none proposed. */
   complaintWorded: boolean | null;
+  /** AS-284. The reason had to stay the patient's sentence. */
+  complaintLiteral: boolean;
+  /** AS-284. … and came out worded. */
+  complaintUnfaithful: boolean;
   speakers: { right: number; lines: number };
 }
 
@@ -54,13 +58,15 @@ export function literal(
     ? [phrase, phrase.replace(/(\d{2,3})[,./](\d{2,3})/g, '$1 $2')]
     : [phrase];
   return said.some((number) =>
-    spellings(number).some((written) =>
+    spellings(number, JOINED.has(field)).some((written) =>
       phrases.some((each) => ` ${each} `.includes(` ${written} `)),
     ),
   );
 }
 
 const PRESSURE = new Set(['systolicBp', 'diastolicBp']);
+/** AS-280. The readings where «150 y 8» is one number. */
+const JOINED = new Set([...PRESSURE, 'heightCm', 'heartRate', 'respiratoryRate', 'oxygenSaturation']); // prettier-ignore
 
 /** Folded, with a point or a comma kept only between two figures. */
 const fold = (text: string) =>
@@ -95,15 +101,16 @@ function words(n: number): string[] {
 }
 
 /** Every way the harness accepts a number written: «36.5», «36,5», «treinta y seis y medio», «uno sesenta». */
-function spellings(n: number): string[] {
+function spellings(n: number, joined = false): string[] {
   const out: string[] = [];
   const whole = Math.floor(n);
   const tenths = Math.round((n - whole) * 100);
   if (tenths === 0) {
     out.push(String(whole), ...words(whole));
-    // AS-284. How whisper writes «ciento cincuenta y ocho»: «150 y 8».
+    // AS-284. How whisper writes «ciento cincuenta y ocho»: «150 y 8», only
+    // for the readings AS-280 joins.
     const unit = whole % 10;
-    if (whole > 20 && unit > 0 && (whole - unit) % 100 !== 0) {
+    if (joined && whole > 20 && unit > 0 && (whole - unit) % 100 !== 0) {
       out.push(...[String(unit), ...words(unit)].map((u) => `${whole - unit} y ${u}`)); // prettier-ignore
     }
     return out;
@@ -187,6 +194,8 @@ export function scoreCase(input: {
     notLiteral,
     complaint,
     complaintWorded: said ? worded(said) : null,
+    complaintLiteral: item.complaintLiteral === true,
+    complaintUnfaithful: item.complaintLiteral === true && said !== null && fold(said.text) !== fold(said.quote), // prettier-ignore
     speakers: {
       // A line of the case is right when every sentence read from it is.
       right: item.lines.filter((line, index) => {
@@ -225,6 +234,8 @@ export interface Summary {
   /** AS-284. Of the reasons proposed, how many read as the nurse writes them. */
   complaintProposed: number;
   complaintWorded: number;
+  /** AS-284. Serious: worded where it had to stay literal. */
+  complaintUnfaithful: number;
   wordedRate: Interval & { rate: number };
   lines: number;
   speakersRight: number;
@@ -245,7 +256,8 @@ export function summarise(scored: readonly ScoredCase[]): Summary {
   const invented = all.filter((each) => each.outcome === 'invented').length;
   const said = answered.filter((each) => each.complaint !== 'none' && each.complaint !== 'invented'); // prettier-ignore
   const right = said.filter((each) => each.complaint === 'correct').length;
-  const proposed = answered.filter((each) => each.complaintWorded !== null);
+  // AS-284. The rate of wording, over the reasons that may be worded.
+  const proposed = answered.filter((each) => each.complaintWorded !== null && !each.complaintLiteral); // prettier-ignore
   const lines = answered.reduce((total, each) => total + each.speakers.lines, 0); // prettier-ignore
   const speakersRight = answered.reduce((total, each) => total + each.speakers.right, 0); // prettier-ignore
   const latencies = answered.flatMap((each) => (each.latencyMs === null ? [] : [each.latencyMs])); // prettier-ignore
@@ -265,6 +277,7 @@ export function summarise(scored: readonly ScoredCase[]): Summary {
     complaintInvented: answered.filter((each) => each.complaint === 'invented').length, // prettier-ignore
     complaintProposed: proposed.length,
     complaintWorded: proposed.filter((each) => each.complaintWorded).length,
+    complaintUnfaithful: answered.filter((each) => each.complaintUnfaithful).length, // prettier-ignore
     wordedRate: rateOf(proposed.filter((each) => each.complaintWorded).length, proposed.length), // prettier-ignore
     lines,
     speakersRight,

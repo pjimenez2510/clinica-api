@@ -77,3 +77,13 @@ describe('AS-283 the demonstration words the reason without a network', () => {
     });
   });
 });
+
+describe('AS-254 the demonstration tells an answer by the question before it', () => {
+  it('AS-254 a line that answers a question is the patient’s, so what the patient says is not proposed', () => {
+    const lines = ['¿Cuánto pesa usted?', 'Setenta y dos kilos, más o menos.', '¿Y cuánto mide?', 'Uno sesenta y cinco.'].map((text, at) => ({ startMs: at * 3_000, endMs: at * 3_000 + 2_500, text })); // prettier-ignore
+    const { text, markers } = conversationOf(lines);
+    const proposal = readPreparationAnswer({ answer: preparationAnswer.parse(preparationOf(text)), lines, markers, restore: (phrase) => phrase }); // prettier-ignore
+    expect(proposal.speakers).toEqual(['nursing', 'patient', 'nursing', 'patient']); // prettier-ignore
+    expect(proposal.values).toEqual({});
+  });
+});

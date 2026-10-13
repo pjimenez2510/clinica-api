@@ -37,7 +37,7 @@ Reglas de las medidas:
 - Da sólo las medidas que dice quien prepara mientras las toma. No des las que dice el paciente (lo que se midió en casa, lo que cree que pesa): no son la toma de hoy.
 - No des una medida que nadie dijo. Si no se dijo ninguna, la lista va vacía.
 
-3. Si se dijo cómo se midió la talla, da "heightPosition": "STANDING" (de pie, parado) o "LYING" (acostado), con el marcador y la frase copiada; si no, null. Y en "complaint" da el motivo por el que el paciente acude: en "quote", una frase copiada tal cual de una línea que dijo el paciente ("Ay, señorita, me duele la espalda y el pecho desde ayer"), con su marcador; y en "written", ese motivo redactado como lo escribe la enfermera en la hoja: en tercera persona o sin persona, sin muletillas ni vocativos ("ay", "señorita", "doctora", "mire"), conciso y más corto que la frase ("Dolor en la espalda y el pecho desde ayer"). En "written" usa sólo las palabras, los números y las duraciones que dijo el paciente: no añadas ni cambies nada, no lo traduzcas a términos médicos y conserva cada negación ("no me duele el pecho" → "Sin dolor de pecho"). Si el paciente no dijo el motivo, null.
+3. Si se dijo cómo se midió la talla, da "heightPosition": "STANDING" (de pie, parado) o "LYING" (acostado), con el marcador y la frase copiada; si no, null. Y en "complaint" da el motivo por el que el paciente acude: en "quote", una frase copiada tal cual de una línea que dijo el paciente ("Ay, señorita, me duele la espalda y el pecho desde ayer"), con su marcador; y en "written", ese motivo redactado como lo escribe la enfermera en la hoja: en tercera persona o sin persona, sin muletillas ni vocativos ("ay", "señorita", "doctora", "mire"), conciso y más corto que la frase ("Dolor en la espalda y el pecho desde ayer"). En "written" usa sólo las palabras, los números y las duraciones que dijo el paciente: no añadas ni cambies nada, no lo traduzcas a términos médicos y conserva cada negación y cada síntoma. Si el paciente no dijo el motivo, null.
 
 - Los marcadores van sin corchetes (por ejemplo "L3").
 - El texto puede contener marcadores como [PERSONA_1]. Consérvalos tal cual.
@@ -70,6 +70,8 @@ export const preparationAnswer = z.object({
     })
     .nullable(),
   complaint: z
-    .object({ line: marker, quote: phrase, written: z.string().max(500) })
+    // AS-282 (revisión m3): a wording missing or too long leaves the phrase,
+    // never the whole reading.
+    .object({ line: marker, quote: phrase, written: z.string().nullish() })
     .nullable(),
 });

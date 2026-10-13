@@ -189,7 +189,7 @@ describe('AS-181 AS-182 interpretDictation (SigmAI, as is)', () => {
 describe('AS-280 a tens or hundreds in figures, «y» and one unit is one number', () => {
   it('AS-280 reads «150 y 8» as 158, as whisper writes «ciento cincuenta y ocho»', () => {
     expect(interpretDictation('Talla 150 y 8 centímetros').signs.heightCm).toBe(158); // prettier-ignore
-    expect(interpretDictation('Peso 90 y 4 kilos').signs.weightKg).toBe(94);
+    expect(interpretDictation('Pulso 90 y 4').signs.heartRate).toBe(94);
     expect(interpretDictation('Talla 150 y ocho').signs.heightCm).toBe(158);
     expect(interpretDictation('Talla ciento cincuenta y ocho').signs.heightCm).toBe(158); // prettier-ignore
   });
@@ -198,5 +198,14 @@ describe('AS-280 a tens or hundreds in figures, «y» and one unit is one number
     expect(interpretDictation('Presión 120 y 80').signs).toMatchObject({ systolic: 120, diastolic: 80 }); // prettier-ignore
     expect(interpretDictation('Temperatura 36 y medio').signs.temperatureC).toBe(36.5); // prettier-ignore
     expect(interpretDictation('Peso 70 y medio').signs.weightKg).toBe(70.5);
+  });
+
+  it('AS-280 a reading said with tenths keeps them: temperature, perimeters, haemoglobin; and a weight is not joined', () => {
+    expect(interpretDictation('Temperatura 40 y 2').signs.temperatureC).toBe(40.2); // prettier-ignore
+    expect(interpretDictation('Temperatura 40 y 5 grados').signs.temperatureC).toBe(40.5); // prettier-ignore
+    expect(interpretDictation('Perímetro cefálico 40 y 5').signs.headCircumferenceCm).toBe(40.5); // prettier-ignore
+    expect(interpretDictation('Hemoglobina 20 y 5').signs.hemoglobinGDl).toBe(20.5); // prettier-ignore
+    expect(interpretDictation('Peso 70 y 5').signs.weightKg).toBeUndefined();
+    expect(interpretDictation('Presión 130 y 5 sobre 80 y 5, saturación 90 y 4').signs).toMatchObject({ systolic: 135, diastolic: 85, oxygenSaturation: 94 }); // prettier-ignore
   });
 });

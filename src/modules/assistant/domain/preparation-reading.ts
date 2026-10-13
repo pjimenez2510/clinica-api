@@ -137,7 +137,9 @@ const POSITION_WORDS: Readonly<Record<HeightPosition, RegExp>> = {
  */
 export function saidIn(phrase: string, field?: DictatedVitalField): number[] {
   const said: number[] = [];
-  for (const run of spokenNumberRuns(phrase)) {
+  // AS-280. «150 y 8» is 158 only for a reading said whole, or a height.
+  const tensAndUnit = field !== undefined && (WHOLE.has(field) || field === 'heightCm'); // prettier-ignore
+  for (const run of spokenNumberRuns(phrase, { tensAndUnit })) {
     run.forEach((number, at) => {
       said.push(number.value);
       const pair = /^(\d{2,3})[.,](\d{2,3})$/.exec(number.raw);
@@ -274,12 +276,19 @@ function plain(text: string): string {
     .trim();
 }
 
-/** AS-247. The number the model says was said is one the phrase says. */
+/**
+ * AS-247. The number the model says was said is one the phrase says — and,
+ * for a reading AS-280 does not join, not half of an «X y U»: «peso 80 y 3»
+ * could be 80.3 or 83, never a weight of 3 (revisión clínica).
+ */
 function says(quote: string, said: number, field: DictatedVitalField): boolean {
-  return (
-    Number.isFinite(said) &&
-    saidIn(quote, field).some((number) => Math.abs(number - said) < 1e-9)
-  );
+  const near = (number: number) => Math.abs(number - said) < 1e-9;
+  if (!Number.isFinite(said) || !saidIn(quote, field).some(near)) return false;
+  const apart = spokenNumberRuns(quote)
+    .flat()
+    .map((each) => each.value);
+  const joined = spokenNumberRuns(quote, { tensAndUnit: true }).flat().map((each) => each.value); // prettier-ignore
+  return !apart.some(near) || joined.some(near);
 }
 
 /**

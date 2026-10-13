@@ -378,8 +378,16 @@ describe('AS-280 the height whisper writes «150 y 8»', () => {
 
   it('AS-280 saidIn reads «150 y 8» as 158, and leaves a pressure, a half and a list as they are', () => {
     expect(saidIn('la talla 150 y 8 centímetros', 'heightCm')).toEqual([158]);
-    expect(saidIn('90 y 4')).toEqual([94]);
-    expect(saidIn('150 y ocho')).toEqual([158]);
+    expect(saidIn('saturación 90 y 4', 'oxygenSaturation')).toEqual([94]);
+    expect(saidIn('150 y ocho', 'heightCm')).toEqual([158]);
+    // Only for the readings said whole: a temperature keeps its tenth.
+    expect(saidIn('temperatura 40 y 2', 'temperatureC')).not.toContain(42);
+    expect(saidIn('peso 70 y 5', 'weightKg')).not.toContain(75);
+    expect(saidIn('150 y 8')).toEqual([150, 8]);
+    expect(saidIn('10 y 5', 'heartRate')).toEqual([10, 5]);
+    expect(saidIn('saturación 90 y 3 litros', 'oxygenSaturation')).toEqual([
+      90, 3,
+    ]);
     expect(saidIn('presión 120 y 80')).toEqual([120, 80]);
     expect(saidIn('36 y medio')).toEqual([36.5]);
     expect(saidIn('18 y 97')).toEqual([18, 97]);
@@ -402,6 +410,24 @@ describe('AS-280 the height whisper writes «150 y 8»', () => {
     });
     expect(proposal.values.heightCm).toEqual({ value: 158, startMs: 6_000, quote: 'la talla 150 y 8 centímetros' }); // prettier-ignore
     expect(proposal.unclear).toEqual([]);
+  });
+
+  it('AS-280 where «X y U» is not joined, neither of its numbers is a reading: «peso 80 y 3» is no weight of 3', () => {
+    const lines = [{ startMs: 0, endMs: 5_000, text: 'Peso 80 y 3 kilos, temperatura 40 y 2.' }]; // prettier-ignore
+    const proposal = readPreparationAnswer({
+      answer: answer({
+        lines: [{ line: 'L1', speaker: 'nursing' }],
+        values: [
+          { field: 'weightKg', line: 'L1', quote: 'Peso 80 y 3 kilos', said: 3, unit: 'kg' },
+          { field: 'temperatureC', line: 'L1', quote: 'temperatura 40 y 2', said: 40, unit: 'none' },
+        ],
+      }), // prettier-ignore
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (text) => text,
+    });
+    expect(proposal.values).toEqual({});
+    expect(proposal.unclear).toEqual(['weightKg', 'temperatureC']);
   });
 
   it('AS-280 by the rules too, the height is 158 from its one sentence', () => {
