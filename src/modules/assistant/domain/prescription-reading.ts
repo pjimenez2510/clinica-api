@@ -17,11 +17,13 @@ import {
   type SubstanceKeys,
 } from '../../../shared/clinical/allergy-match';
 import {
+  amountOf,
   DOSAGE_FORMS,
   DOSE_UNITS,
   FREQUENCIES,
   MEDICATION_ROUTES,
   matchingPresentations,
+  rangesOf,
   type DosageForm,
   type DoseUnit,
   type Frequency,
@@ -364,6 +366,122 @@ export function presentationFor(
 }
 
 /**
+ * AS-269. A strength in the cuadro's words: «500 miligramos», «500mg» and
+ * «500 MG» are «500 mg» (measured 13-10-2026: the model copies the note's
+ * spelling, and «500 miligramos» matched no presentation, so the receta came
+ * without concentration, presentation nor route). A bare figure stays bare:
+ * `choosePresentation` reads it against the presentations.
+ */
+export function writtenStrength(written: string | null): string | null {
+  if (written === null) return null;
+  const units: [RegExp, string][] = [
+    [/\b(?:miligramos?|mgs?)\b/gi, 'mg'],
+    [/\b(?:microgramos?|mcg|ug|µg)\b/gi, 'mcg'],
+    [/\b(?:gramos?|gr|g)\b/gi, 'g'],
+    [/\b(?:mililitros?|ml)\b/gi, 'mL'],
+  ];
+  let text = written.trim().replace(/(\d)\s*(?=[a-zµ])/gi, '$1 ');
+  for (const [said, unit] of units) text = text.replace(said, unit);
+  return cuadroStrength(text.replace(/\s+/g, ' ').trim());
+}
+
+/**
+ * AS-269. The strength the sentence writes right after the medicine, when
+ * the model wrote none: «paracetamol de 500» is «500», «amoxicilina 500
+ * miligramos» is «500 mg». A figure anywhere else is not the medicine's.
+ */
+export function strengthIn(sentence: string, drug: string): string | null {
+  const head = headWord(drug);
+  if (head === '') return null;
+  const match = new RegExp(
+    `${head}\\p{L}*\\s+(?:de\\s+)?(\\d+(?:[.,]\\d+)?)(\\s*(?:miligramos?|mg|microgramos?|mcg|gramos?|g)\\b)?`,
+    'u',
+  ).exec(foldText(sentence));
+  if (!match) return null;
+  return writtenStrength(`${match[1]}${match[2] ?? ''}`);
+}
+
+/** AS-270. Why a medicine of the cuadro went without presentation. */
+export type PresentationGap = 'none' | 'several';
+
+export interface PresentationChoice {
+  chosen: ChosenPresentation | null;
+  /** The strength the line carries: the written one, or the one read for a bare figure. */
+  strength: string | null;
+  /** AS-269. A bare figure was read as this presentation's strength. */
+  strengthDeduced: boolean;
+  gap: PresentationGap | null;
+}
+
+const BARE_FIGURE = /^\d+(?:[.,]\d+)?$/;
+
+/** Whether a presentation has a bare figure as its strength, in its unit or inside its range. */
+function hasFigure(presentation: Presentation, figure: number): boolean {
+  const amount = amountOf(presentation.concentration);
+  if (amount && amount.value === figure) return true;
+  return rangesOf(presentation.concentration).some(
+    (range) => figure >= range.min && figure <= range.max,
+  );
+}
+
+/**
+ * AS-269, AS-270, AS-272. The presentation of the line: the model's choice
+ * when it agrees with what was written (`presentationFor`); else the ONLY
+ * presentation of the medicine that agrees with the form and the strength
+ * written — a bare figure taken as the strength of the one that has it —;
+ * and with none or several, none, and why.
+ */
+export function choosePresentation(
+  presentations: readonly Presentation[],
+  modelChoice: Presentation | undefined,
+  said: { form: DosageForm | null; strength: string | null },
+): PresentationChoice {
+  const strength = writtenStrength(said.strength);
+  const bare = strength !== null && BARE_FIGURE.test(strength);
+  if (!bare) {
+    const own = presentationFor(modelChoice, { form: said.form, strength });
+    if (own)
+      return { chosen: own, strength, strengthDeduced: false, gap: null };
+  }
+  const agreeing = presentations.filter((presentation) => {
+    if (bare) {
+      const admitted = presentation.forms ?? [presentation.form];
+      if (said.form !== null && !admitted.includes(said.form)) return false;
+      return hasFigure(presentation, Number(strength.replace(',', '.')));
+    }
+    return (
+      presentationFor(presentation, { form: said.form, strength }) !== null
+    );
+  });
+  if (agreeing.length !== 1) {
+    return {
+      chosen: null,
+      strength: bare ? null : strength,
+      strengthDeduced: false,
+      gap: agreeing.length === 0 ? 'none' : 'several',
+    };
+  }
+  const only = agreeing[0]!;
+  if (bare) {
+    const read = RANGE.test(only.concentration)
+      ? `${strength} ${amountOf(only.concentration.split(/\s+-\s+/)[1] ?? '')?.unit ?? ''}`.trim() // prettier-ignore
+      : only.concentration;
+    return {
+      chosen: presentationFor(only, { form: said.form, strength: read }),
+      strength: read,
+      strengthDeduced: true,
+      gap: null,
+    };
+  }
+  return {
+    chosen: presentationFor(only, { form: said.form, strength }),
+    strength,
+    strengthDeduced: false,
+    gap: null,
+  };
+}
+
+/**
  * The cuadro's route (`O - Oral`) in the receta's codes. Parenteral says
  * neither vein nor muscle, so it is not guessed.
  */
@@ -467,6 +585,8 @@ export function proposedFields(
   chosen: ChosenPresentation | null,
   /** The whole note: a dose by weight written elsewhere still counts (G1). */
   note = '',
+  /** AS-269. The strength was read from a bare figure: the presentation is marked. */
+  options: { strengthDeduced?: boolean } = {},
 ): { fields: ProposedFields; unsaid: UnsaidField[]; doseByWeight: boolean } {
   const unsaid: UnsaidField[] = [];
   const doseByWeight =
@@ -476,7 +596,10 @@ export function proposedFields(
       MASS_UNITS.has(line.doseUnit));
 
   // The system chose the presentation or its form: marked (m10).
-  if (chosen && (line.strength === null || line.form === null)) {
+  if (
+    chosen &&
+    (line.strength === null || line.form === null || options.strengthDeduced)
+  ) {
     unsaid.push('presentation');
   }
   const form = chosen?.form ?? line.form;
@@ -489,9 +612,15 @@ export function proposedFields(
 
   let doseAmount = doseByWeight ? null : line.doseAmount;
   let doseUnit = doseByWeight ? null : line.doseUnit;
+  const unit = form === null ? null : DOSAGE_FORMS[form].unit;
+  // AS-272. «Una cápsula»: an amount said in units takes the form's unit;
+  // marked when the form itself was the system's.
+  if (doseAmount !== null && doseUnit === null && unit !== null) {
+    doseUnit = unit;
+    if (line.form === null) unsaid.push('dose');
+  }
   // SigmAI `per-dose.ts`: «500 mg» of a 500 mg tablet is one tablet. Exact
   // equality only: 5 mg of a 10 mg tablet is half, and is not guessed.
-  const unit = form === null ? null : DOSAGE_FORMS[form].unit;
   if (
     !doseByWeight &&
     doseAmount === null &&
@@ -616,6 +745,8 @@ export interface PrescriptionProposal {
   instructions: string | null;
   unsaid: UnsaidField[];
   doseByWeight: boolean;
+  /** AS-270. Why the medicine went without presentation; absent on older readings. */
+  presentationGap?: PresentationGap | null;
   /** AS-074. The line as one text, compared with the line saved. */
   text: string;
   /** AS-029. Written by the fake of the demonstration mode. */

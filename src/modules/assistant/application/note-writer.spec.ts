@@ -171,9 +171,15 @@ describe('writeNoteDraft', () => {
   });
 
   it('AS-088 asks for the motive of a follow-up visit and for each denied item of a compound question (SC-091 manual review)', () => {
-    expect(DRAFT_PROMPT_VERSION).toBe('c2-draft-3');
     expect(DRAFT_INSTRUCTIONS).toMatch(/control o seguimiento/);
     expect(DRAFT_INSTRUCTIONS).toMatch(/niega cada una/);
+  });
+
+  it('AS-273 writes each medicine of the plan with everything said of it, so the receta can read it (c2-draft-4)', () => {
+    expect(DRAFT_PROMPT_VERSION).toBe('c2-draft-4');
+    expect(DRAFT_INSTRUCTIONS).toMatch(/Cada medicamento que se indica hoy va en una frase propia/); // prettier-ignore
+    expect(DRAFT_INSTRUCTIONS).toMatch(/la concentración, la forma, la dosis, la vía, la frecuencia, la duración y la condición/); // prettier-ignore
+    expect(DRAFT_INSTRUCTIONS).toMatch(/No añadas lo que no se dijo/);
   });
 
   it('AS-025 an identifier still in the cleared text fails closed, before any call to the model', async () => {

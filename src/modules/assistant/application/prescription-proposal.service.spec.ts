@@ -346,7 +346,7 @@ describe('PrescriptionProposalService — reading', () => {
     expect(reading.lines[0]!.medicine).toBeNull();
   });
 
-  it('AS-066 a presentation that contradicts the written strength leaves the line without one', async () => {
+  it('AS-066 AS-270 a presentation that contradicts the written strength gives way to the only one that agrees', async () => {
     const { client } = model({
       lines: [LINE],
       choices: [{ line: 1, medicine: 1, presentation: 1 }],
@@ -356,8 +356,24 @@ describe('PrescriptionProposalService — reading', () => {
     const [line] = (await service.read('enc-1', requester())).lines;
 
     expect(line!.medicine?.code).toBe('J01CA04');
-    expect(line!.fields.concentration).toBeNull();
+    expect(line!.fields).toMatchObject({ form: 'TABLET', concentration: '500 mg', route: 'ORAL' }); // prettier-ignore
     expect(line!.fields.quantity).toBe(21);
+    expect(line!.presentationGap).toBeNull();
+  });
+
+  it('AS-269 AS-270 a strength the model left out is read from the sentence, and the presentation found with it', async () => {
+    const { client } = model({
+      lines: [{ ...LINE, strength: null, form: null, doseAmount: null, doseUnit: null }], // prettier-ignore
+      choices: [{ line: 1, medicine: 1, presentation: null }],
+    });
+    const { service } = build({ llm: client });
+
+    const [line] = (await service.read('enc-1', requester())).lines;
+
+    expect(line!.fields).toMatchObject({ form: 'TABLET', concentration: '500 mg', doseAmount: 1, doseUnit: 'TABLET' }); // prettier-ignore
+    expect(line!.unsaid).toEqual(expect.arrayContaining(['presentation', 'route', 'dose'])); // prettier-ignore
+    expect(line!.presentationGap).toBeNull();
+    expect(line!.inPrescription).toBeNull();
   });
 
   it('AS-070 with the allergies unreadable nothing is proposed and no model is called', async () => {
@@ -562,6 +578,27 @@ describe('PrescriptionProposalService — allergies, confirm and link', () => {
       { userId: DOCTOR, sites: 'all' },
     );
     await expect(service.link({ encounterId: 'enc-1', prescriptionId: 'rx-1', lines: [{ suggestionId: 'sug-1', line: 4 }] }, requester())).rejects.toBeInstanceOf(SuggestionPrescriptionMismatchError); // prettier-ignore
+  });
+
+  it('AS-275 a linked line says whether its medicine is still in a standing receta, after reloading too', async () => {
+    const codes: string[] = ['J01CA04'];
+    const stored: SuggestionView[] = [];
+    const built = build({
+      store: suggestions(stored),
+      prescribingReader: prescribing({ prescribedCodes: () => Promise.resolve([...codes]) }), // prettier-ignore
+    });
+    codes.length = 0;
+    await built.service.read('enc-1', requester());
+    Object.assign(stored[0]!, { status: 'ACCEPTED', record: { kind: 'prescription', id: 'rx-1' } }); // prettier-ignore
+
+    codes.push('J01CA04');
+    const kept = await built.service.overview('enc-1', requester());
+    expect(kept.lines[0]).toMatchObject({ status: 'ACCEPTED', prescriptionId: 'rx-1', inPrescription: true }); // prettier-ignore
+
+    codes.length = 0;
+    const removed = await built.service.overview('enc-1', requester());
+    expect(removed.lines[0]!.inPrescription).toBe(false);
+    expect(removed.lines[1]!.inPrescription).toBeNull();
   });
 
   it('AS-074 nothing is linked unless every link can be: repeated ids or lines, or a line of another medicine', async () => {
