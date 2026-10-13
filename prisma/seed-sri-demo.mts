@@ -28,16 +28,43 @@ const prisma = new PrismaClient({
 });
 
 const apiUrl = process.env.API_URL ?? `http://localhost:${process.env.PORT}`;
-if (/:3000\b/.test(apiUrl) || !process.env.DATABASE_URL?.includes('clinica_')) {
-  // The author's API and database hold the real certificate (CLAUDE.md).
-  throw new Error('seed-sri-demo is for a branch database and API, not main');
+// The author's API and database hold the real certificate (CLAUDE.md), and
+// `clinica_sri` is the author's too. The NAME of the database decides, never
+// a substring of the URL: the dev password itself contains «clinica_».
+const databaseName = new URL(process.env.DATABASE_URL!).pathname.slice(1);
+if (
+  !/^clinica_[a-z0-9_]+$/.test(databaseName) ||
+  databaseName === 'clinica_sri' ||
+  /:3000\b/.test(apiUrl) ||
+  process.env.SRI_ALLOW_REMOTE !== 'false'
+) {
+  throw new Error(
+    'seed-sri-demo: only a branch database and API, with the local SRI double',
+  );
 }
 
 try {
+  const login = await fetch(`${apiUrl}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@clinica.ec', password: DEV_PASSWORD }),
+  });
+  if (!login.ok) throw new Error(`login failed: ${login.status}`);
+  const { accessToken } = (await login.json()) as { accessToken: string };
+  const auth = { Authorization: `Bearer ${accessToken}` };
+
   const site = await prisma.site.findFirstOrThrow({
     where: { mspUnicode: 'DEV-NORTE' },
     select: { id: true, establishmentId: true, sriEstablishmentCode: true },
   });
+  // The API must serve THIS database: a branch API pointed at main's would
+  // upload the certificate into the author's base.
+  const served = await fetch(`${apiUrl}/api/v1/organization/sites/${site.id}`, {
+    headers: auth,
+  });
+  if (!served.ok) {
+    throw new Error('seed-sri-demo: the API does not serve this database');
+  }
   const establishment = await prisma.establishment.findUniqueOrThrow({
     where: { id: site.establishmentId },
   });
@@ -59,15 +86,6 @@ try {
       data: { sriEstablishmentCode: '001' },
     });
   }
-
-  const login = await fetch(`${apiUrl}/api/v1/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@clinica.ec', password: DEV_PASSWORD }),
-  });
-  if (!login.ok) throw new Error(`login failed: ${login.status}`);
-  const { accessToken } = (await login.json()) as { accessToken: string };
-  const auth = { Authorization: `Bearer ${accessToken}` };
 
   const certificates = (await (
     await fetch(`${apiUrl}/api/v1/sri/certificates`, { headers: auth })
