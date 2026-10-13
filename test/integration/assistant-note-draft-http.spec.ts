@@ -36,6 +36,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import { createEncounter, createPatient, createSite } from './setup/fixtures';
+import { expectPublicTariffCacheable } from './setup/no-store';
 import { closeApp, listenForTests } from './setup/http-server';
 import { withReadRevision } from './setup/read-revision';
 
@@ -353,7 +354,7 @@ describe('el borrador de la nota por HTTP (AS-086 a AS-097)', () => {
     expect((await prisma.aiSuggestion.findUniqueOrThrow({ where: { id: sections[0]!.id } })).status).toBe('DISCARDED'); // prettier-ignore
   });
 
-  it('AS-096 no cache on the way keeps the draft: every route of it answers no-store', async () => {
+  it('AS-096 AU-061 no cache on the way keeps the draft: every route of it answers no-store', async () => {
     const asked = await post(encounterId, '', doctor.token).expect(202);
     const cancelled = await post(encounterId, '/cancel', doctor.token).expect(200); // prettier-ignore
     const { sections } = await drafted();
@@ -366,12 +367,9 @@ describe('el borrador de la nota por HTTP (AS-086 a AS-097)', () => {
     for (const response of [asked, cancelled, accepted, discarded, read]) {
       expect(response.headers['cache-control']).toBe('no-store');
     }
-    // Positive control: the header is the draft's, not one every answer carries.
-    const note = await request(app.getHttpServer())
-      .get(`/api/v1/encounters/${encounterId}/notes`)
-      .set('Authorization', `Bearer ${doctor.token}`)
-      .expect(200);
-    expect(note.headers['cache-control']).not.toBe('no-store');
+    // Positive control: the header comes from the policy (AU-061), and the
+    // one route exempt from it carries none.
+    await expectPublicTariffCacheable(app.getHttpServer());
   });
 
   it('AS-093 without pseudonymizer the draft fails with its code and keeps nothing; «Volver a pedir» writes it', async () => {

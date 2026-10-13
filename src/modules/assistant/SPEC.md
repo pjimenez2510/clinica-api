@@ -1326,7 +1326,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   (AS-086), dejar de esperar (AS-147), aceptar y descartar una sección
   (AS-094), NO DEBERÁ guardarse en ningún caché (`no-store`), como las
   preguntas (AS-124).
-  > Sus secciones son la consulta (revisión de C3, 12-10-2026).
+  > Sus secciones son la consulta (revisión de C3, 12-10-2026). Desde
+  > `fix/consulta-no-store` la cabecera la pone la política común de AU-061
+  > para toda la API, no cada ruta: las propuestas de diagnóstico, órdenes y
+  > receta, y la nota, también la llevan.
 - **AS-097** — CUANDO un borrador se ponga en cola o termine, listo o fallido,
   y CUANDO se acepte o descarte una sección, el sistema DEBERÁ publicar
   `assistant-draft` dirigido a quien lo pidió o decidió, sin contenido
