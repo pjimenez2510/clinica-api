@@ -36,6 +36,14 @@ export const envSchema = z.object({
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
 
   /**
+   * Multiplies the limits of the three general rate-limit windows
+   * (`shared/http/rate-limit.ts`). 1, and only 1, in production: the walks'
+   * own API raises it because a whole run comes from one address. Never the
+   * answer to a clinic that shares one address: that is D-251, the author's.
+   */
+  RATE_LIMIT_SCALE: z.coerce.number().int().min(1).max(100).default(1),
+
+  /**
    * Always UTC. No date conversion may depend on the server's timezone:
    * appointments render in the site's timezone, not the host's.
    */
@@ -529,6 +537,14 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             message: `el modo de demostración no admite un camino a un proveedor real (${roads.join(', ')}): apáguelo o quite eso`,
           });
         }
+      }
+      if (env.NODE_ENV === 'production' && env.RATE_LIMIT_SCALE !== 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['RATE_LIMIT_SCALE'],
+          message:
+            'solo los recorridos suben los límites de peticiones: en producción debe ser 1',
+        });
       }
       if (env.NODE_ENV === 'production' && raw.TRUST_PROXY_HOPS === undefined) {
         ctx.addIssue({
