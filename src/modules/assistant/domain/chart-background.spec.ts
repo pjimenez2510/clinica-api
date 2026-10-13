@@ -168,9 +168,13 @@ describe('the sentence that says it (AS-261)', () => {
     expect(sentenceOf({ kind: 'chart-history', text: 'x', history: 'FAMILY', description: 'Hipertensión arterial', relative: 'Madre', fromMs: 0, toMs: 1 }, 'usted o su familia. Yo no. Mi mamá es hipertensa. Vamos a revisarla.')).toBe('Mi mamá es hipertensa.'); // prettier-ignore
   });
 
-  it('AS-261 without a sentence that says it, the whole stretch', () => {
-    const plain =
-      'usted o su familia yo no mi mama es hipertensa vamos a revisarla';
-    expect(sentenceOf({ kind: 'chart-history', text: 'x', history: 'FAMILY', description: 'Hipertensión arterial', relative: 'Madre', fromMs: 0, toMs: 1 }, plain)).toBe(plain); // prettier-ignore
+  it('AS-261 an unpunctuated stretch is cut to the words around what says it', () => {
+    const plain = 'usted o su familia yo no mi mamá es hipertensa vamos a revisarla abra la boca la faringe está enrojecida con placas blancas'; // prettier-ignore
+    expect(sentenceOf({ kind: 'chart-history', text: 'x', history: 'FAMILY', description: 'Hipertensión arterial', relative: 'Madre', fromMs: 0, toMs: 1 }, plain)).toBe('…o su familia yo no mi mamá es hipertensa vamos a revisarla…'); // prettier-ignore
+  });
+
+  it('AS-261 with nothing that says it, the whole stretch', () => {
+    const plain = 'el paciente dice que todo está bien';
+    expect(sentenceOf({ kind: 'chart-history', text: 'x', history: 'PERSONAL', description: 'Asma', relative: null, fromMs: 0, toMs: 1 }, plain)).toBe(plain); // prettier-ignore
   });
 });

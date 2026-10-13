@@ -306,5 +306,26 @@ export function sentenceOf(proposal: ChartProposal, said: string): string {
     .split(/(?<=[.!?¿])\s+|(?=¿)/)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence !== '');
-  return sentences.find((sentence) => saysIt(proposal, foldText(sentence))) ?? said; // prettier-ignore
+  const sentence = sentences.find((each) => saysIt(proposal, foldText(each)));
+  if (sentence !== undefined && sentence.split(/\s+/).length <= LONGEST_QUOTE) {
+    return sentence;
+  }
+  // Unpunctuated, or one long sentence: the words around what says it.
+  const words = (sentence ?? said).split(/\s+/);
+  const saysIn = (from: number, to: number) =>
+    saysIt(proposal, foldText(words.slice(from, to).join(' ')));
+  for (let at = 0; at < words.length; at += 1) {
+    if (!saysIn(at, at + WINDOW)) continue;
+    let end = at;
+    while (end < at + WINDOW && !saysIn(at, end + 1)) end += 1;
+    const from = Math.max(0, end - WINDOW);
+    const to = Math.min(words.length, end + WINDOW);
+    return `${from > 0 ? '…' : ''}${words.slice(from, to).join(' ')}${to < words.length ? '…' : ''}`; // prettier-ignore
+  }
+  return sentence ?? said;
 }
+
+/** AS-261. A quote longer than this many words reads as noise. */
+const LONGEST_QUOTE = 16;
+/** The words around what says it, when the sentence is too long or missing. */
+const WINDOW = 6;
