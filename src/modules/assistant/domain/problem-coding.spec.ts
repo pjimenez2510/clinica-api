@@ -230,4 +230,14 @@ describe('no symptom coded apart from the diagnosis that explains it (AS-267)', 
     const shown = withoutSymptoms([proposal('LUMBALGIA', ['M54.5']), proposal('MALESTAR RARO', [])]); // prettier-ignore
     expect(shown.map((each) => each.problem)).toEqual(['LUMBALGIA', 'MALESTAR RARO']); // prettier-ignore
   });
+
+  it('AS-267 (review I3) a problem coded as a symptom never has its alternative promoted to a diagnosis', () => {
+    const shown = withoutSymptoms([
+      proposal('GASTROENTERITIS AGUDA', ['A09.X']),
+      proposal('DOLOR ABDOMINAL', ['R10.4', 'K35.8']),
+    ]);
+
+    expect(shown.map((each) => [each.problem, each.codes])).toEqual([['GASTROENTERITIS AGUDA', ['A09.X']]]); // prettier-ignore
+    expect(shown[0]!.symptoms).toEqual([{ problem: 'DOLOR ABDOMINAL', quote: 'frase de DOLOR ABDOMINAL' }]); // prettier-ignore
+  });
 });

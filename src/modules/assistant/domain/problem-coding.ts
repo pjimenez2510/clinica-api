@@ -260,7 +260,9 @@ export function withoutSymptoms(
   const kept: DiagnosisProposal[] = [];
   for (const proposal of proposals) {
     const candidates = proposal.candidates.filter((each) => !SYMPTOM.test(each.code)); // prettier-ignore
-    if (proposal.candidates.length > 0 && candidates.length === 0) {
+    // A problem the model coded as a symptom stays a symptom: its alternative
+    // of another chapter is never promoted to the proposal (clinical review I3).
+    if (proposal.candidates.length > 0 && !isDefinite(proposal)) {
       symptoms.push({ problem: proposal.problem, quote: proposal.quote });
       continue;
     }
