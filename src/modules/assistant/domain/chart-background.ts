@@ -293,21 +293,27 @@ const sameText = (left: string, right: string) =>
   foldText(right).replace(/\s+/g, ' ').trim();
 
 /** AS-292. Words of a disease that say nothing of which one it is. */
-const GENERIC = new Set(['enfermedad', 'arterial', 'cronica', 'cronico', 'aguda', 'agudo', 'mellitus', 'tipo']); // prettier-ignore
+const GENERIC = new Set(['enfermedad', 'arterial', 'cronica', 'cronico', 'aguda', 'agudo', 'mellitus', 'tipo', 'desde', 'hace', 'anos', 'tiene', 'sufre', 'padece']); // prettier-ignore
 
-/** AS-292. The roots of the disease words: their first six letters. */
+/**
+ * AS-292. The roots of the disease words: their first seven letters, so
+ * «hipertenso» and «hipertensión» share one and «hipertiroidismo» does not;
+ * short words count too, so «mama» and «pulmón» tell two cancers apart.
+ */
 function rootsOf(description: string): Set<string> {
   return new Set(
     foldText(description)
       .split(/[^\p{L}]+/u)
-      .filter((word) => word.length >= 6 && !GENERIC.has(word))
-      .map((word) => word.slice(0, 6)),
+      .filter((word) => word.length >= 4 && !GENERIC.has(word))
+      .map((word) => word.slice(0, 7)),
   );
 }
 
 /**
  * AS-292. «HIPERTENSO» and «Hipertensión arterial»: the same kind, the same
- * relative and a disease word of the same root. Ante la duda, said, not new.
+ * relative and the same disease words by root, every one of them (revisión
+ * G1: «diabetes gestacional» is not «Diabetes mellitus»). In doubt, it is
+ * offered to register.
  */
 function sameDisease(
   entry: ChartHistoryEntry,
@@ -316,7 +322,12 @@ function sameDisease(
   if (entry.kind !== proposal.history) return false;
   if (!sameText(entry.relative ?? '', proposal.relative ?? '')) return false;
   const roots = rootsOf(entry.description);
-  return [...rootsOf(proposal.description)].some((root) => roots.has(root));
+  const proposed = rootsOf(proposal.description);
+  return (
+    roots.size > 0 &&
+    roots.size === proposed.size &&
+    [...proposed].every((root) => roots.has(root))
+  );
 }
 
 /**

@@ -216,6 +216,16 @@ describe('what Antecedentes shows (AS-263, AS-264)', () => {
     ]);
   });
 
+  it('AS-292 another disease that only shares a root with the chart is offered to register (revisión G1)', () => {
+    const entry = (kind: 'PERSONAL' | 'FAMILY', description: string, relative: string | null = null) => ({ kind, description, relative }); // prettier-ignore
+    const chart = { ...empty, history: [entry('PERSONAL', 'Hipertensión arterial'), entry('FAMILY', 'Cáncer de pulmón', 'Madre'), entry('PERSONAL', 'Diabetes mellitus tipo 2')] }; // prettier-ignore
+    const said = (id: string, description: string, history: 'PERSONAL' | 'FAMILY', relative: string | null = null) => stored(id, { kind: 'chart-history', text: description, history, description, relative, fromMs: 11_500, toMs: 14_000 }); // prettier-ignore
+
+    const shown = shownChart([said('s-7', 'Hipertiroidismo', 'PERSONAL'), said('s-8', 'Cáncer de mama', 'FAMILY', 'Madre'), said('s-9', 'Diabetes gestacional', 'PERSONAL')], [], chart, LINES); // prettier-ignore
+
+    expect(shown.map((each) => [each.id, each.alreadyAs])).toEqual([['s-7', null], ['s-8', null], ['s-9', null]]); // prettier-ignore
+  });
+
   it('AS-264 with an active allergy on the chart, «sin alergias» shows its conflict and is never offered as is', () => {
     const chart = { allergies: ['Penicilina'], absence: false, history: [] };
 
