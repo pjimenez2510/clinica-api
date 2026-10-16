@@ -41,21 +41,43 @@ export interface VoiceprintEnroller {
 
 export const VOICEPRINT_ENROLLER = Symbol('VOICEPRINT_ENROLLER');
 
+/**
+ * AS-312. From where the owner acted, for the trail. Every change writes its
+ * `access_audit` entry (`professional_voiceprint`, never the vector) IN THE
+ * SAME TRANSACTION: for a biometric datum the trail is the proof of the
+ * consent and of the deletion, so a change that cannot be recorded does not
+ * happen (as `MFA_RESET`, review).
+ */
+/** The trail's name for it (AS-312): identifiers only, never the vector. */
+export const VOICEPRINT_RESOURCE_TYPE = 'professional_voiceprint';
+
+export interface VoiceprintTrail {
+  ip?: string;
+  userAgent?: string;
+}
+
 export interface VoiceprintStore {
   find(userId: string): Promise<StoredVoiceprint | null>;
   /**
    * AS-312. Writes the voiceprint, replacing the one the person had; the
    * switch keeps its position, and a first one starts with it off (AS-313).
+   * Trailed as `CREATE` or `UPDATE`.
    */
   save(
     userId: string,
     voiceprint: Voiceprint,
     at: Date,
+    trail: VoiceprintTrail,
   ): Promise<StoredVoiceprint>;
-  /** AS-313. `false` when the person has no voiceprint. */
-  setAttribution(userId: string, on: boolean, at: Date): Promise<boolean>;
-  /** AS-312. Removes the row; `false` when there was none. */
-  remove(userId: string): Promise<boolean>;
+  /** AS-313. `false` when the person has no voiceprint. Trailed as `UPDATE`. */
+  setAttribution(
+    userId: string,
+    on: boolean,
+    at: Date,
+    trail: VoiceprintTrail,
+  ): Promise<boolean>;
+  /** AS-312. Removes the row; `false` when there was none. Trailed as `DELETE`. */
+  remove(userId: string, trail: VoiceprintTrail): Promise<boolean>;
 }
 
 export const VOICEPRINT_STORE = Symbol('VOICEPRINT_STORE');

@@ -168,6 +168,14 @@ export class ListeningService {
           already.channel.onTakenOver();
           already.channel = channel;
           already.device = device;
+          // AS-314 (review). Another person took it —the preparation lets
+          // whoever takes the vitals—: the recognition is finished and the
+          // next frame opens one with THEIR voiceprint, or none. Nobody's
+          // voiceprint is used in a listening they are no longer in.
+          if (already.userId !== userId) {
+            already.userId = userId;
+            this.handOver(already);
+          }
           this.restartCapture(already);
           await this.write(already, 'LISTENING', null);
         }
@@ -382,6 +390,14 @@ export class ListeningService {
     return sent <= elapsed + BACKLOG_MS;
   }
 
+  /** What the old recognition held still becomes lines; the next frame reopens. */
+  private handOver(live: Live): void {
+    const previous = live.recognition;
+    live.recognition = null;
+    live.attributionSaid = false;
+    previous?.end().catch(() => previous.abort());
+  }
+
   private restartCapture(live: Live): void {
     live.capturedFromMs = live.offsetMs;
     live.capturedSince = this.now().getTime();
@@ -519,6 +535,14 @@ export class ListeningService {
    * correction that cannot be written is lost, never the listening.
    */
   private relabel(live: Live, changes: readonly SpeakerChange[]): void {
+    // A line the store refused waits in memory: it is corrected there too,
+    // or it would be kept later with the label clinica-ai already took back.
+    const corrected = new Map(changes.map((c) => [c.startMs, c.speaker]));
+    live.unstored = live.unstored.map((segment) =>
+      segment.speaker && corrected.has(segment.startMs)
+        ? { ...segment, speaker: corrected.get(segment.startMs) }
+        : segment,
+    );
     live.keeping = live.keeping.then(async () => {
       try {
         const changed = await this.store.relabel(live.encounterId, changes);

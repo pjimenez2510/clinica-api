@@ -812,6 +812,42 @@ describe('ListeningService: who said each line (E17)', () => {
     expect(ch.corrected).toEqual([[{ startMs: 0, speaker: 'PATIENT' }]]);
   });
 
+  it('AS-316 a correction of a line the store refused for now is kept with it when it lands', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 1_000);
+    store.refuse = 1;
+    recognizer.current.confirm('Sí, aquí abajo.', 'PROFESSIONAL');
+    await flush();
+
+    recognizer.current.events.onSpeakers?.([
+      { startMs: 0, speaker: 'PATIENT' },
+    ]);
+    await speak(service, ch.events, 1_000, 1_000);
+    recognizer.current.confirm('¿Desde cuándo?', 'PROFESSIONAL');
+    await flush();
+
+    expect(store.segments.map((l) => l.speaker)).toEqual([
+      'PATIENT',
+      'PROFESSIONAL',
+    ]);
+  });
+
+  it("AS-314 another person taking the listening over is heard with their voiceprint, never the first one's", async () => {
+    const { service, recognizer, voiceprints } = setup();
+    voiceprints.on.add(USER);
+    const first = channel();
+    const second = channel();
+    await service.start(ENCOUNTER, USER, 'computador', first.events);
+
+    await service.start(ENCOUNTER, 'otra-persona', 'teléfono', second.events);
+    await speak(service, second.events, 0, 300);
+
+    expect(recognizer.voiceprints).toEqual([PRINT, null]);
+    expect(recognizer.sessions[0]?.closed).toBe(true);
+  });
+
   it('AS-317 a line that is not there is ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND', async () => {
     const { service } = setup();
 

@@ -74,8 +74,10 @@ export class AssistantVoiceprintController {
   @Put()
   @Header('Cache-Control', 'no-store')
   @RequirePermission('assistant:voiceprint', 'global')
-  // Each one holds the recogniser and the voice model of this machine.
-  @Throttle({ long: { ttl: 60_000, limit: 10 } })
+  // Each one holds the recogniser and the voice model of this machine for
+  // tens of seconds; clinica-ai takes one at a time (review). A reading is
+  // done once, and again rarely.
+  @Throttle({ long: { ttl: 600_000, limit: 3 } })
   @Timeout(130_000)
   @ApiConsumes('application/octet-stream')
   @ApiBody({ schema: { type: 'string', format: 'binary' } })

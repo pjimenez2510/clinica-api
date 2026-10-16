@@ -322,6 +322,33 @@ describe('transcript_segment speaker (AS-315, AS-316)', () => {
     }
   });
 
+  it("AS-317: a line labelled by hand stays the professional's: the model cannot take it back", async () => {
+    const prisma = db();
+    const { encounter } = await anAttention(prisma);
+    const stored = await prisma.transcriptSegment.create({
+      data: {
+        ...segment(encounter.id),
+        speaker: 'PATIENT',
+        speakerSource: 'PROFESSIONAL',
+      },
+    });
+
+    // Positive control: the professional changes it again.
+    await prisma.transcriptSegment.update({
+      where: { id: stored.id },
+      data: { speaker: 'PROFESSIONAL' },
+    });
+
+    for (const data of [
+      { speakerSource: 'MODEL' },
+      { speaker: null, speakerSource: null },
+    ]) {
+      await expect(
+        prisma.transcriptSegment.update({ where: { id: stored.id }, data }),
+      ).rejects.toThrow(/transcript_segment_label_by_hand_is_kept/);
+    }
+  });
+
   it('AS-316: refuses a label or a source outside its list, and one without the other', async () => {
     const prisma = db();
     const { encounter } = await anAttention(prisma);

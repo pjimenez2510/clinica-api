@@ -1,11 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
-  ACCESS_AUDIT_RECORDER,
-  type AccessAuditRecorder,
-  type AuditAction,
-} from '../../../shared/audit/access-audit.port';
-import {
   VoiceprintConsentRequiredError,
   VoiceprintMissingError,
 } from '../domain/assistant.errors';
@@ -18,10 +13,8 @@ import {
   type Voiceprint,
   type VoiceprintEnroller,
   type VoiceprintStore,
+  type VoiceprintTrail,
 } from './voiceprint.port';
-
-/** The trail's name for it (AS-312): identifiers only, never the vector. */
-export const VOICEPRINT_RESOURCE_TYPE = 'professional_voiceprint';
 
 export const VOICEPRINT_CLOCK = Symbol('VOICEPRINT_CLOCK');
 export type VoiceprintClock = () => Date;
@@ -56,7 +49,6 @@ export class VoiceprintService implements ListeningVoiceprints {
   constructor(
     @Inject(VOICEPRINT_ENROLLER) private readonly enroller: VoiceprintEnroller,
     @Inject(VOICEPRINT_STORE) private readonly store: VoiceprintStore,
-    @Inject(ACCESS_AUDIT_RECORDER) private readonly audit: AccessAuditRecorder,
     @Inject(VOICEPRINT_CLOCK) private readonly now: VoiceprintClock,
   ) {}
 
@@ -93,9 +85,10 @@ export class VoiceprintService implements ListeningVoiceprints {
   ): Promise<VoiceprintView> {
     if (!consent) throw new VoiceprintConsentRequiredError();
     const voiceprint: Voiceprint = await this.enroller.enrol(recording, signal);
-    const before = await this.store.find(owner.userId);
-    await this.store.save(owner.userId, voiceprint, this.now());
-    await this.trail(owner, before ? 'UPDATE' : 'CREATE');
+    // The screen gave up while clinica-ai worked (closed, or «Borrar mi voz»
+    // in another tab): what it no longer wants is not kept (review).
+    signal?.throwIfAborted();
+    await this.store.save(owner.userId, voiceprint, this.now(), trailOf(owner));
     return this.view(owner);
   }
 
@@ -108,17 +101,15 @@ export class VoiceprintService implements ListeningVoiceprints {
       owner.userId,
       on,
       this.now(),
+      trailOf(owner),
     );
     if (!changed && on) throw new VoiceprintMissingError();
-    if (changed) await this.trail(owner, 'UPDATE');
     return this.view(owner);
   }
 
   /** AS-312. The row is gone; deleting nothing is not an error. */
   async remove(owner: VoiceprintOwner): Promise<void> {
-    if (await this.store.remove(owner.userId)) {
-      await this.trail(owner, 'DELETE');
-    }
+    await this.store.remove(owner.userId, trailOf(owner));
   }
 
   /** AS-314. Read when a recognition is opened. */
@@ -127,15 +118,8 @@ export class VoiceprintService implements ListeningVoiceprints {
     if (!stored?.attribution) return null;
     return { model: stored.model, vector: stored.vector };
   }
+}
 
-  private trail(owner: VoiceprintOwner, action: AuditAction): Promise<void> {
-    return this.audit.record({
-      userId: owner.userId,
-      resourceType: VOICEPRINT_RESOURCE_TYPE,
-      resourceId: owner.userId,
-      action,
-      ip: owner.ip,
-      userAgent: owner.userAgent,
-    });
-  }
+function trailOf(owner: VoiceprintOwner): VoiceprintTrail {
+  return { ip: owner.ip, userAgent: owner.userAgent };
 }

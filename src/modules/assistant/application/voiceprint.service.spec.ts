@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-  AccessAuditEntry,
-  AccessAuditRecorder,
-} from '../../../shared/audit/access-audit.port';
 import {
   VoiceNotHeardError,
   VoiceprintConsentRequiredError,
@@ -30,12 +26,15 @@ const PRINT: Voiceprint = {
 
 class MemoryStore implements VoiceprintStore {
   rows = new Map<string, StoredVoiceprint>();
+  /** What the trail got, written with each change as the real store does. */
+  readonly trail: string[] = [];
 
   find(userId: string) {
     return Promise.resolve(this.rows.get(userId) ?? null);
   }
 
   save(userId: string, voiceprint: Voiceprint, at: Date) {
+    this.trail.push(this.rows.has(userId) ? 'UPDATE' : 'CREATE');
     const row = {
       ...voiceprint,
       userId,
@@ -50,12 +49,15 @@ class MemoryStore implements VoiceprintStore {
   setAttribution(userId: string, on: boolean, at: Date) {
     const row = this.rows.get(userId);
     if (!row) return Promise.resolve(false);
+    this.trail.push('UPDATE');
     this.rows.set(userId, { ...row, attribution: on, updatedAt: at });
     return Promise.resolve(true);
   }
 
   remove(userId: string) {
-    return Promise.resolve(this.rows.delete(userId));
+    const removed = this.rows.delete(userId);
+    if (removed) this.trail.push('DELETE');
+    return Promise.resolve(removed);
   }
 }
 
@@ -63,20 +65,13 @@ function setUp(
   enrol: VoiceprintEnroller['enrol'] = () => Promise.resolve(PRINT),
 ) {
   const store = new MemoryStore();
-  const trail: AccessAuditEntry[] = [];
-  const audit: AccessAuditRecorder = {
-    record: (entry) => {
-      trail.push(entry);
-      return Promise.resolve();
-    },
-  };
   const enrolled = vi.fn(enrol);
   const enroller: VoiceprintEnroller = {
     enrol: enrolled,
     attributionStatus: () => Promise.resolve({ available: true, reason: null }),
   };
-  const service = new VoiceprintService(enroller, store, audit, () => NOW);
-  return { service, store, trail, enrolled };
+  const service = new VoiceprintService(enroller, store, () => NOW);
+  return { service, store, enrolled };
 }
 
 describe('VoiceprintService (E17)', () => {
@@ -135,29 +130,30 @@ describe('VoiceprintService (E17)', () => {
     expect(view.attribution).toBe(true);
   });
 
-  it('AS-312 deleting removes it, the next listening goes without it, and the trail says so without the vector', async () => {
-    const { service, store, trail } = setUp();
+  it('AS-312 deleting removes it, the next listening goes without it, and every change is trailed', async () => {
+    const { service, store } = setUp();
     await service.register(OWNER, Buffer.from('audio'), true);
     await service.setAttribution(OWNER, true);
 
     await service.remove(OWNER);
+    await service.remove(OWNER);
 
     expect(store.rows.size).toBe(0);
     expect(await service.forListening('user-1')).toBeNull();
-    expect(trail.map((entry) => entry.action)).toEqual([
-      'CREATE',
-      'UPDATE',
-      'DELETE',
-    ]);
-    expect(
-      trail.every(
-        (entry) =>
-          entry.resourceType === 'professional_voiceprint' &&
-          entry.resourceId === 'user-1' &&
-          entry.before === undefined &&
-          entry.after === undefined,
-      ),
-    ).toBe(true);
+    expect(store.trail).toEqual(['CREATE', 'UPDATE', 'DELETE']);
+  });
+
+  it('AS-312 a reading the screen stopped waiting for is not kept', async () => {
+    const gone = new AbortController();
+    const { service, store } = setUp(() => {
+      gone.abort();
+      return Promise.resolve(PRINT);
+    });
+
+    await expect(
+      service.register(OWNER, Buffer.from('audio'), true, gone.signal),
+    ).rejects.toThrow();
+    expect(store.rows.size).toBe(0);
   });
 
   it('AS-313 the switch is off with the first voiceprint and cannot go on without one', async () => {

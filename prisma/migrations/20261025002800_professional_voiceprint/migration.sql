@@ -48,8 +48,8 @@ ALTER TABLE "transcript_segment"
                      AND "speaker_source" IN ('MODEL', 'PROFESSIONAL')
            END);
 
--- AS-316. A segment is still kept as heard: only its label and the label's
--- source may change. Every other column is compared, so a column added later
+-- AS-316, AS-317. A segment is still kept as heard: only its label and the
+-- label's source may change, and a label given by hand stays the professional's. Every other column is compared, so a column added later
 -- is protected unless it is named here.
 CREATE OR REPLACE FUNCTION transcript_segment_is_kept_as_heard()
 RETURNS TRIGGER
@@ -61,6 +61,14 @@ BEGIN
     RAISE EXCEPTION 'transcript_segment_is_kept_as_heard: a segment is never rewritten'
       USING ERRCODE = 'check_violation',
             CONSTRAINT = 'transcript_segment_is_kept_as_heard';
+  END IF;
+  -- AS-317. What the professional said of a line, the model never takes back:
+  -- once labelled by hand, the source stays the professional's.
+  IF OLD."speaker_source" = 'PROFESSIONAL'
+     AND NEW."speaker_source" IS DISTINCT FROM 'PROFESSIONAL' THEN
+    RAISE EXCEPTION 'transcript_segment_label_by_hand_is_kept: a line labelled by hand stays so'
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'transcript_segment_label_by_hand_is_kept';
   END IF;
   RETURN NEW;
 END;
