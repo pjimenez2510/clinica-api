@@ -66,8 +66,16 @@ export interface AnsweredPreparation {
     line: string;
     quote: string;
   } | null;
-  /** AS-281. `written`: the reason worded as the nurse writes it. */
-  complaint: { line: string; quote: string; written?: string | null } | null;
+  /**
+   * AS-281. `written`: the reason worded as the nurse writes it. AS-294.
+   * `toLine`: the last of the patient's lines, one after the other, it spans.
+   */
+  complaint: {
+    line: string;
+    toLine?: string | null;
+    quote: string;
+    written?: string | null;
+  } | null;
 }
 
 /** AS-246. One value proposed, with where it was said (null when no single line holds it). */
@@ -77,11 +85,22 @@ export interface Provenanced<Value> {
   quote: string | null;
 }
 
+/** AS-295. A value whose phrase names another sign (`named`) than its field. */
+export interface Doubtful {
+  field: DictatedVitalField;
+  value: number;
+  startMs: number;
+  quote: string;
+  named: DictatedVitalField;
+}
+
 export interface PreparationProposal {
   values: Partial<Record<DictatedVitalField, Provenanced<number>>>;
   heightPosition: Provenanced<HeightPosition> | null;
   /** Named, but not proposed: typed by hand (AS-247, AS-248). */
   unclear: DictatedVitalField[];
+  /** AS-295. Proposed apart: its phrase names another sign. */
+  doubtful: Doubtful[];
   /**
    * AS-249, AS-282. The reason proposed (`text`): its wording if the barrier
    * believes it, else the patient's whole sentence, which is always its source
@@ -180,6 +199,7 @@ export function readPreparationAnswer(input: {
   const { answer, markers, restore, lines } = input;
   const unclear = new Set<DictatedVitalField>();
   const found = new Map<DictatedVitalField, Provenanced<number>[]>();
+  const doubts: Doubtful[] = [];
   const speakerOf = new Map(
     answer.lines.map((each) => [each.line.trim().replace(/^\[|\]$/g, '').toUpperCase(), each.speaker]), // prettier-ignore
   );
@@ -202,6 +222,21 @@ export function readPreparationAnswer(input: {
         ? measured(answered.field, answered.said, answered.unit)
         : null;
     if (value === null) {
+      // AS-295. «Frecuencia cardíaca 16» proposed as the breathing: shown apart.
+      const named =
+        line !== null &&
+        holds(line.text, quote) &&
+        says(quote, answered.said, answered.field) &&
+        unitSaid(answered.field, answered.said, answered.unit, line.text)
+          ? namedInstead(answered.field, answered.said, quote, line, lines[at - 1]) // prettier-ignore
+          : null;
+      if (named !== null) {
+        const taken = measured(answered.field, answered.said, answered.unit);
+        if (taken !== null) {
+          doubts.push({ field: answered.field, value: taken, startMs: line!.startMs, quote, named }); // prettier-ignore
+          continue;
+        }
+      }
       unclear.add(answered.field);
       continue;
     }
@@ -213,11 +248,19 @@ export function readPreparationAnswer(input: {
 
   const values = settled(found, unclear);
   const heightPosition = positionOf(answer, values, markers, restore);
+  // AS-295. One doubt per field, and none where a value is believed or unclear.
+  const doubtful = doubts.filter(
+    (doubt, at) =>
+      values[doubt.field] === undefined &&
+      !unclear.has(doubt.field) &&
+      doubts.findIndex((each) => each.field === doubt.field) === at,
+  );
 
   return {
     values,
     heightPosition,
     unclear: [...unclear],
+    doubtful,
     complaint: complaintOf(answer, markers, speakers, lines, restore),
     speakers,
   };
@@ -258,6 +301,7 @@ export function readPreparationByRules(
       ? { value: read.heightPosition, startMs: null, quote: null }
       : null,
     unclear: [...unclear],
+    doubtful: [],
     complaint: null,
     speakers: lines.map(() => null),
   };
@@ -315,6 +359,26 @@ function ownedBy(
   // A correction said after it, anywhere in the sentence, takes it back.
   const whole = ownersOf(`${before?.text ?? ''} ${line.text}`, said).at(-1);
   return !owner.superseded && !whole?.superseded;
+}
+
+/**
+ * AS-295. The sign the phrase itself gives the number to, when it is another than
+ * `field` and nothing takes the number back; else null.
+ */
+function namedInstead(
+  field: DictatedVitalField,
+  said: number,
+  quote: string,
+  line: TranscriptLine,
+  before: TranscriptLine | undefined,
+): DictatedVitalField | null {
+  // The phrase itself names the sign: a swap of two signs said in a row is unclear.
+  const owner = ownersOf(quote, said).at(-1);
+  const whole = ownersOf(`${before?.text ?? ''} ${line.text}`, said).at(-1);
+  if (!owner || owner.superseded || whole?.superseded) return null;
+  const named = owner.fields.map((each) => FIELD_OF[each]);
+  if (named.includes(field) || named[0] === undefined) return null;
+  return named[0];
 }
 
 /**
@@ -444,7 +508,7 @@ function complaintOf(
   if (line === null || speakers[lines.indexOf(line)] !== 'patient') return null;
   const quote = restore(said.quote).trim();
   // Revisión G3: the whole sentence, so a «no» before the phrase is never cut off.
-  const text = line.text.trim();
+  const text = spanOf(line, said.toLine, markers, speakers, lines);
   if (text.length > LONGEST_COMPLAINT || !holds(text, quote)) return null;
   // AS-282 (fifth clinical review): a wording that names someone —a name the
   // pseudonymizer took out— is never believed: whose symptom is whose.
@@ -452,6 +516,29 @@ function complaintOf(
   const written = restore(wording).trim();
   const worded = written === wording && groundedWording(written, text) ? written : text; // prettier-ignore
   return { text: worded, quote: text, startMs: line.startMs };
+}
+
+/**
+ * AS-294. The patient's lines from `first` to `toLine`, joined, when every one
+ * between was said by the patient and they come one after the other; else
+ * only the first, and only the first when the join would not fit.
+ */
+function spanOf(
+  first: TranscriptLine,
+  toLine: string | null | undefined,
+  markers: ReadonlyMap<string, TranscriptLine>,
+  speakers: readonly (Speaker | null)[],
+  lines: readonly TranscriptLine[],
+): string {
+  const alone = first.text.trim();
+  const last = toLine ? lineOf(toLine, markers) : null;
+  const from = lines.indexOf(first);
+  const to = last === null ? -1 : lines.indexOf(last);
+  if (to <= from) return alone;
+  const span = lines.slice(from, to + 1);
+  if (span.some((_, at) => speakers[from + at] !== 'patient')) return alone;
+  const joined = span.map((line) => line.text.trim()).join(' ');
+  return joined.length > LONGEST_COMPLAINT ? alone : joined;
 }
 
 /**

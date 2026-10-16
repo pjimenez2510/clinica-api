@@ -99,6 +99,31 @@ function neutralised(text: string): string {
   return out.replace(/secciones de la nota/gi, 'secciones');
 }
 
+/** AS-297. «Impresión diagnóstica: cistitis aguda.»: what follows the label. */
+const IMPRESSION = /^impresi[oó]n\s+diagn[oó]stica\s*:\s*([^.]+)/iu;
+
+const folded = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+
+/**
+ * AS-297 (revisión M2). An impression is believed only when every word of it
+ * that names something —five letters or more— is in the line it cites: one
+ * the model completed is «Nadie lo dijo». Who said it, the transcript does
+ * not tell (D-249 §2).
+ */
+function impressionNotSaid(text: string, cited: string): boolean {
+  const impression = IMPRESSION.exec(text.trim())?.[1];
+  if (!impression) return false;
+  const line = folded(cited);
+  return folded(impression)
+    .split(/[^\p{L}]+/u)
+    .filter((word) => word.length >= 5)
+    .some((word) => !line.includes(word));
+}
+
 /**
  * AS-088, AS-089, AS-091. The sections of the answer as the physician will
  * see them: in the template's order, a section named twice merged, every
@@ -122,7 +147,10 @@ export function readDraft(input: {
         const text = closed(withoutLabel(input.restore(segment.text), title));
         if (text === '') return null;
         const line = lineOf(segment.source, input.markers);
-        const unsaid = !line || datesNotSaid(text, input.said).length > 0;
+        const unsaid =
+          !line ||
+          datesNotSaid(text, input.said).length > 0 ||
+          impressionNotSaid(text, line.text);
         return unsaid
           ? { text, fromMs: null, toMs: null, unsaid: true }
           : { text, fromMs: line.startMs, toMs: line.endMs, unsaid: false };

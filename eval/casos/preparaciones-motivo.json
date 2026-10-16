@@ -1,6 +1,6 @@
 {
   "origin": "invented",
-  "description": "B3 (AS-284, D-263): preparaciones inventadas para lo que el autor vio con el modelo real el 13-10-2026 —la talla que el reconocedor escribió «150 y 8» (M01, la frase del autor tal cual), la forma «decena y unidad» en talla, peso, presión, pulso, saturación y perímetros, los falsos positivos que no se unen («120 y 80», «36 y medio», «18 y saturación 97») y motivos con muletillas, vocativos, una negación y una duración—. Revisión clínica del 13-10-2026, antes de ninguna medición real: en la temperatura, los perímetros y el peso «X y Y» no se une (M04, G1), y M13 a M16 son motivos que deben quedar literales (`complaintLiteral`). Escrito antes de medir. Ningún dato de una persona real. Sólo el texto escrito: lo oído no se generó.",
+  "description": "B3 (AS-284, D-263): preparaciones inventadas para lo que el autor vio con el modelo real el 13-10-2026 —la talla que el reconocedor escribió «150 y 8» (M01, la frase del autor tal cual), la forma «decena y unidad» en talla, peso, presión, pulso, saturación y perímetros, los falsos positivos que no se unen («120 y 80», «36 y medio», «18 y saturación 97») y motivos con muletillas, vocativos, una negación y una duración—. Revisión clínica del 13-10-2026, antes de ninguna medición real: en la temperatura, los perímetros y el peso «X y Y» no se une (M04, G1), y M13 a M16 son motivos que deben quedar literales (`complaintLiteral`). Escrito antes de medir. Ningún dato de una persona real. Sólo el texto escrito: lo oído no se generó. AS-301 (16-10-2026): M19 es la preparación del libreto de Carmen Hidalgo (personaje inventado) como la escribió el reconocedor en la prueba del autor del 13-10-2026, con el nombre seudonimizado devuelto a «Carmen»: el motivo cruza L4 a L6 y la FR es la de L20, no la «frecuencia cardíaca 16» de L14. El perímetro abdominal no se espera: la conversación dice 74 (L17) y luego 64 (L19–L20), y dos valores para una casilla se escriben a mano.",
   "cases": [
     {
       "id": "M01",
@@ -420,6 +420,108 @@
       "heightPosition": null,
       "complaint": [
         1
+      ]
+    },
+    {
+      "id": "M19",
+      "style": "carmen-whisper",
+      "lines": [
+        {
+          "speaker": "nursing",
+          "text": "Buenos días, Carmen."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Sídese, por favor."
+        },
+        {
+          "speaker": "nursing",
+          "text": "¿Qué le trae hoy?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Señorita, desde hace tres días me arde mucho al orinar y voy al baño."
+        },
+        {
+          "speaker": "patient",
+          "text": "A cada rato."
+        },
+        {
+          "speaker": "patient",
+          "text": "Hoy me duele un poco la parte de abajo de la orilla."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Ha tenido fiebre."
+        },
+        {
+          "speaker": "patient",
+          "text": "Anoche me sentí caliente, pero no me tomé la temperatura."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Bueno, vamos a tomarle los signos."
+        },
+        {
+          "speaker": "nursing",
+          "text": "La presión, 110 sobre 70."
+        },
+        {
+          "speaker": "nursing",
+          "text": "110 sobre 70."
+        },
+        {
+          "speaker": "nursing",
+          "text": "El pulso, 88%."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Por un minuto."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Frecuencia cardíaca 16."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Temperatura 37.2, saturación de oxígeno 98%."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Suba hacia la balanza, pesa 58 kilos, la talla 162 centímetros de pie."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Y la cintura, benímetro abdominal, 74 centímetros."
+        },
+        {
+          "speaker": "nursing",
+          "text": "Listo, esperen a la sala, ya le llaman la doctora."
+        },
+        {
+          "speaker": "nursing",
+          "text": "El perímetro abdominal..."
+        },
+        {
+          "speaker": "nursing",
+          "text": "64 centímetros y frecuencia respiratoria 16."
+        }
+      ],
+      "expected": {
+        "systolicBp": 110,
+        "diastolicBp": 70,
+        "heartRate": 88,
+        "respiratoryRate": 16,
+        "temperatureC": 37.2,
+        "oxygenSaturation": 98,
+        "weightKg": 58,
+        "heightCm": 162
+      },
+      "heightPosition": "STANDING",
+      "complaint": [
+        3,
+        4,
+        5
       ]
     }
   ]

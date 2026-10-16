@@ -55,6 +55,7 @@ import {
 } from './application/pseudonymizer.port';
 import { RoutingLlmClient } from './application/routing-llm.client';
 import { AssistantDiagnosisController } from './assistant-diagnosis.controller';
+import { AssistantCertificateController } from './assistant-certificate.controller';
 import { AssistantOrdersController } from './assistant-orders.controller';
 import { AssistantPrescriptionController } from './assistant-prescription.controller';
 import { OrderProposalService } from './application/order-proposal.service';
@@ -173,6 +174,7 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
+    AssistantCertificateController,
     // AS-200 (D-256 §1). Outside the switch: no model, nothing leaves.
     AssistantHistoryController,
     AssistantVitalsDictationController,
@@ -339,6 +341,7 @@ export class AssistantModule
         AssistantNoteQuestionsController,
         AssistantPrescriptionController,
         AssistantOrdersController,
+        AssistantCertificateController,
         AssistantVitalsDictationController,
         AssistantPreparationController,
       );

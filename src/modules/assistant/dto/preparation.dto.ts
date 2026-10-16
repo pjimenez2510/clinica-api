@@ -39,6 +39,16 @@ export const preparationReadingSchema = z.object({
     .nullable(),
   /** AS-247, AS-248. Named but not proposed: typed by hand. */
   unclear: z.array(field),
+  /** AS-295. Proposed apart: the phrase names another sign (`named`). */
+  doubtful: z.array(
+    z.object({
+      field,
+      value: z.number(),
+      startMs: z.number().int(),
+      quote: z.string(),
+      named: field,
+    }),
+  ),
   /** AS-249, AS-282. The reason proposed, and the patient's sentence it comes from. */
   complaint: z
     .object({ text: z.string(), quote: z.string(), startMs: z.number().int() })

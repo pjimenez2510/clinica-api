@@ -26,6 +26,8 @@ const chartProposalSchema = z.object({
   relative: z.string().nullable(),
   /** AS-264. «Sin alergias» with an active allergy on the chart: not recorded as is. */
   conflict: z.enum(['active-allergy']).nullable(),
+  /** AS-292. The chart already has it in these words: not recorded as new. */
+  alreadyAs: z.string().nullable(),
   /** AS-029. Written by the demonstration script, not by a model. */
   demo: z.boolean(),
 });
