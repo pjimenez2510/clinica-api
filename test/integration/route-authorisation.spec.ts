@@ -269,7 +269,13 @@ describe('every route declares its protection', () => {
       .filter((r) => Array.isArray(r.permission))
       .map((r) => ({ route: r.route, permission: r.permission }));
 
-    expect(lists).toEqual([
+    // AS-350, D-266: the assistant's board, read by administration with
+    // `audit:read` and by each doctor, for their own attentions, with
+    // `assistant:use`. Its CSV is `audit:read` alone.
+    const quality = ['audit:read', 'assistant:use'];
+    expect([...lists].sort((a, b) => a.route.localeCompare(b.route))).toEqual([
+      { route: 'AssistantQualityController.encounter', permission: quality },
+      { route: 'AssistantQualityController.week', permission: quality },
       {
         route: 'LiveEventsController.stream',
         permission: LIVE_STREAM_PERMISSIONS,

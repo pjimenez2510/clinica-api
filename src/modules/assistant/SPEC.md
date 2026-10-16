@@ -548,6 +548,32 @@ Certificados propone «Reposo · 1 día» con su frase.
 **Solo interfaz:** AS-293, AS-296, AS-298 y AS-300. Su mitad del servidor es
 AS-292, AS-295, AS-122 y AS-299.
 
+### E19 — Calidad y costo del asistente en pantalla _(E2, 16-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 E2. Lo que E1 (E10) y el registro de llamadas (E1)
+ya guardan, contado en la base y puesto en una pantalla: por atención, qué
+propuso el asistente por tarea y qué hizo el médico con cada propuesta, cuánto
+costó, cuántos tokens fueron de caché y cuánto tardó; por semana y sede, lo
+mismo sumado, con la adopción y la distancia mediana entre borrador y nota
+firmada. Sin una palabra de texto clínico.
+
+**Por qué va así:** para saber cómo le fue al asistente en la prueba de Carmen
+hubo que leer la base a mano. Las cifras salen de `ai_run`, `ai_suggestion` y
+`ai_suggestion_review` contadas por SQL; ni `ai_exchange` ni el texto de la
+propuesta salen de la base —el ámbar se cuenta con una condición sobre el
+JSON, sin leerlo—. Fuera del interruptor (como E12): no llama a ningún modelo.
+**Prueba independiente:** contra PostgreSQL, dos atenciones de una semana en
+una sede —una con intentos y propuestas en los cuatro estados, una en ámbar,
+y revisiones al firmar; otra sin asistente— y una de otra sede: el desglose
+de la primera y la semana de la sede dan exactamente las sumas, medianas y
+conteos de esas filas; la otra sede no entra; el médico de otra atención
+recibe 404; y ninguna respuesta lleva el texto sembrado.
+**Cubre:** AS-345 a AS-356.
+**Solo servidor:** AS-349 (lo que la respuesta no lleva).
+**Solo interfaz:** AS-354, AS-355 y AS-356. Son la pantalla «Calidad del
+asistente», el desglose de una atención y el ancho a 375 px; su mitad del
+servidor es AS-345 a AS-353, que ya se prueban con esos números.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -2901,6 +2927,86 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   seudonimizada) con lo esperado del libreto: en la preparación, el motivo de
   L4 a L6 y la FR de L20; SC-099 sigue midiéndose igual.
 
+### 64. Calidad y costo del asistente (E2, F-08)
+
+- **AS-345** — CUANDO se pida el desglose de una atención, el sistema DEBERÁ
+  responder, por cada tarea (`ai_run.purpose`), cuántos intentos hubo, cuántos
+  respondieron (`outcome = 'ok'`), la suma de `input_tokens`,
+  `output_tokens`, `cache_read_tokens` y `cache_write_tokens`, la suma de
+  `cost_usd` y cuántos intentos no informaron costo, y la latencia mediana y
+  máxima (`latency_ms`); con las cifras de `ai_run` de esa atención.
+- **AS-346** — CUANDO se pida el desglose de una atención, el sistema DEBERÁ
+  responder, por cada clase de propuesta (`ai_suggestion.kind`, y en
+  `note-section` además su sección), cuántas tuvo el profesional delante y
+  cuántas quedaron **aceptadas** (`ACCEPTED`), **editadas**
+  (`ACCEPTED_WITH_CHANGES`), **quitadas** (`DISCARDED`) y **sin tocar**
+  (`PROPOSED`), cuántas en **ámbar** (AS-347), y de las revisadas al firmar
+  (`ai_suggestion_review`) cuántas y su distancia mediana. Una propuesta sin
+  decidir que un borrador o una lectura posterior reemplazó —la que la
+  pantalla ya no mostraba: AS-090 y AS-144 en la nota, AS-036 en las demás
+  clases— NO DEBERÁ contarse en ninguna de esas cifras sino aparte, como
+  **reemplazada**.
+  > Revisión clínica G1 (16-10-2026): contarlas «sin tocar» hundía la
+  > aceptación de toda consulta en que se volvió a pedir el borrador.
+- **AS-347** — Una propuesta DEBERÁ contarse en ámbar CUANDO algo suyo diga
+  «Nadie lo dijo»: en `note-section`, una frase con `unsaid` verdadero; en
+  `prescription-item`, una lista `unsaid` no vacía. Las demás clases NO
+  DEBERÁN contarse en ámbar. El conteo DEBERÁ hacerse en la base, sin sacar
+  la propuesta.
+- **AS-348** — CUANDO se pida una semana (lunes a domingo en
+  `America/Guayaquil`, por el inicio de la atención), el sistema DEBERÁ
+  responder, por cada sede del alcance (AS-350) con atenciones esa semana y
+  para el total: las
+  atenciones de la semana que no son `ENTERED_IN_ERROR`, cuántas tuvieron al
+  menos un intento del asistente y la **adopción** (ésas entre aquéllas); las
+  cifras de AS-345 sumadas; el **costo por atención con asistente**; la
+  **tasa de caché** (`cache_read_tokens` entre la suma de `input_tokens`,
+  `cache_read_tokens` y `cache_write_tokens`); la latencia mediana; por clase
+  y sección, las cifras de AS-346 y la **aceptación** (aceptadas y editadas
+  entre todas las propuestas); la distancia mediana de las revisiones; y la
+  lista de las atenciones con asistente con su día, sede, profesional,
+  estado, costo, propuestas y aceptadas. Una tasa sin denominador DEBERÁ ir
+  vacía, nunca cero.
+- **AS-349** — Ninguna respuesta de este tablero ni su CSV DEBERÁ contener el
+  texto de `ai_exchange`, de una propuesta, de sus fuentes o de la nota, ni el
+  nombre, la cédula o el id del paciente: sólo ids de atención, códigos de
+  tarea, clase y sección, conteos, tasas, costos y tiempos.
+- **AS-350** — Las rutas del tablero DEBERÁN pedir `audit:read` o
+  `assistant:use`. Quien tiene `audit:read` DEBERÁ ver las atenciones de las
+  sedes donde lo tiene; quien no tiene `audit:read` en ninguna sede y tiene
+  `assistant:use`, sólo las atenciones de las que es el profesional, en las
+  sedes donde lo tiene. Quien tiene `audit:read` en alguna sede ve sólo esas
+  sedes (D-266 §3). SI se pide el
+  desglose de una atención fuera de ese alcance o que no existe, ENTONCES
+  DEBERÁ responder 404 `ASSISTANT_ENCOUNTER_NOT_FOUND`, igual en los
+  dos casos.
+- **AS-351** — SI se pide una semana de una sede fuera del alcance,
+  ENTONCES el sistema DEBERÁ responder sin filas de esa sede, igual que si no
+  tuviera atenciones; y el CSV NO DEBERÁ llevar filas de sedes fuera del
+  alcance.
+- **AS-352** — CUANDO quien tiene `audit:read` pida el CSV de un rango de
+  semanas, el sistema DEBERÁ responder `text/csv` en UTF-8, una fila por
+  semana y sede con atenciones, con las cifras de AS-348 y las reemplazadas
+  (AS-346) sin la lista de
+  atenciones, el punto como separador decimal y la cabecera fija. Sin
+  `audit:read` DEBERÁ responder 403.
+- **AS-353** — SI la fecha de la semana no es `AAAA-MM-DD`, o el rango del CSV
+  está invertido o pasa de 53 semanas, ENTONCES el sistema DEBERÁ responder
+  422 nombrando el campo en `errors[]`.
+- **AS-354** _(solo interfaz)_ — «Calidad del asistente», en «Consulta y
+  reportes» para quien tiene `audit:read` o `assistant:use`, DEBERÁ mostrar la
+  semana elegida (anterior y siguiente, en la URL), la sede para quien ve más
+  de una, la adopción, el costo por atención, la tasa de caché, la latencia y
+  la distancia medianas, la aceptación por sección y las atenciones con
+  asistente; y «Descargar CSV» sólo a quien tiene `audit:read`. Sin
+  atenciones DEBERÁ decirlo.
+- **AS-355** _(solo interfaz)_ — Al abrir una atención de la lista DEBERÁ
+  mostrarse su desglose: por tarea (intentos, tokens, cacheados, costo,
+  latencia) y por propuesta (aceptadas, editadas, quitadas, sin tocar, ámbar,
+  distancia), sin ningún texto clínico.
+- **AS-356** _(solo interfaz)_ — A 375 px de ancho la pantalla NO DEBERÁ
+  desbordar a lo ancho: las tablas se desplazan dentro de su caja.
+
 ---
 
 ## Códigos de error nuevos
@@ -3064,6 +3170,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-281 a AS-283 | Unitario del dominio y del servicio con seudonimizador y proveedor falsos, y del proveedor de demostración |
 | AS-284 | Arnés (`eval/`), fuera del verify |
 | AS-285, AS-286 | Componente; recorrido F-03 con el modo de demostración |
+| AS-348 (la semana y las tasas), AS-352 (el CSV), AS-353 | Unitario del dominio con reloj inyectado |
+| AS-345 a AS-351, AS-352 (la ruta), AS-353 (la ruta) | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-354, AS-355, AS-356 | Componente; recorrido F-08 (`f08-calidad-asistente`) |
 
 ## Preguntas abiertas
 
