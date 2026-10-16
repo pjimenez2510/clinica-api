@@ -3,12 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-import { weekOf } from '../src/modules/assistant/domain/assistant-quality.ts';
-import {
-  clinicalDateOf,
-  startOfClinicalDay,
-} from '../src/shared/domain/clinic-time.ts';
-
 /**
  * E19 (AS-345 to AS-356). What «Calidad del asistente» counts, registered as
  * the assistant would have left it in one consultation: its attempts by task
@@ -27,6 +21,21 @@ import {
 export const SEED_PROMPT_VERSION = 'seed-e19';
 
 const MINUTE = 60_000;
+
+/**
+ * This week's Monday at 00:00 in Guayaquil, as an instant. Written here and
+ * not imported: node strips types only from files without parameter
+ * properties or extensionless imports, and `clinic-time.ts` has both. The
+ * zone has no daylight saving: its midnight is always 05:00 UTC.
+ */
+function mondayInGuayaquil(now: Date): number {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guayaquil',
+  }).format(now);
+  const midnight = Date.parse(`${today}T00:00:00-05:00`);
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay() || 7;
+  return midnight - (weekday - 1) * 24 * 60 * MINUTE;
+}
 
 interface SceneInput {
   encounterId: string;
@@ -286,7 +295,7 @@ async function main() {
     // Two hours ago and one hour ago, but never before this week's Monday in
     // Guayaquil: always this week, always in the past.
     const now = Date.now();
-    const monday = startOfClinicalDay(weekOf(clinicalDateOf(new Date(now))).weekStart).getTime(); // prettier-ignore
+    const monday = mondayInGuayaquil(new Date(now)); // prettier-ignore
     const inWeek = (ms: number) =>
       new Date(Math.max(monday + MINUTE, now - ms));
     const attention = (patientId: string, startedAt: Date) =>
