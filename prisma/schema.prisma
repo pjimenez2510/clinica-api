@@ -255,6 +255,7 @@ model User {
   listeningsStarted    ListeningSession[]
   noteDraftsRequested  NoteDraft[]
   noteQuestionChecks   NoteQuestionCheck[] @relation("NoteQuestionCheckRequestedBy")
+  voiceprint           ProfessionalVoiceprint?
 
   @@index([email])
   @@map("app_user")
@@ -6457,11 +6458,34 @@ model TranscriptSegment {
   startMs     Int       @map("start_ms")
   endMs       Int       @map("end_ms")
   text        String
+  /// AS-315. `PROFESSIONAL` or `PATIENT`, by the voiceprint; null without one.
+  speaker       String? @db.VarChar(16)
+  /// AS-316, AS-317. `MODEL`, or `PROFESSIONAL` once corrected by hand.
+  speakerSource String? @map("speaker_source") @db.VarChar(16)
   createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
 
   @@unique([encounterId, scope, startMs], map: "transcript_segment_once")
   @@index([createdAt])
   @@map("transcript_segment")
+}
+
+/// E17 (AS-310 to AS-313, D-265 §1, LOPDP art. 26). The professional's
+/// voiceprint: only the vector, with their consent. Biometric data, so no
+/// `record_version` trigger: deleting it leaves nothing behind (AS-312).
+model ProfessionalVoiceprint {
+  userId      String   @id @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  model       String   @db.VarChar(120)
+  dimension   Int
+  vector      Float[]  @db.Real
+  phrases     Int
+  seconds     Float    @db.Real
+  /// AS-313. «Distinguir mi voz de la del paciente»; off by default.
+  attribution Boolean  @default(false)
+  consentedAt DateTime @map("consented_at") @db.Timestamptz(6)
+  updatedAt   DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("professional_voiceprint")
 }
 
 /// C2. Each draft of the consultation note asked for, by the stretch of the

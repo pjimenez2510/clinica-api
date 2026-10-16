@@ -282,3 +282,138 @@ describe('the scope of a listening (AS-241, B3)', () => {
     ).rejects.toThrow(/transcript_segment_once|Unique constraint/);
   });
 });
+
+describe('transcript_segment speaker (AS-315, AS-316)', () => {
+  it('AS-316: lets only the label and its source change; every other column is kept as heard', async () => {
+    const prisma = db();
+    const { encounter } = await anAttention(prisma);
+    const stored = await prisma.transcriptSegment.create({
+      data: {
+        ...segment(encounter.id),
+        speaker: 'PATIENT',
+        speakerSource: 'MODEL',
+      },
+    });
+
+    // Positive control: the label and its source change.
+    await prisma.transcriptSegment.update({
+      where: { id: stored.id },
+      data: { speaker: 'PROFESSIONAL', speakerSource: 'PROFESSIONAL' },
+    });
+    expect(
+      await prisma.transcriptSegment.findUniqueOrThrow({
+        where: { id: stored.id },
+        select: { speaker: true, speakerSource: true },
+      }),
+    ).toEqual({ speaker: 'PROFESSIONAL', speakerSource: 'PROFESSIONAL' });
+
+    for (const data of [
+      { text: 'Lo que nadie dijo.' },
+      { startMs: 1 },
+      { endMs: 9_000 },
+      { scope: 'PREPARATION' },
+      { text: 'Lo que nadie dijo.', speaker: 'PATIENT' },
+    ]) {
+      await expect(
+        prisma.transcriptSegment.update({ where: { id: stored.id }, data }),
+      ).rejects.toThrow(/transcript_segment_is_kept_as_heard/);
+    }
+  });
+
+  it('AS-316: refuses a label or a source outside its list, and one without the other', async () => {
+    const prisma = db();
+    const { encounter } = await anAttention(prisma);
+
+    // Positive control: a line without a label, as without a voiceprint.
+    await prisma.transcriptSegment.create({ data: segment(encounter.id) });
+
+    for (const [startMs, speaker, speakerSource] of [
+      [10_000, 'DOCTOR', 'MODEL'],
+      [20_000, 'PATIENT', 'NURSE'],
+      [30_000, 'PATIENT', null],
+      [40_000, null, 'MODEL'],
+    ] as const) {
+      await expect(
+        prisma.transcriptSegment.create({
+          data: {
+            ...segment(encounter.id, { startMs, endMs: startMs + 1_000 }),
+            speaker,
+            speakerSource,
+          },
+        }),
+      ).rejects.toThrow(/transcript_segment_speaker_known/);
+    }
+  });
+});
+
+describe('professional_voiceprint (AS-310, AS-312)', () => {
+  const vector = Array.from({ length: 192 }, (_, i) => (i % 7) / 10 - 0.3);
+
+  function voiceprint(userId: string, over: Record<string, unknown> = {}) {
+    const now = new Date();
+    return {
+      userId,
+      model: 'speechbrain/spkrec-ecapa-voxceleb',
+      dimension: 192,
+      vector,
+      phrases: 14,
+      seconds: 48.5,
+      consentedAt: now,
+      updatedAt: now,
+      ...over,
+    };
+  }
+
+  it('AS-312: keeps one per person, off by default, and deleting it leaves no row nor version', async () => {
+    const prisma = db();
+    const { userId } = await anAttention(prisma);
+
+    const kept = await prisma.professionalVoiceprint.create({
+      data: voiceprint(userId),
+    });
+    expect(kept.attribution).toBe(false);
+    expect(kept.vector).toHaveLength(192);
+    await expect(
+      prisma.professionalVoiceprint.create({ data: voiceprint(userId) }),
+    ).rejects.toThrow(/professional_voiceprint_pkey|Unique constraint/);
+
+    await prisma.professionalVoiceprint.delete({ where: { userId } });
+
+    expect(
+      await prisma.professionalVoiceprint.count({ where: { userId } }),
+    ).toBe(0);
+    const versions = await prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM "record_version"
+      WHERE "resource_type" = 'professional_voiceprint'`;
+    expect(Number(versions[0]?.n)).toBe(0);
+  });
+
+  it('AS-310: refuses a vector whose size is not its dimension, or that holds a value that is not finite', async () => {
+    const prisma = db();
+    const { userId } = await anAttention(prisma);
+
+    for (const over of [{ vector: vector.slice(1) }, { phrases: 0 }]) {
+      await expect(
+        prisma.professionalVoiceprint.create({
+          data: voiceprint(userId, over),
+        }),
+      ).rejects.toThrow(/professional_voiceprint_/);
+    }
+    // The client refuses these before the base sees them; the base must too.
+    for (const bad of ['NaN', 'Infinity', '-Infinity']) {
+      const now = new Date();
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO "professional_voiceprint"
+            ("user_id", "model", "dimension", "vector", "phrases", "seconds",
+             "consented_at", "updated_at")
+          VALUES (${userId}::uuid, 'speechbrain/spkrec-ecapa-voxceleb', 192,
+            array_append(${vector.slice(1)}::real[], ${bad}::real), 14, 48.5,
+            ${now}, ${now})`,
+      ).rejects.toThrow(/professional_voiceprint_vector_finite/);
+    }
+
+    // Positive control: the same row, well formed, is kept.
+    await prisma.professionalVoiceprint.create({ data: voiceprint(userId) });
+  });
+});
