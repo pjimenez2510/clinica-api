@@ -53,6 +53,16 @@ describe('datesNotSaid (AS-089)', () => {
     ]);
   });
 
+  it('AS-290: a scale «3/10» said «un 3 de 10» across two lines is said, not a date', () => {
+    const heard =
+      'como un peso no es muy fuerte como\nun 3 de 10. Dolor en la espalda';
+    expect(datesNotSaid('Dolor tipo peso en bajo vientre, intensidad 3/10.', heard)).toEqual([]); // prettier-ignore
+    expect(datesNotSaid('Dolor de intensidad 7/10.', 'un 7 sobre 10')).toEqual([]); // prettier-ignore
+    // Positive control: the same scale never said that way is still left over.
+    expect(datesNotSaid('Dolor de intensidad 3/10.', 'un 4 de 10')).toEqual(['3/10']); // prettier-ignore
+    expect(datesNotSaid('Control el 3/10.', 'vuelva en tres semanas')).toEqual(['3/10']); // prettier-ignore
+  });
+
   it('a phrase without dates has none to check', () => {
     expect(datesNotSaid('Dolor de garganta.', said)).toEqual([]);
   });

@@ -175,8 +175,8 @@ describe('writeNoteDraft', () => {
     expect(DRAFT_INSTRUCTIONS).toMatch(/niega cada una/);
   });
 
-  it('AS-273 writes each medicine of the plan with everything said of it, so the receta can read it (c2-draft-4)', () => {
-    expect(DRAFT_PROMPT_VERSION).toBe('c2-draft-4');
+  it('AS-273 writes each medicine of the plan with everything said of it, so the receta can read it (c2-draft-5)', () => {
+    expect(DRAFT_PROMPT_VERSION).toBe('c2-draft-5');
     expect(DRAFT_INSTRUCTIONS).toMatch(/Cada medicamento que se indica hoy va en una frase propia/); // prettier-ignore
     expect(DRAFT_INSTRUCTIONS).toMatch(/la concentración, la forma, la dosis, la vía, la frecuencia, la duración y la condición/); // prettier-ignore
     expect(DRAFT_INSTRUCTIONS).toMatch(/No añadas lo que no se dijo/);

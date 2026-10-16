@@ -144,6 +144,7 @@ function toResponse(overview: ChartOverview): ChartOverviewDto {
       description: each.kind === 'chart-history' ? each.description : null,
       relative: each.kind === 'chart-history' ? each.relative : null,
       conflict: each.conflict,
+      alreadyAs: each.alreadyAs,
       demo: (each as { demo?: unknown }).demo === true,
     })),
   };

@@ -483,3 +483,26 @@ describe('OrderProposalService — linking and discarding', () => {
     await expect(service.discard({ encounterId: 'enc-1', suggestionId: 'sug-2' }, requester({ userId: 'other' }))).rejects.toBeInstanceOf(AssistantNotEncounterOwnerError); // prettier-ignore
   });
 });
+
+describe('OrderProposalService — the certificate said (AS-299)', () => {
+  const CARMEN = [{ startMs: 437_300, endMs: 447_000, text: 'doctora me puede dar un certificado hoy no voy a poder ir a trabajar si le hago un certificado de reposo por un día muchas gracias doctora' }]; // prettier-ignore
+
+  it('AS-299 its professional gets the rest and its days, each with its phrase, and no model is asked', async () => {
+    const llm = model();
+    const { service } = build({ transcript: CARMEN, llm: llm.client });
+
+    const certificate = await service.certificate('enc-1', requester());
+
+    expect(certificate).toEqual({
+      type: { value: 'MEDICAL_REST', quote: 'certificado de reposo', startMs: 437_300 }, // prettier-ignore
+      days: { value: 1, quote: 'por un día', startMs: 437_300 },
+    });
+    expect(llm.sent).toHaveLength(0);
+  });
+
+  it('AS-299 AS-056 anyone else gets null: the transcript is its professional’s', async () => {
+    const { service } = build({ transcript: CARMEN });
+
+    await expect(service.certificate('enc-1', requester({ userId: 'other' }))).resolves.toBeNull(); // prettier-ignore
+  });
+});

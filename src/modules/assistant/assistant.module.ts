@@ -56,6 +56,7 @@ import {
 } from './application/pseudonymizer.port';
 import { RoutingLlmClient } from './application/routing-llm.client';
 import { AssistantDiagnosisController } from './assistant-diagnosis.controller';
+import { AssistantCertificateController } from './assistant-certificate.controller';
 import { AssistantOrdersController } from './assistant-orders.controller';
 import { AssistantPrescriptionController } from './assistant-prescription.controller';
 import { OrderProposalService } from './application/order-proposal.service';
@@ -88,6 +89,10 @@ import {
 } from './application/clinical-history.reader';
 import { ClinicalHistoryService } from './application/clinical-history.service';
 import { PrismaClinicalHistoryReader } from './infrastructure/prisma-clinical-history.reader';
+import { ASSISTANT_QUALITY_READER } from './application/assistant-quality.reader';
+import { AssistantQualityService } from './application/assistant-quality.service';
+import { AssistantQualityController } from './assistant-quality.controller';
+import { PrismaAssistantQualityReader } from './infrastructure/prisma-assistant-quality.reader';
 import {
   AssistantVitalsDictationController,
   MAX_DICTATION_BYTES,
@@ -191,12 +196,15 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
+    AssistantCertificateController,
     // AS-200 (D-256 §1). Outside the switch: no model, nothing leaves.
     AssistantHistoryController,
     AssistantVitalsDictationController,
     AssistantPreparationController,
     AssistantVoiceprintController,
     AssistantTranscriptSpeakerController,
+    // AS-345 (E19). Outside the switch too: it reads what was registered.
+    AssistantQualityController,
   ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -321,6 +329,11 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: ASSISTANT_AT_SIGNING, useExisting: SigningReviewService },
     // AS-200 to AS-207 (B1). The history without a model.
     { provide: CLINICAL_HISTORY_READER, useClass: PrismaClinicalHistoryReader },
+    {
+      provide: ASSISTANT_QUALITY_READER,
+      useClass: PrismaAssistantQualityReader,
+    },
+    AssistantQualityService,
     { provide: CLINICAL_HISTORY_CLOCK, useValue: () => new Date() },
     ClinicalHistoryService,
     // AS-180 to AS-186 (B2). The dictated vital signs: clinica-ai transcribes,
@@ -371,6 +384,7 @@ export class AssistantModule
         AssistantNoteQuestionsController,
         AssistantPrescriptionController,
         AssistantOrdersController,
+        AssistantCertificateController,
         AssistantVitalsDictationController,
         AssistantPreparationController,
         AssistantVoiceprintController,

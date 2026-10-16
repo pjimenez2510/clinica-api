@@ -76,6 +76,30 @@ describe('the phrase of each line (AS-063)', () => {
     ]);
   });
 
+  it('AS-291 does not propose what the note only says to keep taking, unless it says how', () => {
+    const plan = [
+      {
+        key: 'plan',
+        text: 'Continuar con losartán habitual. Continuar con pastillas anticonceptivas de manera habitual. Continuar amoxicilina 500 mg cada 8 horas por 3 días más.',
+      },
+    ];
+    const keep = (drug: string, quote: string, overrides: Partial<ReadLine> = {}) =>
+      read({ drug, quote, strength: null, form: null, doseAmount: null, doseUnit: null, frequency: null, durationDays: null, ...overrides }); // prettier-ignore
+    const { kept } = backedLines({
+      read: [
+        keep('losartán', 'Continuar con losartán habitual.'),
+        keep('pastillas anticonceptivas', 'Continuar con pastillas anticonceptivas de manera habitual.', { form: 'TABLET' }), // prettier-ignore
+        // Positive control: a continuation that says how is a prescription.
+        keep('Amoxicilina', 'Continuar amoxicilina 500 mg cada 8 horas por 3 días más.', { strength: '500 mg', frequency: 'EVERY_8_HOURS', durationDays: 3 }), // prettier-ignore
+      ],
+      cleared: plan[0]!.text,
+      sections: plan,
+      restore: sameText,
+    });
+
+    expect(kept.map((line) => line.drug)).toEqual(['Amoxicilina']);
+  });
+
   it('AS-063 drops a line whose phrase is not in the note, or that the note denies', () => {
     const { kept, dropped } = backedLines({
       read: [

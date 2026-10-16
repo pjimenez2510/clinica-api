@@ -29,6 +29,10 @@ import {
   SuggestionOrderMismatchError,
 } from '../domain/assistant.errors';
 import {
+  readCertificate,
+  type SaidCertificate,
+} from '../domain/certificate-reading';
+import {
   backedExams,
   blockOf,
   offeredCandidates,
@@ -144,6 +148,21 @@ export class OrderProposalService {
     const overview = await this.overviewOf(encounter, requester);
     await this.trail(encounter, requester);
     return overview;
+  }
+
+  /**
+   * AS-299. The certificate said in the conversation, read by rules and no
+   * model. Only the attention's professional sees what the transcript says
+   * (AS-056): anyone else gets null.
+   */
+  async certificate(
+    encounterId: string,
+    requester: ProposalRequester,
+  ): Promise<SaidCertificate | null> {
+    const encounter = await this.encounterFor(encounterId, requester.readSites);
+    await this.trail(encounter, requester);
+    if (encounter.practitionerUserId !== requester.userId) return null;
+    return readCertificate(await this.listening.transcript(encounter.id));
   }
 
   /** AS-103 to AS-107, AS-112, AS-113. Reads the exams out of the consultation. */

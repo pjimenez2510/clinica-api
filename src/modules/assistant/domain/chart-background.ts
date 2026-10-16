@@ -284,11 +284,51 @@ export type ChartProposalView = ChartProposal & {
   quote: string;
   /** AS-264. Why it cannot be recorded as it is. */
   conflict: 'active-allergy' | null;
+  /** AS-292. The chart's own words for it, when the chart has it said otherwise. */
+  alreadyAs: string | null;
 };
 
 const sameText = (left: string, right: string) =>
   foldText(left).replace(/\s+/g, ' ').trim() ===
   foldText(right).replace(/\s+/g, ' ').trim();
+
+/** AS-292. Words of a disease that say nothing of which one it is. */
+const GENERIC = new Set(['enfermedad', 'arterial', 'cronica', 'cronico', 'aguda', 'agudo', 'mellitus', 'tipo', 'desde', 'hace', 'anos', 'tiene', 'sufre', 'padece']); // prettier-ignore
+
+/**
+ * AS-292. The roots of the disease words: their first seven letters, so
+ * «hipertenso» and «hipertensión» share one and «hipertiroidismo» does not;
+ * short words count too, so «mama» and «pulmón» tell two cancers apart.
+ */
+function rootsOf(description: string): Set<string> {
+  return new Set(
+    foldText(description)
+      .split(/[^\p{L}]+/u)
+      .filter((word) => word.length >= 4 && !GENERIC.has(word))
+      .map((word) => word.slice(0, 7)),
+  );
+}
+
+/**
+ * AS-292. «HIPERTENSO» and «Hipertensión arterial»: the same kind, the same
+ * relative and the same disease words by root, every one of them (revisión
+ * G1: «diabetes gestacional» is not «Diabetes mellitus»). In doubt, it is
+ * offered to register.
+ */
+function sameDisease(
+  entry: ChartHistoryEntry,
+  proposal: Extract<ChartProposal, { kind: 'chart-history' }>,
+): boolean {
+  if (entry.kind !== proposal.history) return false;
+  if (!sameText(entry.relative ?? '', proposal.relative ?? '')) return false;
+  const roots = rootsOf(entry.description);
+  const proposed = rootsOf(proposal.description);
+  return (
+    roots.size > 0 &&
+    roots.size === proposed.size &&
+    [...proposed].every((root) => roots.has(root))
+  );
+}
 
 /**
  * AS-263, AS-264. What Antecedentes shows of the current reading: the
@@ -331,7 +371,8 @@ export function shownChart(
     }
     const said = spokenIn(proposal, transcript);
     if (said === '') return [];
-    return [{ ...proposal, id: each.id, quote: sentenceOf(proposal, said), conflict }]; // prettier-ignore
+    const alreadyAs = proposal.kind === 'chart-history' ? chart.history.find((entry) => sameDisease(entry, proposal)) : undefined; // prettier-ignore
+    return [{ ...proposal, id: each.id, quote: sentenceOf(proposal, said), conflict, alreadyAs: alreadyAs ? chartRecordText({ kind: 'history', description: alreadyAs.description, relative: alreadyAs.relative }) : null }]; // prettier-ignore
   });
   // P5 (clinical review G1). An allergy said and not yet decided, of this
   // reading or an earlier one, and «sin alergias» is never offered beside it.
