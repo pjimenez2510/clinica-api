@@ -30,12 +30,14 @@ const TYPES: readonly { type: SaidCertificateType; said: RegExp }[] = [
 ];
 
 /**
- * A «no» or «sin» among the few words right before «certificado» denies it
- * («no le doy un certificado de reposo»); one further back is about something
- * else (Carmen: «no voy a poder ir a trabajar, si le hago un certificado…»).
+ * A «no» or «sin» in the clause right before «certificado», up to seven words
+ * back, denies it («No, no le voy a hacer el certificado de reposo»); a
+ * comma, «si», «pero» or «y» starts another clause, so Carmen's «no voy a
+ * poder ir a trabajar si le hago un certificado…» is not denied.
  */
-const DENIED_WITHIN_WORDS = 4;
+const DENIED_WITHIN_WORDS = 7;
 const DENIAL = /^(?:no|sin|nunca|tampoco)$/iu;
+const CLAUSE = /,|;|:|\b(?:si|pero|y)\b/giu;
 
 /** «por un día», «por 3 días», «tres días de reposo»: right after the type. */
 const DAYS =
@@ -58,15 +60,22 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
 /** The longest rest a phrase can propose; beyond it the physician types it. */
 const MOST_DAYS = 30;
 
-/** AS-299. The last certificate said and not denied, or null. */
+/**
+ * AS-299. The last certificate said, or null: one denied after it takes it
+ * back, and a question —the patient asking for one— says none (revisión M1).
+ */
 export function readCertificate(
   lines: readonly TranscriptLine[],
 ): SaidCertificate | null {
   let found: SaidCertificate | null = null;
   for (const sentence of sentencesOf(lines)) {
+    if (/[¿?]/u.test(sentence.text)) continue;
     for (const { type, said } of TYPES) {
       for (const match of sentence.text.matchAll(said)) {
-        if (denied(sentence.text.slice(0, match.index))) continue;
+        if (denied(sentence.text.slice(0, match.index))) {
+          found = null;
+          continue;
+        }
         found = {
           type: { value: type, quote: match[0], startMs: sentence.startMs },
           days:
@@ -81,7 +90,8 @@ export function readCertificate(
 }
 
 function denied(before: string): boolean {
-  const words = before.split(/[^\p{L}]+/u).filter(Boolean);
+  const clause = before.split(CLAUSE).at(-1) ?? before;
+  const words = clause.split(/[^\p{L}]+/u).filter(Boolean);
   return words.slice(-DENIED_WITHIN_WORDS).some((word) => DENIAL.test(word));
 }
 

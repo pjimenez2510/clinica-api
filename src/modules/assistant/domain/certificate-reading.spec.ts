@@ -48,3 +48,17 @@ describe('AS-299 the certificate said aloud, read by rules', () => {
     expect(read?.days).toBeNull();
   });
 });
+
+describe('AS-299 what takes a certificate back (revisión M1)', () => {
+  it('AS-299 a denial said after it takes it back, and a denial further back in its clause still denies', () => {
+    expect(readCertificate(said('Le hago un certificado de reposo por dos días.', 'No, mejor no le hago el certificado de reposo.'))).toBeNull(); // prettier-ignore
+    expect(readCertificate(said('No, no le voy a hacer el certificado de reposo.'))).toBeNull(); // prettier-ignore
+    expect(readCertificate(said('No creo que haga falta un certificado de reposo.'))).toBeNull(); // prettier-ignore
+  });
+
+  it('AS-299 the patient asking for one is not the certificate said', () => {
+    expect(readCertificate(said('Doctora, ¿me puede dar un certificado de reposo por tres días?'))).toBeNull(); // prettier-ignore
+    // Control: the physician's answer is.
+    expect(readCertificate(said('Doctora, ¿me puede dar un certificado de reposo por tres días?', 'Sí, le hago un certificado de reposo por tres días.'))?.days?.value).toBe(3); // prettier-ignore
+  });
+});
