@@ -1510,7 +1510,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > La plantilla la escribe la clínica, no el paciente: va al modelo como
   > contexto (`withContext`), con las instrucciones fijas. Lo que la ficha ya
   > sabe no se copia (D-249 §1), ni un diagnóstico: va en Diagnósticos, y la
-  > transcripción no dice quién habla (D-249 §2).
+  > transcripción no dice quién habla (D-249 §2). Salvo la impresión que el
+  > médico dice en voz alta, al comienzo del Plan y sin registrarse (AS-297,
+  > pendiente de confirmar en D-267).
 - **AS-089** — Cada frase DEBERÁ llevar el inicio de la línea de la
   transcripción que la respalda, sólo de las que se dieron al modelo; SI una
   frase no lleva marcador, lleva uno que no se le dio, o lleva una fecha que,
@@ -2878,7 +2880,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   borrador DEBERÁ escribirla al comienzo del Plan de tratamiento como
   «Impresión diagnóstica: …» con su línea; y la lectura de problemas DEBERÁ
   tomarla como el problema, con los síntomas que explica dentro de él y no
-  aparte (AS-267). Sin impresión dicha, como hoy.
+  aparte (AS-267). Sin impresión dicha, como hoy. SI alguna palabra de cinco
+  letras o más de la impresión no está en la línea que cita, ENTONCES la frase
+  DEBERÁ marcarse «Nadie lo dijo» (AS-089). Nada se registra en Diagnósticos:
+  lo registra el médico.
 - **AS-298** _(solo interfaz)_ — CUANDO el borrador de la nota se relee con
   preguntas a la vista, la pantalla DEBERÁ pedir una revisión de las
   preguntas (AS-119), para que la respondida se retire (AS-122).

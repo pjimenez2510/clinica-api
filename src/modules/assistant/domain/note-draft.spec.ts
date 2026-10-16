@@ -207,6 +207,26 @@ describe('readDraft (AS-088, AS-089)', () => {
   });
 });
 
+describe('readDraft — the impression said aloud (AS-297, revisión M2)', () => {
+  const said = [{ startMs: 0, endMs: 6_000, text: 'Bueno, tiene una infección de las vías urinarias baja, una cistitis aguda.' }]; // prettier-ignore
+  const { markers } = conversationOf(said);
+  const plan = (text: string) =>
+    readDraft({
+      sections: [{ section: 'planTratamiento', segments: [{ text, source: 'L1' }] }], // prettier-ignore
+      markers,
+      template,
+      restore: same,
+      said: said[0]!.text,
+    })[0]!.phrases[0]!.unsaid;
+
+  it('AS-297 an impression whose words are in its line is believed; one the model completed is «Nadie lo dijo»', () => {
+    expect(plan('Impresión diagnóstica: infección de las vías urinarias baja, una cistitis aguda.')).toBe(false); // prettier-ignore
+    expect(plan('Impresión diagnóstica: pielonefritis aguda.')).toBe(true);
+    // Control: any other phrase of the plan is checked as before.
+    expect(plan('Tomar abundante agua.')).toBe(false);
+  });
+});
+
 describe('draftDue (AS-087)', () => {
   it('asks for a draft once the transcript passes the last one by three minutes of conversation', () => {
     expect(REDRAFT_EVERY_MS).toBe(180_000);

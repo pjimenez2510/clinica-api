@@ -77,11 +77,12 @@ describe('el asistente apagado (AS-026)', () => {
     ).rejects.toThrow(/404/);
   });
 
-  it('AS-026 AS-111 answers 404 to the exams the assistant proposes, before any session', async () => {
+  it('AS-026 AS-111 AS-299 answers 404 to the exams and the certificate the assistant proposes, before any session', async () => {
     const server = app.getHttpServer();
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/orders`).expect(404); // prettier-ignore
     await request(server).post(`/api/v1/encounters/${ENCOUNTER}/assistant/orders/read`).expect(404); // prettier-ignore
     await request(server).post(`/api/v1/encounters/${ENCOUNTER}/assistant/orders/link`).send({}).expect(404); // prettier-ignore
+    await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/certificate`).expect(404); // prettier-ignore
     // Control: the orders of the attention, outside the assistant, ask for a session.
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/orders`).expect(401); // prettier-ignore
   });
