@@ -85,11 +85,22 @@ export interface Provenanced<Value> {
   quote: string | null;
 }
 
+/** AS-295. A value whose phrase names another sign (`named`) than its field. */
+export interface Doubtful {
+  field: DictatedVitalField;
+  value: number;
+  startMs: number;
+  quote: string;
+  named: DictatedVitalField;
+}
+
 export interface PreparationProposal {
   values: Partial<Record<DictatedVitalField, Provenanced<number>>>;
   heightPosition: Provenanced<HeightPosition> | null;
   /** Named, but not proposed: typed by hand (AS-247, AS-248). */
   unclear: DictatedVitalField[];
+  /** AS-295. Proposed apart: its phrase names another sign. */
+  doubtful: Doubtful[];
   /**
    * AS-249, AS-282. The reason proposed (`text`): its wording if the barrier
    * believes it, else the patient's whole sentence, which is always its source
@@ -188,6 +199,7 @@ export function readPreparationAnswer(input: {
   const { answer, markers, restore, lines } = input;
   const unclear = new Set<DictatedVitalField>();
   const found = new Map<DictatedVitalField, Provenanced<number>[]>();
+  const doubts: Doubtful[] = [];
   const speakerOf = new Map(
     answer.lines.map((each) => [each.line.trim().replace(/^\[|\]$/g, '').toUpperCase(), each.speaker]), // prettier-ignore
   );
@@ -210,6 +222,21 @@ export function readPreparationAnswer(input: {
         ? measured(answered.field, answered.said, answered.unit)
         : null;
     if (value === null) {
+      // AS-295. «Frecuencia cardíaca 16» proposed as the breathing: shown apart.
+      const named =
+        line !== null &&
+        holds(line.text, quote) &&
+        says(quote, answered.said, answered.field) &&
+        unitSaid(answered.field, answered.said, answered.unit, line.text)
+          ? namedInstead(answered.field, answered.said, quote, line, lines[at - 1]) // prettier-ignore
+          : null;
+      if (named !== null) {
+        const taken = measured(answered.field, answered.said, answered.unit);
+        if (taken !== null) {
+          doubts.push({ field: answered.field, value: taken, startMs: line!.startMs, quote, named }); // prettier-ignore
+          continue;
+        }
+      }
       unclear.add(answered.field);
       continue;
     }
@@ -221,11 +248,19 @@ export function readPreparationAnswer(input: {
 
   const values = settled(found, unclear);
   const heightPosition = positionOf(answer, values, markers, restore);
+  // AS-295. One doubt per field, and none where a value is believed or unclear.
+  const doubtful = doubts.filter(
+    (doubt, at) =>
+      values[doubt.field] === undefined &&
+      !unclear.has(doubt.field) &&
+      doubts.findIndex((each) => each.field === doubt.field) === at,
+  );
 
   return {
     values,
     heightPosition,
     unclear: [...unclear],
+    doubtful,
     complaint: complaintOf(answer, markers, speakers, lines, restore),
     speakers,
   };
@@ -266,6 +301,7 @@ export function readPreparationByRules(
       ? { value: read.heightPosition, startMs: null, quote: null }
       : null,
     unclear: [...unclear],
+    doubtful: [],
     complaint: null,
     speakers: lines.map(() => null),
   };
@@ -323,6 +359,26 @@ function ownedBy(
   // A correction said after it, anywhere in the sentence, takes it back.
   const whole = ownersOf(`${before?.text ?? ''} ${line.text}`, said).at(-1);
   return !owner.superseded && !whole?.superseded;
+}
+
+/**
+ * AS-295. The sign the phrase itself gives the number to, when it is another than
+ * `field` and nothing takes the number back; else null.
+ */
+function namedInstead(
+  field: DictatedVitalField,
+  said: number,
+  quote: string,
+  line: TranscriptLine,
+  before: TranscriptLine | undefined,
+): DictatedVitalField | null {
+  // The phrase itself names the sign: a swap of two signs said in a row is unclear.
+  const owner = ownersOf(quote, said).at(-1);
+  const whole = ownersOf(`${before?.text ?? ''} ${line.text}`, said).at(-1);
+  if (!owner || owner.superseded || whole?.superseded) return null;
+  const named = owner.fields.map((each) => FIELD_OF[each]);
+  if (named.includes(field) || named[0] === undefined) return null;
+  return named[0];
 }
 
 /**

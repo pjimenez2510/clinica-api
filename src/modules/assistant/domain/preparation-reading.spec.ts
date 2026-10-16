@@ -538,3 +538,47 @@ describe('AS-294 the reason over several lines the patient said one after the ot
     expect(complaint?.text).toBe('Señorita, desde hace tres días me arde mucho al orinar y voy al baño. A cada rato.'); // prettier-ignore
   });
 });
+
+describe('AS-295 a value whose phrase names another sign is proposed apart, as doubtful', () => {
+  it('AS-295 «Frecuencia cardíaca 16» proposed as the breathing is doubtful, not proposed and not unclear', () => {
+    const read = readCarmen({
+      values: [{ field: 'respiratoryRate', line: 'L14', quote: 'Frecuencia cardíaca 16', said: 16, unit: 'none' }], // prettier-ignore
+    });
+
+    expect(read.values).toEqual({});
+    expect(read.unclear).toEqual([]);
+    expect(read.doubtful).toEqual([
+      { field: 'respiratoryRate', value: 16, startMs: 65_000, quote: 'Frecuencia cardíaca 16', named: 'heartRate' }, // prettier-ignore
+    ]);
+  });
+
+  it('AS-295 a field that already has a believed value has no doubt', () => {
+    const lines = [
+      { startMs: 0, endMs: 4_000, text: 'Frecuencia cardíaca 16.' },
+      { startMs: 5_000, endMs: 9_000, text: 'Frecuencia respiratoria 18.' },
+    ];
+    const read = readPreparationAnswer({
+      answer: answer({
+        lines: [{ line: 'L1', speaker: 'nursing' }, { line: 'L2', speaker: 'nursing' }], // prettier-ignore
+        values: [
+          { field: 'respiratoryRate', line: 'L1', quote: 'Frecuencia cardíaca 16', said: 16, unit: 'none' }, // prettier-ignore
+          { field: 'respiratoryRate', line: 'L2', quote: 'Frecuencia respiratoria 18', said: 18, unit: 'none' }, // prettier-ignore
+        ],
+      }),
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (text) => text,
+    });
+
+    expect(read.values.respiratoryRate?.value).toBe(18);
+    expect(read.doubtful).toEqual([]);
+  });
+
+  it('AS-295 a number the phrase gives to no sign is unclear, as before', () => {
+    const read = readCarmen({
+      values: [{ field: 'respiratoryRate', line: 'L13', quote: 'Por un minuto', said: 1, unit: 'none' }], // prettier-ignore
+    });
+    expect(read.doubtful).toEqual([]);
+    expect(read.unclear).toEqual(['respiratoryRate']);
+  });
+});
