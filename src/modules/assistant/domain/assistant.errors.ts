@@ -644,3 +644,66 @@ export class DictationUnavailableError extends ExternalServiceError {
     this.userTitle = DICTATION_UNAVAILABLE_TITLES[reason];
   }
 }
+
+/**
+ * AS-310. The recording of a voice arrived without its owner's consent: a
+ * voiceprint is biometric data (LOPDP art. 26), and nothing is sent on.
+ */
+export class VoiceprintConsentRequiredError extends ValidationError {
+  readonly code = 'ASSISTANT_VOICEPRINT_CONSENT_REQUIRED';
+  override readonly userTitle =
+    'Para registrar su voz, marque que consiente que se guarde su huella de voz';
+
+  constructor() {
+    super('A voiceprint was sent without consent');
+  }
+}
+
+/** AS-311. Fewer than ten phrases with voice: the voiceprint would say little. */
+export class VoiceNotHeardError extends ValidationError {
+  readonly code = 'ASSISTANT_VOICE_NOT_HEARD';
+  override readonly userTitle =
+    'No se oyó voz suficiente. Lee el texto completo, a la distancia de una consulta.';
+
+  constructor() {
+    super('Not enough voice was heard for a voiceprint');
+  }
+}
+
+/**
+ * AS-311, AS-313. `clinica-ai` or its voice model is not there. The reason is
+ * `clinica-ai`'s own sentence, never anything of the recording.
+ */
+export class VoiceUnavailableError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_VOICE_UNAVAILABLE';
+  readonly service = 'clinica-ai';
+  readonly isRetryable = true;
+  override readonly userTitle: string;
+
+  constructor(readonly reason: string) {
+    super('clinica-ai cannot make a voiceprint');
+    this.userTitle = `No se puede registrar la voz ahora: ${reason}`;
+  }
+}
+
+/** AS-313. «Distinguir mi voz» needs a voice registered first. */
+export class VoiceprintMissingError extends ConflictError {
+  readonly code = 'ASSISTANT_VOICEPRINT_MISSING';
+  override readonly userTitle =
+    'Registre su voz en «Mi voz» antes de encender «Distinguir mi voz de la del paciente»';
+
+  constructor() {
+    super('No voiceprint is registered');
+  }
+}
+
+/** AS-317. The line whose speaker is corrected is not in that listening. */
+export class TranscriptLineNotFoundError extends NotFoundError {
+  readonly code = 'ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND';
+  override readonly userTitle =
+    'No se encontró esa línea de la transcripción. Recargue la escucha';
+
+  constructor() {
+    super('Transcript line not found');
+  }
+}

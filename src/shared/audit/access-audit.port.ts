@@ -45,7 +45,14 @@ export type AuditAction =
    * when its attention was interrupted. Not an `UPDATE`: nothing changed in
    * it, and the trail has to say that a note was deliberately NOT signed.
    */
-  | 'DRAFT_LEFT_UNSIGNED';
+  | 'DRAFT_LEFT_UNSIGNED'
+  /**
+   * AS-312 (E17). A professional deleted their own voiceprint: the row is
+   * gone, so the trail is the only thing left saying it existed. Not an
+   * `UPDATE`: a biometric datum removed on its owner's request is what the
+   * LOPDP asks to be able to show.
+   */
+  | 'DELETE';
 
 /**
  * A resource as it stood, in the shape the DOMAIN uses — never the ORM row.

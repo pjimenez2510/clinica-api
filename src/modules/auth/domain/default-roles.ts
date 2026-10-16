@@ -179,6 +179,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'vitals:write',
       // AS-187, D-255 §1. Dictating the vitals in the Signos tab (B2).
       'assistant:dictate-vitals',
+      // AS-310, D-265 §1. Their own voiceprint, to tell their voice apart
+      // from the patient's in the listening; optional and off by default.
+      'assistant:voiceprint',
       // EN-164. The doctor keeps recording allergies and history: this is the
       // permission those routes ask for now, instead of `record:write`.
       'background:write',
@@ -215,6 +218,8 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // AS-187, D-255 §1. Dictating the vitals while taking them (B2): its
       // own permission, so nursing does not get `assistant:use` with it.
       'assistant:dictate-vitals',
+      // AS-310, D-265 §1. Nursing listens in the preparation (B3).
+      'assistant:voiceprint',
       // D-A-003, 20-08-2026. Without this, EN-066 was impossible to satisfy:
       // it says nursing takes the vital signs BEFORE the doctor walks in, but
       // `encounter_vitals` hangs off an encounter that must already exist and

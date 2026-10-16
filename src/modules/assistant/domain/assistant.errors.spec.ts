@@ -41,6 +41,11 @@ import {
   ClinicalHistoryChartNotOpenError,
   DictationNotHeardError,
   DictationUnavailableError,
+  TranscriptLineNotFoundError,
+  VoiceNotHeardError,
+  VoiceprintConsentRequiredError,
+  VoiceprintMissingError,
+  VoiceUnavailableError,
 } from './assistant.errors';
 
 /**
@@ -373,4 +378,57 @@ describe('assistant errors', () => {
       expect(DOMAIN_ERROR_CODES).toContain(error.code);
     },
   );
+});
+
+describe('E17 la huella de voz: códigos, estados y mensajes', () => {
+  it('AS-310 answers ASSISTANT_VOICEPRINT_CONSENT_REQUIRED as a 422 that asks for the consent', () => {
+    const error = new VoiceprintConsentRequiredError();
+
+    expect(error.code).toBe('ASSISTANT_VOICEPRINT_CONSENT_REQUIRED');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toBe(
+      'Para registrar su voz, marque que consiente que se guarde su huella de voz',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-311 answers ASSISTANT_VOICE_NOT_HEARD as a 422 with the sentence of the spec', () => {
+    const error = new VoiceNotHeardError();
+
+    expect(error.code).toBe('ASSISTANT_VOICE_NOT_HEARD');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toBe(
+      'No se oyó voz suficiente. Lee el texto completo, a la distancia de una consulta.',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-311 answers ASSISTANT_VOICE_UNAVAILABLE as a retryable 503 with the reason', () => {
+    const error = new VoiceUnavailableError('falta el modelo de voz');
+
+    expect(error.code).toBe('ASSISTANT_VOICE_UNAVAILABLE');
+    expect(error).toBeInstanceOf(ExternalServiceError);
+    expect(error.isRetryable).toBe(true);
+    expect(error.userTitle).toBe(
+      'No se puede registrar la voz ahora: falta el modelo de voz',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-313 answers ASSISTANT_VOICEPRINT_MISSING as a 409 that says where to register', () => {
+    const error = new VoiceprintMissingError();
+
+    expect(error.code).toBe('ASSISTANT_VOICEPRINT_MISSING');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('«Mi voz»');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-317 answers ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND as a 404', () => {
+    const error = new TranscriptLineNotFoundError();
+
+    expect(error.code).toBe('ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND');
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
 });

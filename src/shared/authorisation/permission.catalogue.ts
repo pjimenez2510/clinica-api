@@ -313,6 +313,16 @@ export const PERMISSION_CATALOGUE = [
     description:
       'Dictar los signos vitales en voz alta para que el asistente llene la toma como propuesta. No guarda nada por sí mismo',
   },
+  // AS-310 to AS-313, D-265 §1, LOPDP art. 26. «Mi voz»: the holder's own
+  // voiceprint, never anybody else's (the person comes from the session).
+  // Its own code: registering a biometric datum is a choice of each
+  // professional, not something `assistant:use` should bring along.
+  {
+    code: 'assistant:voiceprint',
+    resource: 'record',
+    description:
+      'Registrar la propia huella de voz para que la escucha distinga su voz de la del paciente. Opcional y borrable',
+  },
   // EN-072, REQ-115. The second key of the record: block F of form 002, the
   // violence screening. `record:read` opens the attention; this opens what the
   // attention says about violence, and is ALSO what lets somebody record it.
