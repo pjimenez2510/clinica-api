@@ -626,11 +626,10 @@ describe('PrescriptionProposalService — allergies, confirm and link', () => {
   });
 });
 
-describe('the instructions of the receta reading (AS-272)', () => {
-  it('AS-272 a medicine the physician says to keep taking («siga con») is a line of today (d2-lines-2)', () => {
-    expect(LINES_PROMPT_VERSION).toBe('d2-lines-2');
-    expect(LINES_INSTRUCTIONS).toMatch(
-      /«siga con», «continúe con».*sí es una línea/,
-    );
+describe('the instructions of the receta reading (AS-272, AS-291)', () => {
+  it('AS-291 a medicine the physician says to keep taking is a line only when the note says how (d2-lines-3)', () => {
+    expect(LINES_PROMPT_VERSION).toBe('d2-lines-3');
+    expect(LINES_INSTRUCTIONS).toMatch(/«siga con su losartán».*tampoco es una línea/); // prettier-ignore
+    expect(LINES_INSTRUCTIONS).toMatch(/Solo si la nota dice cómo tomarlo.*es una línea/); // prettier-ignore
   });
 });
