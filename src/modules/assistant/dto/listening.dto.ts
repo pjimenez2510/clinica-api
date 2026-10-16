@@ -35,6 +35,10 @@ const listeningSchema = z.object({
       startMs: z.number().int(),
       endMs: z.number().int(),
       text: z.string(),
+      /** AS-315. Who said it, by the voiceprint; null without one. */
+      speaker: z.enum(['PROFESSIONAL', 'PATIENT']).nullable().optional(),
+      /** AS-317. `PROFESSIONAL` once corrected by hand. */
+      speakerSource: z.enum(['MODEL', 'PROFESSIONAL']).nullable().optional(),
     }),
   ),
   /** AS-167. The patient has the authorization to record standing. */
@@ -46,6 +50,12 @@ const recordingAuthorizationSchema = z.object({
   recordingAuthorized: z.boolean(),
 });
 
+/** AS-317. Who said the line, as the professional says. */
+const lineSpeakerSchema = z.object({
+  speaker: z.enum(['PROFESSIONAL', 'PATIENT']),
+});
+
+export class LineSpeakerDto extends createZodDto(lineSpeakerSchema) {}
 export class ListeningTicketDto extends createZodDto(ticketSchema) {}
 export class ListeningDto extends createZodDto(listeningSchema) {}
 export class RecordingAuthorizationDto extends createZodDto(

@@ -10,6 +10,7 @@ import {
   type NestModule,
   type OnModuleDestroy,
   type OnModuleInit,
+  RequestMethod,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -101,6 +102,27 @@ import {
   type DictationTranscriber,
 } from './application/dictation-transcriber.port';
 import { VitalsDictationService } from './application/vitals-dictation.service';
+import {
+  LISTENING_VOICEPRINTS,
+  VOICEPRINT_ENROLLER,
+  VOICEPRINT_STORE,
+  type ListeningVoiceprints,
+  type VoiceprintEnroller,
+} from './application/voiceprint.port';
+import {
+  VOICEPRINT_CLOCK,
+  VoiceprintService,
+} from './application/voiceprint.service';
+import { AssistantTranscriptSpeakerController } from './assistant-transcript-speaker.controller';
+import {
+  AssistantVoiceprintController,
+  MAX_VOICEPRINT_BYTES,
+} from './assistant-voiceprint.controller';
+import {
+  ClinicaAiVoiceprintEnroller,
+  MissingVoiceprintEnroller,
+} from './infrastructure/clinica-ai.voiceprint-enroller';
+import { PrismaVoiceprintStore } from './infrastructure/prisma-voiceprint.store';
 import { dictationTranscriberFor } from './infrastructure/clinica-ai.dictation-transcriber';
 import { ListeningAccess } from './application/listening-access';
 import {
@@ -179,6 +201,8 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantHistoryController,
     AssistantVitalsDictationController,
     AssistantPreparationController,
+    AssistantVoiceprintController,
+    AssistantTranscriptSpeakerController,
     // AS-345 (E19). Outside the switch too: it reads what was registered.
     AssistantQualityController,
   ],
@@ -260,12 +284,20 @@ const PURGE_EVERY_MS = 86_400_000;
     },
     {
       provide: PREPARATION_LISTENING,
-      inject: [SPEECH_RECOGNIZER, PREPARATION_LISTENING_STORE, LISTENING_CLOCK],
+      inject: [
+        SPEECH_RECOGNIZER,
+        PREPARATION_LISTENING_STORE,
+        LISTENING_CLOCK,
+        LISTENING_VOICEPRINTS,
+      ],
+      // AS-314. Nursing's voiceprint too, when theirs is on.
       useFactory: (
         recognizer: SpeechRecognizer,
         store: ListeningStore,
         clock: ListeningClock,
-      ) => new ListeningService(recognizer, store, clock),
+        voiceprints: ListeningVoiceprints,
+      ) =>
+        new ListeningService(recognizer, store, clock, undefined, voiceprints),
     },
     ListeningAccess,
     ListeningGateway,
@@ -312,6 +344,17 @@ const PURGE_EVERY_MS = 86_400_000;
       useFactory: buildDictationTranscriber,
     },
     VitalsDictationService,
+    // AS-310 to AS-314 (E17). «Mi voz»: the voiceprint clinica-ai makes, and
+    // the switch the listening reads when it opens.
+    {
+      provide: VOICEPRINT_ENROLLER,
+      inject: [ConfigService],
+      useFactory: buildVoiceprintEnroller,
+    },
+    { provide: VOICEPRINT_STORE, useClass: PrismaVoiceprintStore },
+    { provide: VOICEPRINT_CLOCK, useValue: () => new Date() },
+    VoiceprintService,
+    { provide: LISTENING_VOICEPRINTS, useExisting: VoiceprintService },
   ],
   // Only the port `encounter` asks at a signature: `@Global` makes every
   // export injectable anywhere, and the model client is not for anyone else.
@@ -344,6 +387,8 @@ export class AssistantModule
         AssistantCertificateController,
         AssistantVitalsDictationController,
         AssistantPreparationController,
+        AssistantVoiceprintController,
+        AssistantTranscriptSpeakerController,
       );
     // AS-186. The recording as raw bytes, whatever its type, capped at the
     // socket: a larger one is the parser's 413 before it reaches clinica-ai
@@ -352,6 +397,15 @@ export class AssistantModule
     consumer
       .apply(express.raw({ type: () => true, limit: MAX_DICTATION_BYTES }))
       .forRoutes(AssistantVitalsDictationController);
+    // AS-310. The reading, the same way; only on the PUT that carries it —
+    // the switch next to it is JSON.
+    consumer
+      .apply(express.raw({ type: () => true, limit: MAX_VOICEPRINT_BYTES }))
+      .forRoutes({
+        path: 'me/voiceprint',
+        method: RequestMethod.PUT,
+        version: '1',
+      });
   }
 
   /**
@@ -439,6 +493,24 @@ export function buildDictationTranscriber(
     timeoutMs: DICTATION_TIMEOUT_MS,
   });
 }
+
+/**
+ * AS-310, AS-311. `clinica-ai` makes the voiceprint with the shared secret;
+ * without the secret nothing is sent and «Mi voz» says why.
+ */
+export function buildVoiceprintEnroller(config: Config): VoiceprintEnroller {
+  const secret = config.get('ASSISTANT_AI_SERVICE_SECRET', { infer: true });
+  if (!secret) return new MissingVoiceprintEnroller();
+  return new ClinicaAiVoiceprintEnroller({
+    baseUrl: config.get('ASSISTANT_AI_SERVICE_URL', { infer: true }),
+    secret,
+    timeoutMs: VOICEPRINT_TIMEOUT_MS,
+    statusTimeoutMs: config.get('ASSISTANT_AI_SERVICE_TIMEOUT_MS', { infer: true }), // prettier-ignore
+  });
+}
+
+/** CAI-016. Two minutes of reading through whisper and the voice model. */
+const VOICEPRINT_TIMEOUT_MS = 120_000;
 
 /**
  * AS-048. `clinica-ai`'s recogniser with the shared secret; without the

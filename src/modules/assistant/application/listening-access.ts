@@ -192,9 +192,11 @@ export class ListeningAccess {
   async read(
     encounterId: string,
     requester: ListeningRequester,
+    // AS-317. Correcting who said a line asks what reading it asks.
+    action: 'READ' | 'UPDATE' = 'READ',
   ): Promise<{ recordingAuthorized: boolean }> {
     const encounter = await this.ownEncounter(encounterId, requester, false);
-    return this.readOf(encounter, 'CONSULTATION', requester);
+    return this.readOf(encounter, 'CONSULTATION', requester, action);
   }
 
   /**
@@ -204,6 +206,7 @@ export class ListeningAccess {
   async readPreparation(
     encounterId: string,
     requester: ListeningRequester,
+    action: 'READ' | 'UPDATE' = 'READ',
   ): Promise<{ recordingAuthorized: boolean }> {
     const encounter = await this.reachableEncounter(encounterId, requester.writeSites, false); // prettier-ignore
     // Revisión (seguridad): once the attention is closed, only its own
@@ -215,19 +218,20 @@ export class ListeningAccess {
       // prettier-ignore
       throw new AssistantEncounterClosedError();
     }
-    return this.readOf(encounter, 'PREPARATION', requester);
+    return this.readOf(encounter, 'PREPARATION', requester, action);
   }
 
   private async readOf(
     encounter: CodingEncounter,
     scope: ListeningScope,
     requester: ListeningRequester,
+    action: 'READ' | 'UPDATE',
   ): Promise<{ recordingAuthorized: boolean }> {
     await this.audit.record({
       userId: requester.userId,
       resourceType: AUDIT_RESOURCE[scope],
       resourceId: encounter.id,
-      action: 'READ',
+      action,
       ip: requester.ip,
       userAgent: requester.userAgent,
     });

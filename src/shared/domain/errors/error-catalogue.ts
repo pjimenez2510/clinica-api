@@ -127,6 +127,15 @@ export const DOMAIN_ERROR_CODES = [
   // voz, ilegible— (422) y clinica-ai que no puede transcribirlo (503).
   'ASSISTANT_DICTATION_NOT_HEARD',
   'ASSISTANT_DICTATION_UNAVAILABLE',
+  // AS-310 a AS-317 (E17, D-265 §1): la huella de voz del profesional. Sin
+  // consentimiento (422), sin voz suficiente (422), sin servicio o modelo de
+  // voz (503), «Distinguir mi voz» sin huella (409) y la línea cuya etiqueta
+  // se corrige que no existe (404).
+  'ASSISTANT_VOICEPRINT_CONSENT_REQUIRED',
+  'ASSISTANT_VOICE_NOT_HEARD',
+  'ASSISTANT_VOICE_UNAVAILABLE',
+  'ASSISTANT_VOICEPRINT_MISSING',
+  'ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los

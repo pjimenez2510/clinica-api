@@ -574,6 +574,38 @@ recibe 404; y ninguna respuesta lleva el texto sembrado.
 asistente», el desglose de una atención y el ancho a 375 px; su mitad del
 servidor es AS-345 a AS-353, que ya se prueban con esos números.
 
+### E18 — Distinguir la voz del profesional, opcional _(16-10-2026)_
+
+El reconocedor corta por silencios, no por turnos: en la prueba de Carmen una
+línea juntaba la pregunta de la médica y la respuesta de la paciente. El autor
+resolvió D-265 §1: cada médico o enfermero puede registrar su voz en «Mi voz» y
+encender «Distinguir mi voz de la del paciente», **apagado de fábrica**. En la
+escucha, la voz de la sala se separa en dos grupos y el más parecido a la
+huella es el profesional; las líneas se cortan también por cambio de voz y se
+corrigen hacia atrás. Se porta de SigmAI (`analisis/26-ATRIBUCION-EN-VIVO.md`),
+donde dio 215/219 líneas bien al mostrarse y 219/219 al final, en medición
+exploratoria.
+
+**Por qué va así:** la huella es un dato biométrico (LOPDP art. 26): se guarda
+sólo el vector, con el consentimiento de su dueño, borrable sin rastro y sin
+versión; la voz del paciente se compara en memoria en `clinica-ai` y no sale
+de allí. Sin huella o con el interruptor apagado, la escucha es la de hoy.
+**Prueba independiente:** con el modo de demostración, `medico@` graba «Mi
+voz» desde el audio de prueba, enciende el interruptor y en la escucha cada
+línea lleva «Profesional» o «Paciente»; con el interruptor apagado, las líneas
+salen como hoy; al borrar la voz, la fila no existe.
+**Cubre:** AS-310 a AS-323.
+**Solo servidor:** AS-312 (el borrado sin rastro), AS-316 (la base sólo deja
+cambiar la etiqueta), AS-319 (ningún vector de la escucha sale de `clinica-ai`)
+y AS-323 (la medición, fuera del verify). La pantalla los ve como AS-320 y
+AS-321.
+**Solo interfaz:** AS-320 y AS-321. Son «Mi voz» en «Mi cuenta» y la etiqueta de
+cada línea; su mitad del servidor es AS-310, AS-311, AS-313, AS-315, AS-317 y
+AS-318.
+**Pendiente:** AS-322 (las lecturas usan la etiqueta) toca la lectura de la
+preparación, el borrador y las preguntas, que lleva `fix/ia-carmen`; se
+construye tras fusionarla.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -2557,13 +2589,16 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   línea; y cada frase de la respuesta DEBERÁ llevar quién la dijo
   —`nursing`, `patient` u `other`— deducido por el lector **por lo que
   dice** (quién pregunta, quién responde, quién cuenta su molestia); una
-  frase sin etiqueta del modelo DEBERÁ ir como `other`. Ninguna
-  característica de la voz DEBERÁ llegar al lector ni guardarse.
+  frase sin etiqueta del modelo DEBERÁ ir como `other`. Ningún vector de
+  voz DEBERÁ llegar al lector; la etiqueta de la huella (AS-315), cuando la
+  línea la tenga, la usará el lector por AS-322.
   > El reconocedor corta por silencios, no por turnos: una línea de la
   > escucha junta la pregunta de enfermería y la respuesta del paciente
   > (visto en el recorrido de F-03, 13-10-2026).
-  > La huella de voz es un dato biométrico (LOPDP art. 26) y midió 85,8 %
-  > (`PLAN-ASISTENTE-IA.md` §3).
+  > La huella de voz es un dato biométrico (LOPDP art. 26). El 85,8 % con
+  > que se descartó era la cifra secundaria (umbral absoluto); el método de
+  > dos grupos dio 219/219 líneas en SigmAI, exploratorio. D-265 §1 la
+  > admite opcional por persona (AS-310 a AS-322).
 - **AS-251** — La lectura con proveedor DEBERÁ pedir, además de
   `ASSISTANT_ALLOW_REMOTE`, su propio interruptor
   `ASSISTANT_PREPARATION_REMOTE`, apagado de fábrica hasta medirla (P7).
@@ -3007,6 +3042,93 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-356** _(solo interfaz)_ — A 375 px de ancho la pantalla NO DEBERÁ
   desbordar a lo ancho: las tablas se desplazan dentro de su caja.
 
+### 63. Distinguir la voz del profesional (D-265 §1, LOPDP art. 26)
+
+- **AS-310** — CUANDO alguien con `assistant:voiceprint` mande, desde «Mi
+  voz», la grabación de su lectura con su consentimiento
+  (`PUT /v1/me/voiceprint`, cuerpo binario de hasta 8 MiB y
+  `?consent=true`), el sistema DEBERÁ pedir a `clinica-ai` la huella y
+  guardar **sólo el vector** —modelo, dimensión, frases, segundos, cuándo
+  consintió—, una por persona y siempre la de quien llama (la persona sale de
+  la sesión, nunca de la petición). La grabación NO DEBERÁ escribirse en
+  disco, en la base, en la bitácora ni en un log; sin `consent=true`
+  DEBERÁ responder 422 `ASSISTANT_VOICEPRINT_CONSENT_REQUIRED` sin mandar
+  nada a `clinica-ai`.
+- **AS-311** — SI `clinica-ai` oyó menos de diez frases con voz, ENTONCES el
+  sistema DEBERÁ responder 422 `ASSISTANT_VOICE_NOT_HEARD` con «No se oyó voz
+  suficiente. Lee el texto completo, a la distancia de una consulta.» sin
+  guardar nada; y SI el servicio de voz o su modelo no están, ENTONCES 503
+  `ASSISTANT_VOICE_UNAVAILABLE` con el motivo, sin guardar nada. La huella
+  que ya existía DEBERÁ quedar como estaba.
+- **AS-312** — Registrar de nuevo DEBERÁ **reemplazar** la huella (el
+  interruptor conserva su posición); y CUANDO su dueño la borre
+  (`DELETE /v1/me/voiceprint`), la fila DEBERÁ desaparecer de la base —sin
+  versión en `record_version` ni copia en otra tabla— y la siguiente escucha
+  DEBERÁ ir sin huella. Cada registro, cambio del interruptor y borrado DEBERÁ
+  dejar su entrada en la bitácora (`professional_voiceprint`), sin el vector.
+- **AS-313** — El interruptor «Distinguir mi voz de la del paciente» DEBERÁ
+  estar **apagado** al registrar la primera huella; encenderlo sin huella
+  (`PUT /v1/me/voiceprint/attribution`) DEBERÁ responder 409
+  `ASSISTANT_VOICEPRINT_MISSING`. `GET /v1/me/voiceprint` DEBERÁ responder si
+  hay huella (frases, segundos, fecha), el interruptor y si el servicio de voz
+  puede distinguir voces ahora, con el motivo cuando no, en `no-store`.
+- **AS-314** — CUANDO se abra la escucha de la consulta o de la preparación
+  y quien la abre tenga huella e interruptor encendido, el sistema DEBERÁ
+  mandar la huella a `clinica-ai` en el mensaje `start`, antes del primer
+  audio; SI está apagado o no hay huella, ENTONCES NO DEBERÁ mandarla y la
+  escucha DEBERÁ ser exactamente la de hoy (una línea por ventana, sin
+  etiqueta). La huella se lee al abrir el reconocimiento: el cambio del
+  interruptor vale desde la siguiente apertura.
+- **AS-315** — CUANDO `clinica-ai` confirme una frase con `speaker`, el
+  sistema DEBERÁ guardarla con su etiqueta (`PROFESSIONAL` o `PATIENT`) y
+  fuente `MODEL`, y el canal DEBERÁ recibirla con ella; una línea sin
+  `speaker` DEBERÁ guardarse sin etiqueta. El vale, el reloj y el «una vez y
+  en orden» de AS-049 a AS-055 NO DEBERÁN cambiar.
+- **AS-316** — CUANDO `clinica-ai` corrija hacia atrás (`speakers`), el
+  sistema DEBERÁ cambiar la etiqueta de esas líneas **salvo las corregidas a
+  mano** y avisar al canal con las que cambió. La base DEBERÁ seguir
+  rechazando cambiar el texto, el inicio, el fin, el ámbito o la atención de
+  una línea, y una etiqueta o fuente fuera de su lista; sólo la etiqueta y su
+  fuente cambian.
+- **AS-317** — CUANDO quien puede leer la transcripción de esa escucha pulse
+  la etiqueta de una línea
+  (`PUT /v1/encounters/:id/assistant/listening/lines/:startMs/speaker`, o
+  `preparation-listening` en la preparación), el sistema DEBERÁ guardarla con
+  fuente `PROFESSIONAL` y NO DEBERÁ volver a tocarla con el modelo; una línea
+  que no existe DEBERÁ responder 404 `ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND`.
+  Con los mismos permisos y rechazos que la lectura de su transcripción
+  (AS-056, AS-243).
+- **AS-318** — SI `clinica-ai` dice que no puede distinguir las voces
+  (`attribution` no disponible: sin modelo, huella de otro modelo o de otra
+  dimensión), ENTONCES la escucha DEBERÁ seguir sin etiquetas, sin pausarse,
+  y el canal DEBERÁ recibir el motivo **una vez** por apertura.
+- **AS-319** — Ningún vector de la escucha —del profesional ni del
+  paciente— DEBERÁ salir de `clinica-ai`: la API recibe y guarda sólo la
+  etiqueta. La huella guardada NO DEBERÁ salir en ninguna respuesta de la API.
+- **AS-320** _(solo interfaz)_ — En «Mi cuenta», a quien tenga
+  `assistant:voiceprint`, «Mi voz» DEBERÁ mostrar un texto de un minuto para
+  leer, la casilla de consentimiento y **«Grabar»** / **«Detener y
+  guardar»**; registrada, «Voz registrada el dd/mm», **«Volver a grabar»**,
+  **«Borrar mi voz»** (con confirmación) y el interruptor; los mensajes de
+  AS-311 tal cual; y SI el servicio no puede distinguir voces, ENTONCES el
+  motivo. Con la web de los recorridos (AS-061), graba el audio de prueba en
+  lugar del micrófono.
+- **AS-321** _(solo interfaz)_ — En la escucha de la consulta y de la
+  preparación, cada línea con etiqueta DEBERÁ empezar con **«Profesional»** o
+  **«Paciente»**, cambiar cuando llegue una corrección y, con un toque,
+  cambiarse por AS-317; una línea sin etiqueta DEBERÁ verse como hoy; y el
+  motivo de AS-318 DEBERÁ decirse una vez («No se pudo distinguir las voces:
+  …»).
+- **AS-322** _(pendiente, tras `fix/ia-carmen`)_ — La lectura de la
+  preparación (AS-250), el borrador (AS-086) y las preguntas (AS-119)
+  DEBERÁN usar la etiqueta de la línea cuando exista, y deducir quién habla
+  por lo dicho sólo cuando no.
+- **AS-323** _(solo servidor, fuera del verify)_ — La medición
+  (`clinica-ai/evaluation/voz`) DEBERÁ dar, sobre las grabaciones de
+  desarrollo, la proporción de líneas bien atribuidas al mostrarse y al
+  final, rotulada como exploratoria; la medición con voces de la clínica
+  queda en D-265 §1.
+
 ---
 
 ## Códigos de error nuevos
@@ -3047,6 +3169,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `CLINICAL_HISTORY_CHART_NOT_OPEN`    | `ConflictError`        | 409       | La ficha de la historia no existe o la absorbió una unificación (AS-200)     |
 | `ASSISTANT_PREPARATION_OVER`         | `ConflictError`        | 409       | La consulta de la atención ya se escucha: la preparación terminó (AS-240, AS-244) |
 | `SUGGESTION_CHART_MISMATCH`          | `ValidationError`      | 422       | Lo registrado con que se acepta una propuesta de la ficha no es de su paciente, de su clase, de quien acepta o es anterior a ella (AS-265) |
+| `ASSISTANT_VOICEPRINT_CONSENT_REQUIRED` | `ValidationError`      | 422       | Se mandó la voz sin el consentimiento de su dueño (AS-310) |
+| `ASSISTANT_VOICE_NOT_HEARD`          | `ValidationError`      | 422       | La grabación no tiene voz suficiente para la huella (AS-311) |
+| `ASSISTANT_VOICE_UNAVAILABLE`        | `ExternalServiceError` | 503       | El servicio de voz o su modelo no están (AS-311) |
+| `ASSISTANT_VOICEPRINT_MISSING`       | `ConflictError`        | 409       | Encender «Distinguir mi voz» sin voz registrada (AS-313) |
+| `ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND` | `NotFoundError`       | 404       | La línea cuya etiqueta se corrige no existe en esa escucha (AS-317) |
 
 ## Niveles de prueba
 

@@ -191,6 +191,10 @@ export class ListeningGateway
         onPaused: (reason, offsetMs) =>
           send(socket, { type: 'paused', offsetMs, reason }),
         onTakenOver: () => send(socket, { type: 'taken-over' }),
+        // AS-316, AS-318 (E17). Only labels and a sentence: never a vector.
+        onSpeakers: (changes) => send(socket, { type: 'speakers', changes }),
+        onAttributionUnavailable: (reason) =>
+          send(socket, { type: 'attribution', available: false, reason }),
       },
       queue: Promise.resolve(),
       timers: [],

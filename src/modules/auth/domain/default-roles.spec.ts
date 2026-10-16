@@ -88,3 +88,16 @@ describe('AS-187 quién dicta los signos de fábrica', () => {
     expect(permissionsOf('ENFERMERIA')).not.toContain('assistant:use');
   });
 });
+
+describe('AS-310 quién registra su voz de fábrica', () => {
+  it('AS-310 el médico y enfermería traen assistant:voiceprint', () => {
+    expect(permissionsOf('MEDICO')).toContain('assistant:voiceprint');
+    expect(permissionsOf('ENFERMERIA')).toContain('assistant:voiceprint');
+  });
+
+  it('AS-310 control: recepción y caja no lo traen', () => {
+    for (const code of ['RECEPCION', 'CAJA']) {
+      expect(permissionsOf(code)).not.toContain('assistant:voiceprint');
+    }
+  });
+});

@@ -4,11 +4,16 @@ import type {
   StoredListening,
   TranscriptLine,
 } from '../application/listening.store';
-import type { RecognizedSegment } from '../application/speech-recognizer.port';
+import type {
+  RecognizedSegment,
+  SpeakerChange,
+} from '../application/speech-recognizer.port';
 import type {
   ListeningScope,
   ListeningState,
   PauseReason,
+  Speaker,
+  SpeakerSource,
 } from '../domain/listening';
 import { transcriptPurgeCutoffs } from '../domain/transcript-retention';
 
@@ -82,18 +87,70 @@ export class PrismaListeningStore implements ListeningStore {
         startMs: segment.startMs,
         endMs: segment.endMs,
         text: segment.text,
+        // AS-315. The label and its source, both or neither.
+        speaker: segment.speaker ?? null,
+        speakerSource: segment.speaker ? 'MODEL' : null,
         createdAt: at,
       })),
       skipDuplicates: true,
     });
   }
 
-  transcript(encounterId: string): Promise<TranscriptLine[]> {
-    return this.prisma.transcriptSegment.findMany({
+  /**
+   * AS-316. One statement per change, each only over a line the model
+   * labelled and that says otherwise: a line labelled by hand is not touched.
+   */
+  async relabel(
+    encounterId: string,
+    changes: readonly SpeakerChange[],
+  ): Promise<SpeakerChange[]> {
+    if (changes.length === 0) return [];
+    const counts = await this.prisma.$transaction(
+      changes.map((change) =>
+        this.prisma.transcriptSegment.updateMany({
+          where: {
+            encounterId,
+            scope: this.scope,
+            startMs: change.startMs,
+            speakerSource: 'MODEL',
+            speaker: { not: change.speaker },
+          },
+          data: { speaker: change.speaker },
+        }),
+      ),
+    );
+    return changes.filter((_, i) => (counts[i]?.count ?? 0) > 0);
+  }
+
+  async label(
+    encounterId: string,
+    startMs: number,
+    speaker: Speaker,
+  ): Promise<boolean> {
+    const { count } = await this.prisma.transcriptSegment.updateMany({
+      where: { encounterId, scope: this.scope, startMs },
+      data: { speaker, speakerSource: 'PROFESSIONAL' },
+    });
+    return count > 0;
+  }
+
+  async transcript(encounterId: string): Promise<TranscriptLine[]> {
+    const rows = await this.prisma.transcriptSegment.findMany({
       where: { encounterId, scope: this.scope },
       orderBy: { startMs: 'asc' },
-      select: { startMs: true, endMs: true, text: true },
+      select: {
+        startMs: true,
+        endMs: true,
+        text: true,
+        speaker: true,
+        speakerSource: true,
+      },
     });
+    return rows.map((row) => ({
+      ...row,
+      speaker: row.speaker as Speaker | null,
+      speakerSource: row.speakerSource as SpeakerSource | null,
+    }));
   }
 
   /**

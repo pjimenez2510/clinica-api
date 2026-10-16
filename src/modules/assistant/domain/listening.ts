@@ -30,6 +30,19 @@ export type ListeningScope = 'CONSULTATION' | 'PREPARATION';
 export type PauseReason = 'device-lost' | 'recognizer-failed' | 'store-failed';
 
 /**
+ * AS-315 (E17). Who said a line, when the professional's voiceprint was on:
+ * the voice nearer it is the professional's, the other the patient's.
+ */
+export type Speaker = 'PROFESSIONAL' | 'PATIENT';
+
+/**
+ * AS-316, AS-317. Who said who said it: the voice model, which may correct
+ * itself once it heard more, or the professional by hand, which it never
+ * touches again.
+ */
+export type SpeakerSource = 'MODEL' | 'PROFESSIONAL';
+
+/**
  * AS-048. Why `clinica-ai` cannot listen right now. `no-voice-detection` is
  * a refusal of this side: without it whisper writes sentences nobody said.
  */

@@ -2,13 +2,14 @@ import { WebSocket } from 'ws';
 import { z } from 'zod';
 
 import type {
+  ListeningVoiceprint,
   RecognitionEnd,
   RecognitionSession,
   RecognizerEvents,
   SpeechRecognizer,
 } from '../application/speech-recognizer.port';
 import { ListeningUnavailableError } from '../domain/assistant.errors';
-import type { AudioFrame } from '../domain/listening';
+import type { AudioFrame, Speaker } from '../domain/listening';
 
 /** AS-048. What `/v1/status` says of speech (`core/health.py` there). */
 const statusSchema = z.object({
@@ -18,11 +19,33 @@ const statusSchema = z.object({
   }),
 });
 
+/** CAI-017. `clinica-ai`'s words for who said it, and ours. */
+const speakerSchema = z
+  .enum(['physician', 'patient'])
+  .transform((who): Speaker => (who === 'physician' ? 'PROFESSIONAL' : 'PATIENT')); // prettier-ignore
+
 const segmentSchema = z.object({
   type: z.literal('segment'),
   startMs: z.number().int().min(0),
   endMs: z.number().int(),
   text: z.string(),
+  // Anything else than the two is dropped, not guessed: the line stays as today.
+  speaker: speakerSchema.optional().catch(undefined),
+});
+
+/** CAI-018. Lines already sent whose speaker changed. */
+const speakersSchema = z.object({
+  type: z.literal('speakers'),
+  changes: z.array(
+    z.object({ startMs: z.number().int().min(0), speaker: speakerSchema }),
+  ),
+});
+
+/** CAI-019. The voices cannot be told apart this time, and why. */
+const attributionSchema = z.object({
+  type: z.literal('attribution'),
+  available: z.literal(false),
+  reason: z.string().max(400),
 });
 
 /** How long the stream has to complete its handshake. */
@@ -67,7 +90,10 @@ export class ClinicaAiSpeechRecognizer implements SpeechRecognizer {
     this.fetcher = options.fetcher ?? fetch;
   }
 
-  async open(events: RecognizerEvents): Promise<RecognitionSession> {
+  async open(
+    events: RecognizerEvents,
+    options?: { voiceprint?: ListeningVoiceprint },
+  ): Promise<RecognitionSession> {
     await this.requireVoiceDetection();
 
     const socket = new WebSocket(this.streamUrl(), {
@@ -76,7 +102,12 @@ export class ClinicaAiSpeechRecognizer implements SpeechRecognizer {
       followRedirects: false,
       handshakeTimeout: OPEN_TIMEOUT_MS,
     });
-    return listen(socket, events, this.options.endWaitMs ?? END_WAIT_MS);
+    return listen(
+      socket,
+      events,
+      this.options.endWaitMs ?? END_WAIT_MS,
+      options?.voiceprint,
+    );
   }
 
   /**
@@ -125,6 +156,7 @@ async function listen(
   socket: WebSocket,
   events: RecognizerEvents,
   endWaitMs: number,
+  voiceprint?: ListeningVoiceprint,
 ): Promise<RecognitionSession> {
   let opened = false;
   let ended = false;
@@ -138,10 +170,28 @@ async function listen(
     if (message === null) return;
     const segment = segmentSchema.safeParse(message);
     if (segment.success) {
-      const { startMs, endMs, text } = segment.data;
+      const { startMs, endMs, text, speaker } = segment.data;
       if (endMs > startMs && text.trim() !== '') {
-        events.onSegment({ startMs, endMs, text: text.trim() });
+        events.onSegment({
+          startMs,
+          endMs,
+          text: text.trim(),
+          // AS-315. Only when a voiceprint went: a label nobody asked for is not kept.
+          ...(voiceprint && speaker && { speaker }),
+        });
       }
+      return;
+    }
+    const speakers = speakersSchema.safeParse(message);
+    if (speakers.success) {
+      if (voiceprint && speakers.data.changes.length > 0) {
+        events.onSpeakers?.(speakers.data.changes);
+      }
+      return;
+    }
+    const attribution = attributionSchema.safeParse(message);
+    if (attribution.success) {
+      events.onAttributionUnavailable?.(attribution.data.reason);
       return;
     }
     if ((message as { type?: unknown }).type === 'ended') {
@@ -174,6 +224,18 @@ async function listen(
       reject(new ListeningUnavailableError('unreachable')),
     );
   });
+
+  // AS-314, CAI-017. Before the first audio. Only the label comes back: the
+  // vectors of the room stay in `clinica-ai` (AS-319).
+  if (voiceprint) {
+    socket.send(
+      JSON.stringify({
+        type: 'start',
+        voiceprint: voiceprint.vector,
+        model: voiceprint.model,
+      }),
+    );
+  }
 
   return {
     send(frame: AudioFrame): boolean {

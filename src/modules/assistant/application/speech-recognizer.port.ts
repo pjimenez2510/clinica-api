@@ -1,10 +1,18 @@
-import type { AudioFrame } from '../domain/listening';
+import type { AudioFrame, Speaker } from '../domain/listening';
 
 /** A window the recogniser confirmed, on the clock of the consultation. */
 export interface RecognizedSegment {
   startMs: number;
   endMs: number;
   text: string;
+  /** AS-315. Who said it, by the voiceprint; absent without one. */
+  speaker?: Speaker;
+}
+
+/** AS-316. A line already sent whose speaker changed, by its start. */
+export interface SpeakerChange {
+  startMs: number;
+  speaker: Speaker;
 }
 
 /**
@@ -17,6 +25,10 @@ export type RecognitionEnd = 'expired' | 'failed';
 
 export interface RecognizerEvents {
   onSegment(segment: RecognizedSegment): void;
+  /** AS-316. `clinica-ai` corrected earlier lines once it heard more. */
+  onSpeakers?(changes: readonly SpeakerChange[]): void;
+  /** AS-318. Voices cannot be told apart this time; once per recognition. */
+  onAttributionUnavailable?(reason: string): void;
   /** Once, when the recognition ended by itself. Never after `end()` resolved. */
   onEnded(how: RecognitionEnd): void;
 }
@@ -43,7 +55,20 @@ export interface RecognitionSession {
  * it cannot listen (AS-048).
  */
 export interface SpeechRecognizer {
-  open(events: RecognizerEvents): Promise<RecognitionSession>;
+  /**
+   * AS-314. With `voiceprint`, `clinica-ai` tells the professional from the
+   * patient; without it, the listening is the one there always was.
+   */
+  open(
+    events: RecognizerEvents,
+    options?: { voiceprint?: ListeningVoiceprint },
+  ): Promise<RecognitionSession>;
+}
+
+/** AS-314. What `start` carries: the model it was made with, and the vector. */
+export interface ListeningVoiceprint {
+  model: string;
+  vector: readonly number[];
 }
 
 export const SPEECH_RECOGNIZER = Symbol('SPEECH_RECOGNIZER');
