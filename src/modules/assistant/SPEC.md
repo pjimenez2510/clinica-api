@@ -1512,7 +1512,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > sabe no se copia (D-249 §1), ni un diagnóstico: va en Diagnósticos, y la
   > transcripción no dice quién habla (D-249 §2). Salvo la impresión que el
   > médico dice en voz alta, al comienzo del Plan y sin registrarse (AS-297,
-  > pendiente de confirmar en D-267).
+  > pendiente de confirmar en D-268).
 - **AS-089** — Cada frase DEBERÁ llevar el inicio de la línea de la
   transcripción que la respalda, sólo de las que se dieron al modelo; SI una
   frase no lleva marcador, lleva uno que no se le dio, o lleva una fecha que,
