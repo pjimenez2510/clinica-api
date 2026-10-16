@@ -148,6 +148,10 @@ function normalised(date: string): string {
  */
 export function datesNotSaid(phrase: string, said: string): string[] {
   const heard = new Set([...said.matchAll(ANY_DATE)].map((match) => normalised(match[0]))); // prettier-ignore
+  // AS-290. «un 3 de 10» is a scale, written 3/10: said, not a date.
+  for (const [, part, whole] of said.matchAll(/\b(\d{1,2})\s+(?:de|sobre)\s+(\d{1,2})\b/gi)) {
+    heard.add(normalised(`${part}/${whole}`));
+  } // prettier-ignore
   return [...phrase.matchAll(ANY_DATE)]
     .map((match) => match[0])
     .filter((date) => !heard.has(normalised(date)));
