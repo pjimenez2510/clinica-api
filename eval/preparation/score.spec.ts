@@ -5,7 +5,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadPreparationCases, type PreparationCase } from './cases.ts';
-import { literal, scoreCase, summarise, verdict, worded } from './score.ts';
+import {
+  LINE_STRIDE_MS,
+  literal,
+  scoreCase,
+  summarise,
+  verdict,
+  worded,
+} from './score.ts';
 
 const ITEM: PreparationCase = {
   id: 'T1',
@@ -53,6 +60,7 @@ describe('AS-255 the scoring of a preparation', () => {
         values: { systolicBp: v(120, 'Presión 120 con 80'), diastolicBp: v(70, 'Presión 120 con 80'), heartRate: v(80, 'Presión 120 con 80') }, // prettier-ignore
         heightPosition: null,
         unclear: ['weightKg'],
+        doubtful: [],
         complaint: {
           text: 'Me duele la cabeza.',
           quote: 'Me duele la cabeza.',
@@ -78,7 +86,7 @@ describe('AS-255 the scoring of a preparation', () => {
 
   it('SC-101 a reason proposed where the patient gave none is invented; an unanswered reading counts apart', () => {
     const none = { ...ITEM, complaint: null };
-    const scored = scoreCase({ item: none, arm: 'oido', voice: 'x', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], complaint: { text: 'Me duele la cabeza.', quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
+    const scored = scoreCase({ item: none, arm: 'oido', voice: 'x', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], doubtful: [], complaint: { text: 'Me duele la cabeza.', quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
     expect(scored.complaint).toBe('invented');
     const failed = scoreCase({ item: ITEM, arm: 'oido', voice: 'x', lines: LINES, latencyMs: null, reading: null }); // prettier-ignore
     expect(summarise([failed])).toMatchObject({ cases: 1, answered: 0, expected: 0 }); // prettier-ignore
@@ -110,7 +118,7 @@ describe('AS-255 the scoring of a preparation', () => {
     expect(worded({ text: 'Señorita, dolor de cabeza desde hace dos días', quote })).toBe(false); // prettier-ignore
     expect(worded({ text: 'Dolor de cabeza y se siente mareada', quote })).toBe(true); // prettier-ignore
 
-    const scored = scoreCase({ item: ITEM, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], complaint: { text: 'Dolor de cabeza.', quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
+    const scored = scoreCase({ item: ITEM, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: { values: {}, heightPosition: null, unclear: [], doubtful: [], complaint: { text: 'Dolor de cabeza.', quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] } }); // prettier-ignore
     expect(scored.complaintWorded).toBe(true);
     expect(summarise([scored])).toMatchObject({ complaintProposed: 1, complaintWorded: 1 }); // prettier-ignore
   });
@@ -121,10 +129,42 @@ describe('AS-255 the scoring of a preparation', () => {
     expect(literal('temperatureC', 40.2, 'Temperatura 40 y 2', fever)).toBe(false); // prettier-ignore
 
     const item = { ...ITEM, complaintLiteral: true };
-    const reading = (text: string) => ({ values: {}, heightPosition: null, unclear: [], complaint: { text, quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] }); // prettier-ignore
+    const reading = (text: string) => ({ values: {}, heightPosition: null, unclear: [], doubtful: [], complaint: { text, quote: 'Me duele la cabeza.', startMs: 10_000 }, speakers: [] }); // prettier-ignore
     const worded = scoreCase({ item, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: reading('Dolor de cabeza.') }); // prettier-ignore
     const kept = scoreCase({ item, arm: 'escrito', voice: '—', lines: LINES, latencyMs: 1, reading: reading('Me duele la cabeza.') }); // prettier-ignore
     expect([worded.complaintUnfaithful, kept.complaintUnfaithful]).toEqual([true, false]); // prettier-ignore
     expect(summarise([worded, kept])).toMatchObject({ complaintUnfaithful: 1, complaintProposed: 0 }); // prettier-ignore
+  });
+});
+
+describe('AS-301 Carmen’s preparation in the harness', () => {
+  it('AS-301 M19 expects the reason over L4 to L6 and the FR of L20; read as the model answered it, both are right', async () => {
+    const { WORDING_CASES } = await import('./cases.ts');
+    const { conversationOf } = await import('../../src/modules/assistant/domain/note-draft.ts'); // prettier-ignore
+    const { readPreparationAnswer } = await import('../../src/modules/assistant/domain/preparation-reading.ts'); // prettier-ignore
+    const item = loadPreparationCases(WORDING_CASES).cases.find((each) => each.id === 'M19')!; // prettier-ignore
+    expect(item.complaint).toEqual([3, 4, 5]);
+    expect(item.expected.respiratoryRate).toBe(16);
+
+    const lines = item.lines.map((line, at) => ({ startMs: at * LINE_STRIDE_MS, endMs: at * LINE_STRIDE_MS + 9_000, text: line.text })); // prettier-ignore
+    const reading = readPreparationAnswer({
+      answer: {
+        lines: item.lines.map((line, at) => ({ line: `L${at + 1}`, speaker: line.speaker })), // prettier-ignore
+        values: [
+          { field: 'respiratoryRate', line: 'L14', quote: 'Frecuencia cardíaca 16', said: 16, unit: 'none' }, // prettier-ignore
+          { field: 'respiratoryRate', line: 'L20', quote: 'frecuencia respiratoria 16', said: 16, unit: 'none' }, // prettier-ignore
+        ],
+        heightPosition: null,
+        complaint: { line: 'L4', toLine: 'L6', quote: 'me arde mucho al orinar' }, // prettier-ignore
+      },
+      lines,
+      markers: conversationOf(lines).markers,
+      restore: (text) => text,
+    });
+    const scored = scoreCase({ item, arm: 'escrito', voice: '—', lines, latencyMs: 0, reading }); // prettier-ignore
+
+    expect(scored.values.find((each) => each.field === 'respiratoryRate')?.outcome).toBe('correct'); // prettier-ignore
+    expect(scored.complaint).toBe('correct');
+    expect(reading.doubtful).toEqual([]);
   });
 });

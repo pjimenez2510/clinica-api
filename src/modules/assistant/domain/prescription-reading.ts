@@ -285,11 +285,22 @@ export function backedLines(input: {
       frequencyText:
         line.frequencyText === null ? null : input.restore(line.frequencyText),
     };
+    if (onlyKeepTaking(restored, located.sentence)) continue;
     const fields = backedFields(restored, located.sentence, note);
     if (!fields) continue;
     kept.push({ ...fields, quote: located.sentence, section: located.section });
   }
   return { kept, dropped: input.read.length - kept.length };
+}
+
+/** AS-291. «Siga con su losartán»: what is kept, not prescribed. */
+const KEEP_TAKING =
+  /\b(?:continu\p{L}*|sig(?:a|an|ue|uir)\s+(?:con|tomando)|segui\p{L}*\s+(?:con|tomando)|como siempre|de manera habitual|habitual)\b/u;
+
+/** AS-291. A line the note only says to keep taking, with nothing of how. */
+function onlyKeepTaking(line: ReadLine, sentence: string): boolean {
+  const how = line.doseAmount !== null || line.frequency !== null || line.frequencyText !== null || line.durationDays !== null; // prettier-ignore
+  return !how && KEEP_TAKING.test(foldText(sentence));
 }
 
 /**

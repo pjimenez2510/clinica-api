@@ -37,6 +37,7 @@ import type {
   LlmRequest,
   PseudonymizedText,
 } from './llm-client.port';
+import { DRAFT_INSTRUCTIONS, DRAFT_PROMPT_VERSION } from './note-draft.prompts';
 import {
   CODES_PURPOSE,
   PROBLEMS_INSTRUCTIONS,
@@ -80,6 +81,9 @@ const CATALOGUE = new Set([
   'Z99.9',
   'R50.9',
   'R07.0',
+  'N30.0',
+  'R30.0',
+  'R10.3',
 ]);
 
 const requester = (
@@ -602,8 +606,8 @@ describe('DiagnosisProposalService', () => {
 });
 
 describe('DiagnosisProposalService — symptoms (AS-267)', () => {
-  it('AS-267 the model is told a symptom of a diagnosis of the note is not a problem of its own (d1-problems-3)', () => {
-    expect(PROBLEMS_PROMPT_VERSION).toBe('d1-problems-3');
+  it('AS-267 the model is told a symptom of a diagnosis of the note is not a problem of its own (d1-problems-4)', () => {
+    expect(PROBLEMS_PROMPT_VERSION).toBe('d1-problems-4');
     expect(PROBLEMS_INSTRUCTIONS).toMatch(/no es un problema aparte/);
   });
 
@@ -629,5 +633,53 @@ describe('DiagnosisProposalService — symptoms (AS-267)', () => {
       ],
     });
     expect(JSON.stringify(store.proposed)).not.toMatch(/R50\.9|R07\.0/);
+  });
+});
+
+describe('DiagnosisProposalService — the impression said aloud (AS-297)', () => {
+  it('AS-297 the draft writes the impression said aloud at the start of the plan, and the reading takes it as the problem', () => {
+    expect(DRAFT_PROMPT_VERSION).toBe('c2-draft-5');
+    expect(DRAFT_INSTRUCTIONS).toMatch(
+      /"Impresión diagnóstica: cistitis aguda\."/,
+    );
+    expect(DRAFT_INSTRUCTIONS).toMatch(/Si no la dice, no escribas ninguna/);
+    expect(PROBLEMS_INSTRUCTIONS).toMatch(/«Impresión diagnóstica: …», ese diagnóstico es el problema/); // prettier-ignore
+  });
+
+  it('AS-297 Carmen’s note: one problem, cystitis, with her symptoms inside it, and one code call each', async () => {
+    const reader = context({
+      consultationNote: () =>
+        Promise.resolve({
+          id: 'note-1',
+          sections: [
+            { key: 'enfermedadActual', label: 'Enfermedad actual', text: 'Desde hace tres días ardor al orinar y va al baño a cada rato. Dolor en la parte baja del abdomen.' }, // prettier-ignore
+            { key: 'planTratamiento', label: 'Plan', text: 'Impresión diagnóstica: cistitis aguda. Nitrofurantoína 100 mg cada 12 horas por 5 días.' }, // prettier-ignore
+          ],
+        }),
+    });
+    const { client, sent } = model({
+      problems: [
+        { problem: 'CISTITIS AGUDA', quote: 'Impresión diagnóstica: cistitis aguda' }, // prettier-ignore
+        { problem: 'DISURIA', quote: 'ardor al orinar' },
+      ],
+      codes: { 'CISTITIS AGUDA': ['N30.0'], DISURIA: ['R30.0'] },
+    });
+    const { service, store } = build({ llm: client, reader });
+
+    const reading = await service.read('enc-1', requester());
+
+    expect(reading.problems).toHaveLength(1);
+    expect(reading.problems[0]).toMatchObject({
+      problem: 'CISTITIS AGUDA',
+      candidates: [expect.objectContaining({ code: 'N30.0' })],
+      symptoms: [
+        {
+          problem: 'DISURIA',
+          quote: expect.stringContaining('ardor al orinar'),
+        },
+      ],
+    });
+    expect(sent.filter((each) => each.purpose === CODES_PURPOSE)).toHaveLength(2); // prettier-ignore
+    expect(JSON.stringify(store.proposed)).not.toMatch(/R30\.0/);
   });
 });

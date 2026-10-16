@@ -524,6 +524,30 @@ con «Paciente · 00:07 «…»» debajo; «presión 120 y 80», «36 y medio» 
 fuente del motivo en la pestaña Signos; su mitad del servidor es AS-282, que
 ya se prueba con ese número.
 
+### E17 — Lo que la prueba de Carmen enseñó _(16-10-2026)_
+
+El autor corrió el libreto de Carmen Hidalgo (cistitis aguda) con el modelo
+real y ocho cosas salieron mal, cada una con su causa en los registros: la
+impresión diagnóstica dicha no llegaba a Diagnósticos, un antecedente de la
+ficha escrito de otro modo se proponía otra vez, «siga con su losartán» salía
+como receta, «3/10» se leía como una fecha no dicha, el motivo se cortaba en
+la primera línea del paciente, una FR dicha «frecuencia cardíaca» se perdía
+sin aviso, las preguntas respondidas seguían a la vista y el certificado dicho
+no se proponía (D-265 §2 y §4).
+
+**Por qué va así:** cada arreglo es una barrera o una regla en la máquina, sin
+llamadas nuevas al modelo; lo dudoso se muestra con su aviso y nunca se guarda
+solo (P1, P5).
+**Prueba independiente:** con la transcripción de Carmen, la preparación
+propone el motivo de tres líneas y la FR 16 en ámbar; Antecedentes dice «Ya
+consta como HIPERTENSO»; Diagnósticos propone «Cistitis aguda» con sus
+síntomas como «Incluye»; Receta no trae losartán ni anticonceptivos; y
+Certificados propone «Reposo · 1 día» con su frase.
+**Cubre:** AS-290 a AS-301.
+**Solo servidor:** AS-301 (el arnés, fuera del verify).
+**Solo interfaz:** AS-293, AS-296, AS-298 y AS-300. Su mitad del servidor es
+AS-292, AS-295, AS-122 y AS-299.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -1486,7 +1510,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > La plantilla la escribe la clínica, no el paciente: va al modelo como
   > contexto (`withContext`), con las instrucciones fijas. Lo que la ficha ya
   > sabe no se copia (D-249 §1), ni un diagnóstico: va en Diagnósticos, y la
-  > transcripción no dice quién habla (D-249 §2).
+  > transcripción no dice quién habla (D-249 §2). Salvo la impresión que el
+  > médico dice en voz alta, al comienzo del Plan y sin registrarse (AS-297,
+  > pendiente de confirmar en D-268).
 - **AS-089** — Cada frase DEBERÁ llevar el inicio de la línea de la
   transcripción que la respalda, sólo de las que se dieron al modelo; SI una
   frase no lleva marcador, lleva uno que no se le dio, o lleva una fecha que,
@@ -2815,6 +2841,65 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-286** _(solo interfaz)_ — Bajo el motivo propuesto, la procedencia
   DEBERÁ citar la **fuente** («Paciente · 00:07 «Ay, señorita, tengo…»»), no
   la redacción, y abrir la transcripción en esa frase como las demás.
+
+### 62. Lo que la prueba de Carmen enseñó (D-263, D-265 §2 y §4, P1, P5)
+
+- **AS-290** — Una fracción «N/M» de una frase del borrador DEBERÁ tenerse por
+  dicha, y no por una fecha no dicha (AS-091), cuando la conversación dice «N
+  de M» o «N sobre M» con esos mismos números («intensidad 3/10» por «un 3 de
+  10»). Una «N/M» que la conversación no dice así sigue marcada «Nadie lo
+  dijo».
+- **AS-291** — Lo que la nota manda **seguir tomando** («continuar con»,
+  «siga con», «como siempre», «de manera habitual») sin decir dosis,
+  frecuencia ni duración NO DEBERÁ proponerse como línea de receta: no es una
+  receta nueva. Con alguna de ellas dicha, se propone como hoy.
+- **AS-292** — `GET …/assistant/chart` DEBERÁ decir de un antecedente
+  propuesto que la ficha ya tiene con otras palabras (`alreadyAs`, el texto de
+  la ficha): del mismo tipo, con el mismo parentesco y con una palabra de
+  enfermedad de la misma raíz (las seis primeras letras: «HIPERTENSO» e
+  «Hipertensión arterial», «DIABETES» y «Diabetes mellitus»). La ficha no
+  DEBERÁ mandarse al modelo; un antecedente igual al de la ficha sigue sin
+  mostrarse (AS-263).
+- **AS-293** _(solo interfaz)_ — Un antecedente con `alreadyAs` DEBERÁ decir
+  «Ya consta como <texto de la ficha>» y NO DEBERÁ tener ✓; sólo ✕.
+- **AS-294** — El motivo de la preparación DEBERÁ poder citar **varias líneas
+  seguidas** del paciente (`complaint.toLine`): su fuente es esas líneas
+  unidas, hasta 500 caracteres, y SI entre ellas hay una que no dijo el
+  paciente, o no son seguidas, ENTONCES el motivo DEBERÁ ser sólo la primera.
+  Las barreras de AS-282 se aplican a la fuente unida.
+- **AS-295** — SI la frase de un valor de la preparación nombra **otro**
+  signo del que el modelo propone («frecuencia cardíaca 16» propuesto como
+  FR) y lo demás de AS-247 se cumple, ENTONCES el sistema DEBERÁ proponerlo
+  aparte, como **dudoso** (`doubtful`: campo, valor, frase, inicio y el signo
+  que la frase nombra), y NO DEBERÁ ponerlo entre los valores propuestos. Un
+  campo que ya tiene un valor creído no tiene dudoso.
+- **AS-296** _(solo interfaz)_ — Un valor dudoso DEBERÁ verse en ámbar con
+  su frase y el aviso «La frase dice <signo>», y NO DEBERÁ llenar su casilla
+  hasta que quien prepara lo confirme con un toque.
+- **AS-297** — CUANDO el médico dice en voz alta su impresión diagnóstica, el
+  borrador DEBERÁ escribirla al comienzo del Plan de tratamiento como
+  «Impresión diagnóstica: …» con su línea; y la lectura de problemas DEBERÁ
+  tomarla como el problema, con los síntomas que explica dentro de él y no
+  aparte (AS-267). Sin impresión dicha, como hoy. SI alguna palabra de cinco
+  letras o más de la impresión no está en la línea que cita, ENTONCES la frase
+  DEBERÁ marcarse «Nadie lo dijo» (AS-089). Nada se registra en Diagnósticos:
+  lo registra el médico.
+- **AS-298** _(solo interfaz)_ — CUANDO el borrador de la nota se relee con
+  preguntas a la vista, la pantalla DEBERÁ pedir una revisión de las
+  preguntas (AS-119), para que la respondida se retire (AS-122).
+- **AS-299** — `GET …/assistant/certificate` DEBERÁ proponer, sin modelo y
+  leyendo la conversación, el certificado dicho: el **tipo** (`MEDICAL_REST`
+  por «certificado de reposo», `ATTENDANCE` por «certificado de asistencia»)
+  y, en el reposo, los **días** dichos («por un día», «por 3 días»), cada uno
+  con su frase y su inicio; `null` si no se dijo, o si la frase lo niega. Nada
+  se emite: el médico lo emite como hoy (D-265 §4).
+- **AS-300** _(solo interfaz)_ — En Certificados, la propuesta DEBERÁ verse
+  como «Reposo · 1 día» con sus frases y un botón **Usar** que abre «Emitir
+  certificado» con el tipo y el reposo desde el día de la atención por esos
+  días puestos.
+- **AS-301** — El arnés DEBERÁ tener el caso de Carmen (la transcripción
+  seudonimizada) con lo esperado del libreto: en la preparación, el motivo de
+  L4 a L6 y la FR de L20; SC-099 sigue midiéndose igual.
 
 ---
 
