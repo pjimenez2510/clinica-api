@@ -105,10 +105,12 @@ describe('ClinicaAiVoiceprintEnroller (E17)', () => {
   it('AS-313 says whether voices can be told apart, with the reason when not', async () => {
     const off = enroller(
       json({
-        speakerAttribution: {
-          available: false,
-          model: 'x',
-          reason: 'falta torch',
+        speech: {
+          speakerAttribution: {
+            available: false,
+            model: 'x',
+            reason: 'falta torch',
+          },
         },
       }),
     );
@@ -119,7 +121,9 @@ describe('ClinicaAiVoiceprintEnroller (E17)', () => {
 
     const on = enroller(
       json({
-        speakerAttribution: { available: true, model: 'x', reason: null },
+        speech: {
+          speakerAttribution: { available: true, model: 'x', reason: null },
+        },
       }),
     );
     expect(await on.enroller.attributionStatus()).toEqual({

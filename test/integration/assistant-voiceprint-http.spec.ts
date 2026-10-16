@@ -54,7 +54,9 @@ describe('«Mi voz» por HTTP (AS-310 a AS-313, AS-319)', () => {
   function answers(url: string) {
     if (url.endsWith('/v1/status')) {
       return Response.json({
-        speakerAttribution: { available: true, model: MODEL, reason: null },
+        speech: {
+          speakerAttribution: { available: true, model: MODEL, reason: null },
+        },
       });
     }
     return Response.json({

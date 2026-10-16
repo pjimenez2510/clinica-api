@@ -23,9 +23,11 @@ const voiceprintSchema = z
 
 /** CAI-020. `GET /v1/status`, the part about telling voices apart. */
 const statusSchema = z.object({
-  speakerAttribution: z.object({
-    available: z.boolean(),
-    reason: z.string().nullable(),
+  speech: z.object({
+    speakerAttribution: z.object({
+      available: z.boolean(),
+      reason: z.string().nullable(),
+    }),
   }),
 });
 
@@ -117,7 +119,7 @@ export class ClinicaAiVoiceprintEnroller implements VoiceprintEnroller {
       if (!response.ok) return { available: false, reason: UNREACHABLE };
       const status = statusSchema.safeParse(await response.json());
       if (!status.success) return { available: false, reason: UNREACHABLE };
-      const { available, reason } = status.data.speakerAttribution;
+      const { available, reason } = status.data.speech.speakerAttribution;
       return { available, reason: available ? null : reason };
     } catch {
       return { available: false, reason: UNREACHABLE };
