@@ -244,3 +244,144 @@ describe('ClinicaAiSpeechRecognizer', () => {
     expect(session.send(frame(0))).toBe(false);
   });
 });
+
+describe('ClinicaAiSpeechRecognizer: who said each line (E17)', () => {
+  const PRINT = {
+    model: 'speechbrain/spkrec-ecapa-voxceleb',
+    vector: [0.6, 0.8, 0],
+  };
+
+  /** Answers a window with two labelled phrases, a correction and the end. */
+  function attributing(socket: WebSocket, fake: Fake): void {
+    socket.on('message', (data: Buffer, binary: boolean) => {
+      if (binary) {
+        fake.received.push(data);
+        return;
+      }
+      const text = data.toString();
+      fake.received.push(text);
+      if (text !== '{"type":"end"}') return;
+      for (const message of [
+        {
+          type: 'segment',
+          startMs: 0,
+          endMs: 900,
+          text: '¿Le duele?',
+          speaker: 'physician',
+        },
+        {
+          type: 'segment',
+          startMs: 900,
+          endMs: 1_500,
+          text: 'Sí.',
+          speaker: 'patient',
+        },
+        {
+          type: 'segment',
+          startMs: 1_500,
+          endMs: 2_000,
+          text: 'Bien.',
+          speaker: 'nobody',
+        },
+        { type: 'speakers', changes: [{ startMs: 0, speaker: 'patient' }] },
+        { type: 'ended' },
+      ]) {
+        socket.send(JSON.stringify(message));
+      }
+      socket.close();
+    });
+  }
+
+  function heard() {
+    const segments: RecognizedSegment[] = [];
+    const changes: unknown[] = [];
+    const reasons: string[] = [];
+    return {
+      segments,
+      changes,
+      reasons,
+      events: {
+        onSegment: (segment: RecognizedSegment) => segments.push(segment),
+        onEnded: () => undefined,
+        onSpeakers: (c: unknown) => changes.push(c),
+        onAttributionUnavailable: (reason: string) => reasons.push(reason),
+      },
+    };
+  }
+
+  it('AS-314 sends the voiceprint in start before any audio, and only the label comes back', async () => {
+    const fake = await fakeClinicaAi(attributing);
+    const listened = heard();
+    const session = await recognizer(fake).open(listened.events, {
+      voiceprint: PRINT,
+    });
+
+    session.send(frame(0));
+    await session.end();
+
+    expect(JSON.parse(fake.received[0] as string)).toEqual({
+      type: 'start',
+      voiceprint: PRINT.vector,
+      model: PRINT.model,
+    });
+    expect(Buffer.isBuffer(fake.received[1])).toBe(true);
+    expect(listened.segments).toEqual([
+      { startMs: 0, endMs: 900, text: '¿Le duele?', speaker: 'PROFESSIONAL' },
+      { startMs: 900, endMs: 1_500, text: 'Sí.', speaker: 'PATIENT' },
+      { startMs: 1_500, endMs: 2_000, text: 'Bien.' },
+    ]);
+    expect(listened.changes).toEqual([[{ startMs: 0, speaker: 'PATIENT' }]]);
+  });
+
+  it('AS-314 without a voiceprint nothing but audio goes, and a label that arrives anyway is not kept', async () => {
+    const fake = await fakeClinicaAi(attributing);
+    const listened = heard();
+    const session = await recognizer(fake).open(listened.events);
+
+    session.send(frame(0));
+    await session.end();
+
+    expect(Buffer.isBuffer(fake.received[0])).toBe(true);
+    expect(listened.segments.every((s) => s.speaker === undefined)).toBe(true);
+    expect(listened.changes).toEqual([]);
+  });
+
+  it('AS-318 says why voices cannot be told apart and goes on listening', async () => {
+    const fake = await fakeClinicaAi((socket) => {
+      socket.on('message', (data: Buffer, binary: boolean) => {
+        if (binary) return;
+        const text = data.toString();
+        if (text.includes('"start"')) {
+          socket.send(
+            JSON.stringify({
+              type: 'attribution',
+              available: false,
+              reason: 'falta el modelo',
+            }),
+          );
+        }
+        if (text !== '{"type":"end"}') return;
+        socket.send(
+          JSON.stringify({
+            type: 'segment',
+            startMs: 0,
+            endMs: 100,
+            text: 'frase 0',
+          }),
+        );
+        socket.send(JSON.stringify({ type: 'ended' }));
+        socket.close();
+      });
+    });
+    const listened = heard();
+    const session = await recognizer(fake).open(listened.events, {
+      voiceprint: PRINT,
+    });
+
+    session.send(frame(0));
+    await session.end();
+
+    expect(listened.reasons).toEqual(['falta el modelo']);
+    expect(listened.segments.map((s) => s.text)).toEqual(['frase 0']);
+  });
+});

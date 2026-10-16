@@ -12,10 +12,12 @@ import type {
   TranscriptLine,
 } from './listening.store';
 import type {
+  ListeningVoiceprint,
   RecognitionEnd,
   RecognitionSession,
   RecognizedSegment,
   RecognizerEvents,
+  SpeakerChange,
   SpeechRecognizer,
 } from './speech-recognizer.port';
 
@@ -28,10 +30,16 @@ const USER = '0199a000-0000-7000-8000-0000000000aa';
  */
 class FakeRecognizer implements SpeechRecognizer {
   readonly sessions: FakeRecognition[] = [];
+  /** AS-314. The voiceprint each opening carried, or null. */
+  readonly voiceprints: (ListeningVoiceprint | null)[] = [];
   failOpen: Error | null = null;
 
-  open(events: RecognizerEvents): Promise<RecognitionSession> {
+  open(
+    events: RecognizerEvents,
+    options?: { voiceprint?: ListeningVoiceprint },
+  ): Promise<RecognitionSession> {
     if (this.failOpen) return Promise.reject(this.failOpen);
+    this.voiceprints.push(options?.voiceprint ?? null);
     const session = new FakeRecognition(events);
     this.sessions.push(session);
     return Promise.resolve(session);
@@ -50,7 +58,7 @@ class FakeRecognition implements RecognitionSession {
   closed = false;
   endFails = false;
 
-  constructor(private readonly events: RecognizerEvents) {}
+  constructor(readonly events: RecognizerEvents) {}
 
   closing = false;
 
@@ -66,9 +74,12 @@ class FakeRecognition implements RecognitionSession {
   }
 
   /** The window closes: what it held is one confirmed segment. */
-  confirm(text = `frase en ${this.held?.startMs}`): void {
+  confirm(
+    text = `frase en ${this.held?.startMs}`,
+    speaker?: RecognizedSegment['speaker'],
+  ): void {
     if (!this.held) return;
-    this.events.onSegment({ ...this.held, text });
+    this.events.onSegment({ ...this.held, text, ...(speaker && { speaker }) });
     this.held = null;
   }
 
@@ -125,10 +136,33 @@ class MemoryStore implements ListeningStore {
     // AS-052: the database keeps one segment per start.
     for (const segment of segments) {
       if (!this.segments.some((s) => s.startMs === segment.startMs)) {
-        this.segments.push(segment);
+        this.segments.push(
+          segment.speaker ? { ...segment, speakerSource: 'MODEL' } : segment,
+        );
       }
     }
     return Promise.resolve();
+  }
+
+  relabel(_e: string, changes: readonly SpeakerChange[]) {
+    const changed: SpeakerChange[] = [];
+    for (const change of changes) {
+      const line = this.segments.find((s) => s.startMs === change.startMs);
+      if (line?.speakerSource !== 'MODEL' || line.speaker === change.speaker) {
+        continue;
+      }
+      line.speaker = change.speaker;
+      changed.push(change);
+    }
+    return Promise.resolve(changed);
+  }
+
+  label(_e: string, startMs: number, speaker: 'PROFESSIONAL' | 'PATIENT') {
+    const line = this.segments.find((s) => s.startMs === startMs);
+    if (!line) return Promise.resolve(false);
+    line.speaker = speaker;
+    line.speakerSource = 'PROFESSIONAL';
+    return Promise.resolve(true);
   }
 
   transcript(): Promise<TranscriptLine[]> {
@@ -145,6 +179,8 @@ class MemoryStore implements ListeningStore {
 function channel() {
   const heard: RecognizedSegment[] = [];
   const paused: PauseReason[] = [];
+  const corrected: SpeakerChange[][] = [];
+  const unattributed: string[] = [];
   let takenOver = 0;
   const events: ListeningChannel = {
     onSegment: (segment) => heard.push(segment),
@@ -152,8 +188,17 @@ function channel() {
     onTakenOver: () => {
       takenOver += 1;
     },
+    onSpeakers: (changes) => corrected.push([...changes]),
+    onAttributionUnavailable: (reason) => unattributed.push(reason),
   };
-  return { events, heard, paused, takenOver: () => takenOver };
+  return {
+    events,
+    heard,
+    paused,
+    corrected,
+    unattributed,
+    takenOver: () => takenOver,
+  };
 }
 
 /** AS-087. What the draft hears from the listening. */
@@ -168,21 +213,37 @@ class FakeObserver {
   }
 }
 
+const PRINT: ListeningVoiceprint = {
+  model: 'speechbrain/spkrec-ecapa-voxceleb',
+  vector: [0.6, 0.8, 0],
+};
+
 function setup() {
   const recognizer = new FakeRecognizer();
   const store = new MemoryStore();
   const observer = new FakeObserver();
+  // AS-314. Whose switch is on, and what reading it does.
+  const voiceprints = {
+    on: new Set<string>(),
+    fails: false,
+    forListening(userId: string) {
+      if (this.fails) return Promise.reject(new Error('database down'));
+      return Promise.resolve(this.on.has(userId) ? PRINT : null);
+    },
+  };
   let clock = Date.parse('2026-10-12T15:00:00Z'); // fecha-fija: reloj falso inyectado
   const service = new ListeningService(
     recognizer,
     store,
     () => new Date(clock),
     observer,
+    voiceprints,
   );
   return {
     recognizer,
     store,
     observer,
+    voiceprints,
     service,
     now: () => new Date(clock),
     tick: (ms: number) => {
@@ -683,5 +744,96 @@ describe('ListeningService', () => {
     await service.close(ENCOUNTER);
 
     expect(observer.stopped).toEqual([]);
+  });
+});
+
+describe('ListeningService: who said each line (E17)', () => {
+  it('AS-314 with the switch on, the voiceprint goes in the opening; with it off, nothing does', async () => {
+    const { service, recognizer, voiceprints } = setup();
+    const ch = channel();
+
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await service.stop(ENCOUNTER, ch.events);
+    voiceprints.on.add(USER);
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+
+    expect(recognizer.voiceprints).toEqual([null, PRINT]);
+  });
+
+  it('AS-314 a voiceprint that cannot be read is no reason not to listen', async () => {
+    const { service, recognizer, voiceprints } = setup();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    voiceprints.on.add(USER);
+    voiceprints.fails = true;
+
+    await service.start(ENCOUNTER, USER, 'computador', channel().events);
+
+    expect(recognizer.voiceprints).toEqual([null]);
+  });
+
+  it('AS-315 a line with its speaker is kept with source MODEL and reaches the channel with it', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 1_000);
+
+    recognizer.current.confirm('¿Le duele?', 'PROFESSIONAL');
+    await flush();
+
+    expect(store.segments[0]).toMatchObject({
+      text: '¿Le duele?',
+      speaker: 'PROFESSIONAL',
+      speakerSource: 'MODEL',
+    });
+    expect(ch.heard[0]?.speaker).toBe('PROFESSIONAL');
+  });
+
+  it('AS-316 the model corrects its lines after they were kept, never one labelled by hand, and the channel hears what changed', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 1_000);
+    recognizer.current.confirm('Sí, aquí abajo.', 'PROFESSIONAL');
+    await speak(service, ch.events, 1_000, 1_000);
+    recognizer.current.confirm('¿Desde cuándo?', 'PROFESSIONAL');
+    await flush();
+    await service.label(ENCOUNTER, 1_000, 'PROFESSIONAL');
+
+    recognizer.current.events.onSpeakers?.([
+      { startMs: 0, speaker: 'PATIENT' },
+      { startMs: 1_000, speaker: 'PATIENT' },
+    ]);
+    await flush();
+
+    expect(store.segments.map((s) => [s.speaker, s.speakerSource])).toEqual([
+      ['PATIENT', 'MODEL'],
+      ['PROFESSIONAL', 'PROFESSIONAL'],
+    ]);
+    expect(ch.corrected).toEqual([[{ startMs: 0, speaker: 'PATIENT' }]]);
+  });
+
+  it('AS-317 a line that is not there is ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND', async () => {
+    const { service } = setup();
+
+    await expect(
+      service.label(ENCOUNTER, 4_000, 'PATIENT'),
+    ).rejects.toMatchObject({ code: 'ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND' });
+  });
+
+  it('AS-318 voices that cannot be told apart are said once, even across a reopening, and the listening goes on', async () => {
+    const { service, recognizer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+
+    recognizer.current.events.onAttributionUnavailable?.('falta el modelo');
+    recognizer.current.endByItself('expired');
+    await speak(service, ch.events, 0, 500);
+    recognizer.current.events.onAttributionUnavailable?.('falta el modelo');
+    recognizer.current.confirm('Sigue escuchando.');
+    await flush();
+
+    expect(ch.unattributed).toEqual(['falta el modelo']);
+    expect(ch.paused).toEqual([]);
+    expect(ch.heard.map((s) => s.text)).toEqual(['Sigue escuchando.']);
   });
 });

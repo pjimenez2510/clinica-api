@@ -464,7 +464,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
         capturing: false,
       });
       expect(body.segments).toEqual([
-        { startMs: 0, endMs: SENTENCES[1], text: 'Frase que empieza en 0.' },
+        { startMs: 0, endMs: SENTENCES[1], text: 'Frase que empieza en 0.', speaker: null, speakerSource: null }, // prettier-ignore
       ]);
       expect(
         await prisma.accessAudit.count({ where: { resourceType: 'assistant_listening', resourceId: encounterId, action: 'READ' } }), // prettier-ignore
@@ -527,6 +527,85 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
         ]),
       );
       expect(left).toHaveLength(2);
+    });
+  });
+
+  describe('quién dijo cada línea (AS-315 a AS-317)', () => {
+    async function line(
+      scope: 'CONSULTATION' | 'PREPARATION',
+      startMs: number,
+    ) {
+      await prisma.transcriptSegment.create({
+        data: {
+          encounterId,
+          scope,
+          startMs,
+          endMs: startMs + 1_000,
+          text: '¿Desde cuándo le duele?',
+          speaker: 'PATIENT',
+          speakerSource: 'MODEL',
+          createdAt: new Date(),
+        },
+      });
+    }
+    const relabel = (
+      path: string,
+      startMs: number,
+      token: string,
+      speaker = 'PROFESSIONAL',
+    ) =>
+      request(app.getHttpServer())
+        .put(
+          `/api/v1/encounters/${encounterId}/assistant/${path}/lines/${startMs}/speaker`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .send({ speaker });
+
+    it('AS-317 the attention own professional corrects a line: kept with source PROFESSIONAL, shown, and trailed as an UPDATE', async () => {
+      await line('CONSULTATION', 0);
+
+      await relabel('listening', 0, doctor.token).expect(204);
+
+      const body = (await request(app.getHttpServer()).get(url(encounterId)).set('Authorization', `Bearer ${doctor.token}`).expect(200)).body as { segments: unknown[] }; // prettier-ignore
+      expect(body.segments).toEqual([
+        expect.objectContaining({ startMs: 0, speaker: 'PROFESSIONAL', speakerSource: 'PROFESSIONAL' }), // prettier-ignore
+      ]);
+      expect(
+        await prisma.accessAudit.count({ where: { resourceType: 'assistant_listening', resourceId: encounterId, action: 'UPDATE' } }), // prettier-ignore
+      ).toBe(1);
+    });
+
+    it('AS-317 refuses another doctor and a speaker outside the list, and a line that is not there is 404', async () => {
+      await line('CONSULTATION', 0);
+
+      await relabel('listening', 0, secondDoctor.token).expect(403);
+      await relabel('listening', 0, doctor.token, 'NURSE').expect(422);
+      const missing = await relabel('listening', 5_000, doctor.token).expect(
+        404,
+      );
+      expect((missing.body as { code: string }).code).toBe(
+        'ASSISTANT_TRANSCRIPT_LINE_NOT_FOUND',
+      );
+      expect(
+        (
+          await prisma.transcriptSegment.findFirstOrThrow({
+            where: { encounterId },
+          })
+        ).speaker,
+      ).toBe('PATIENT');
+    });
+
+    it("AS-317 in the preparation, whoever takes the vitals corrects its lines, never the consultation's", async () => {
+      await line('PREPARATION', 0);
+
+      await relabel('preparation-listening', 0, nurseToken, 'PATIENT').expect(
+        204,
+      );
+      await relabel('listening', 0, nurseToken).expect(403);
+
+      expect(
+        await prisma.transcriptSegment.findFirstOrThrow({ where: { encounterId, scope: 'PREPARATION' }, select: { speaker: true, speakerSource: true } }), // prettier-ignore
+      ).toEqual({ speaker: 'PATIENT', speakerSource: 'PROFESSIONAL' });
     });
   });
 });

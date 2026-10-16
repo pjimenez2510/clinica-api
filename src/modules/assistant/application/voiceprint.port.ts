@@ -1,3 +1,5 @@
+import type { ListeningVoiceprint } from './speech-recognizer.port';
+
 /**
  * E17 (AS-310 to AS-314, D-265 §1, LOPDP art. 26). The professional's
  * voiceprint: a vector `clinica-ai` made from them reading, and nothing of the
@@ -63,9 +65,7 @@ export const VOICEPRINT_STORE = Symbol('VOICEPRINT_STORE');
  * whoever opens it, only when they have one and the switch is on.
  */
 export interface ListeningVoiceprints {
-  forListening(
-    userId: string,
-  ): Promise<Pick<Voiceprint, 'model' | 'vector'> | null>;
+  forListening(userId: string): Promise<ListeningVoiceprint | null>;
 }
 
 export const LISTENING_VOICEPRINTS = Symbol('LISTENING_VOICEPRINTS');

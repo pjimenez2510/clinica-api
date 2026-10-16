@@ -101,12 +101,14 @@ import {
   LISTENING_VOICEPRINTS,
   VOICEPRINT_ENROLLER,
   VOICEPRINT_STORE,
+  type ListeningVoiceprints,
   type VoiceprintEnroller,
 } from './application/voiceprint.port';
 import {
   VOICEPRINT_CLOCK,
   VoiceprintService,
 } from './application/voiceprint.service';
+import { AssistantTranscriptSpeakerController } from './assistant-transcript-speaker.controller';
 import {
   AssistantVoiceprintController,
   MAX_VOICEPRINT_BYTES,
@@ -194,6 +196,7 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantVitalsDictationController,
     AssistantPreparationController,
     AssistantVoiceprintController,
+    AssistantTranscriptSpeakerController,
   ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -273,12 +276,20 @@ const PURGE_EVERY_MS = 86_400_000;
     },
     {
       provide: PREPARATION_LISTENING,
-      inject: [SPEECH_RECOGNIZER, PREPARATION_LISTENING_STORE, LISTENING_CLOCK],
+      inject: [
+        SPEECH_RECOGNIZER,
+        PREPARATION_LISTENING_STORE,
+        LISTENING_CLOCK,
+        LISTENING_VOICEPRINTS,
+      ],
+      // AS-314. Nursing's voiceprint too, when theirs is on.
       useFactory: (
         recognizer: SpeechRecognizer,
         store: ListeningStore,
         clock: ListeningClock,
-      ) => new ListeningService(recognizer, store, clock),
+        voiceprints: ListeningVoiceprints,
+      ) =>
+        new ListeningService(recognizer, store, clock, undefined, voiceprints),
     },
     ListeningAccess,
     ListeningGateway,
@@ -363,6 +374,7 @@ export class AssistantModule
         AssistantVitalsDictationController,
         AssistantPreparationController,
         AssistantVoiceprintController,
+        AssistantTranscriptSpeakerController,
       );
     // AS-186. The recording as raw bytes, whatever its type, capped at the
     // socket: a larger one is the parser's 413 before it reaches clinica-ai

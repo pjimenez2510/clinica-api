@@ -46,6 +46,8 @@ function transcripts(purge: () => Promise<number> = () => Promise.resolve(0)) {
     save: vi.fn(),
     advance: vi.fn(),
     append: vi.fn(),
+    relabel: vi.fn(),
+    label: vi.fn(),
     transcript: vi.fn(),
     purge: purgeTranscripts,
   };

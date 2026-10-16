@@ -10,6 +10,7 @@ import {
   VoiceprintMissingError,
 } from '../domain/assistant.errors';
 
+import type { ListeningVoiceprint } from './speech-recognizer.port';
 import {
   VOICEPRINT_ENROLLER,
   VOICEPRINT_STORE,
@@ -121,9 +122,7 @@ export class VoiceprintService implements ListeningVoiceprints {
   }
 
   /** AS-314. Read when a recognition is opened. */
-  async forListening(
-    userId: string,
-  ): Promise<Pick<Voiceprint, 'model' | 'vector'> | null> {
+  async forListening(userId: string): Promise<ListeningVoiceprint | null> {
     const stored = await this.store.find(userId);
     if (!stored?.attribution) return null;
     return { model: stored.model, vector: stored.vector };

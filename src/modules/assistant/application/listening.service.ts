@@ -1,12 +1,16 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
-import { ListeningNotOpenError } from '../domain/assistant.errors';
+import {
+  ListeningNotOpenError,
+  TranscriptLineNotFoundError,
+} from '../domain/assistant.errors';
 import {
   frameEndMs,
   unheardPart,
   type AudioFrame,
   type ListeningState,
   type PauseReason,
+  type Speaker,
 } from '../domain/listening';
 
 import {
@@ -17,15 +21,21 @@ import {
 } from './listening.store';
 import {
   SPEECH_RECOGNIZER,
+  type ListeningVoiceprint,
   type RecognitionEnd,
   type RecognitionSession,
   type RecognizedSegment,
+  type SpeakerChange,
   type SpeechRecognizer,
 } from './speech-recognizer.port';
 import {
   TRANSCRIPT_OBSERVER,
   type TranscriptObserver,
 } from './transcript-observer.port';
+import {
+  LISTENING_VOICEPRINTS,
+  type ListeningVoiceprints,
+} from './voiceprint.port';
 
 /**
  * The channel that captures, as the service sees it: the browser on the other
@@ -38,6 +48,10 @@ export interface ListeningChannel {
   onPaused(reason: PauseReason, offsetMs: number): void;
   /** AS-054. Another channel of the same professional took the capture. */
   onTakenOver(): void;
+  /** AS-316. Lines whose speaker the model corrected, after they were kept. */
+  onSpeakers?(changes: readonly SpeakerChange[]): void;
+  /** AS-318. Voices cannot be told apart: said once per opening. */
+  onAttributionUnavailable?(reason: string): void;
 }
 
 /** AS-049. The clock is written down at least this often while listening. */
@@ -87,6 +101,8 @@ interface Live {
   unstored: RecognizedSegment[];
   /** AS-055. A recognition being reopened after `clinica-ai`'s own limits. */
   reopening: Promise<void> | null;
+  /** AS-318. The reason was said already: a reopening does not repeat it. */
+  attributionSaid: boolean;
 }
 
 /**
@@ -129,6 +145,10 @@ export class ListeningService {
     @Optional()
     @Inject(TRANSCRIPT_OBSERVER)
     private readonly observer?: TranscriptObserver,
+    // AS-314. The voiceprint of whoever opens it, when their switch is on.
+    @Optional()
+    @Inject(LISTENING_VOICEPRINTS)
+    private readonly voiceprints?: ListeningVoiceprints,
   ) {}
 
   /**
@@ -170,9 +190,10 @@ export class ListeningService {
         keeping: Promise.resolve(),
         unstored: [],
         reopening: null,
+        attributionSaid: false,
       };
       // AS-048. Throws `ListeningUnavailableError` and opens nothing.
-      live.recognition = await this.recognizer.open(this.eventsOf(live));
+      live.recognition = await this.open(live);
       this.live.set(encounterId, live);
       await this.write(live, 'LISTENING', null);
       return { offsetMs };
@@ -324,6 +345,20 @@ export class ListeningService {
   }
 
   /**
+   * AS-317. The professional says who said the line; the model does not
+   * touch it again. Who may is decided before, as for reading it.
+   */
+  async label(
+    encounterId: string,
+    startMs: number,
+    speaker: Speaker,
+  ): Promise<void> {
+    if (!(await this.store.label(encounterId, startMs, speaker))) {
+      throw new TranscriptLineNotFoundError();
+    }
+  }
+
+  /**
    * The process is going down. The recogniser gets a moment to hand over the
    * sentence it holds, then the listening is written down paused.
    */
@@ -355,8 +390,7 @@ export class ListeningService {
   /** AS-055. The recognition, reopened with the frame that needs it. */
   private async recognitionOf(live: Live): Promise<RecognitionSession | null> {
     if (live.recognition) return live.recognition;
-    live.reopening ??= this.recognizer
-      .open(this.eventsOf(live))
+    live.reopening ??= this.open(live)
       .then((recognition) => {
         // Stopped or shut down meanwhile: nobody would close it.
         if (this.live.get(live.encounterId) !== live) recognition.abort();
@@ -445,11 +479,57 @@ export class ListeningService {
     return { offsetMs: stored?.offsetMs ?? 0 };
   }
 
+  /**
+   * AS-314. The voiceprint is read on every opening, so the switch counts
+   * from the next one. Not being able to read it is not a reason not to
+   * listen: the listening goes without it, as with the switch off.
+   */
+  private async open(live: Live): Promise<RecognitionSession> {
+    let voiceprint: ListeningVoiceprint | null = null;
+    try {
+      voiceprint = (await this.voiceprints?.forListening(live.userId)) ?? null;
+    } catch {
+      this.logger.warn(
+        { encounter_id: live.encounterId, error_code: 'voiceprint-read' },
+        'the voiceprint could not be read; listening without it',
+      );
+    }
+    const events = this.eventsOf(live);
+    return voiceprint
+      ? this.recognizer.open(events, { voiceprint })
+      : this.recognizer.open(events);
+  }
+
   private eventsOf(live: Live) {
     return {
       onSegment: (segment: RecognizedSegment) => this.keep(live, segment),
       onEnded: (how: RecognitionEnd) => this.recognitionEnded(live, how),
+      onSpeakers: (changes: readonly SpeakerChange[]) =>
+        this.relabel(live, changes),
+      onAttributionUnavailable: (reason: string) => {
+        if (live.attributionSaid) return;
+        live.attributionSaid = true;
+        live.channel.onAttributionUnavailable?.(reason);
+      },
     };
+  }
+
+  /**
+   * AS-316. After the lines before it were kept, in the order they came. A
+   * correction that cannot be written is lost, never the listening.
+   */
+  private relabel(live: Live, changes: readonly SpeakerChange[]): void {
+    live.keeping = live.keeping.then(async () => {
+      try {
+        const changed = await this.store.relabel(live.encounterId, changes);
+        if (changed.length > 0) live.channel.onSpeakers?.(changed);
+      } catch {
+        this.logger.warn(
+          { encounter_id: live.encounterId, error_code: 'transcript-relabel' },
+          'a correction of who said a line could not be kept',
+        );
+      }
+    });
   }
 
   /**

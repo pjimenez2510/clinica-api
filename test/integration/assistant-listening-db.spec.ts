@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { PrismaListeningStore } from '../../src/modules/assistant/infrastructure/prisma-listening.store';
+
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
@@ -415,5 +417,48 @@ describe('professional_voiceprint (AS-310, AS-312)', () => {
 
     // Positive control: the same row, well formed, is kept.
     await prisma.professionalVoiceprint.create({ data: voiceprint(userId) });
+  });
+});
+
+describe('PrismaListeningStore speakers (AS-315 to AS-317)', () => {
+  it('AS-316 the model relabels its own lines and never one the professional labelled', async () => {
+    const prisma = db();
+    const { encounter } = await anAttention(prisma);
+    const store = new PrismaListeningStore(prisma as never, 'CONSULTATION');
+    const at = new Date();
+    await store.append(
+      encounter.id,
+      [
+        { startMs: 0, endMs: 900, text: '¿Le duele?', speaker: 'PROFESSIONAL' },
+        {
+          startMs: 900,
+          endMs: 1_500,
+          text: 'Sí, aquí.',
+          speaker: 'PROFESSIONAL',
+        },
+        { startMs: 1_500, endMs: 2_000, text: 'Sin voz.' },
+      ],
+      at,
+    );
+    expect(await store.label(encounter.id, 900, 'PATIENT')).toBe(true);
+
+    const changed = await store.relabel(encounter.id, [
+      { startMs: 0, speaker: 'PATIENT' },
+      { startMs: 900, speaker: 'PROFESSIONAL' },
+      { startMs: 1_500, speaker: 'PATIENT' },
+    ]);
+
+    expect(changed).toEqual([{ startMs: 0, speaker: 'PATIENT' }]);
+    expect(
+      (await store.transcript(encounter.id)).map((l) => [
+        l.speaker,
+        l.speakerSource,
+      ]),
+    ).toEqual([
+      ['PATIENT', 'MODEL'],
+      ['PATIENT', 'PROFESSIONAL'],
+      [null, null],
+    ]);
+    expect(await store.label(encounter.id, 7_000, 'PATIENT')).toBe(false);
   });
 });
