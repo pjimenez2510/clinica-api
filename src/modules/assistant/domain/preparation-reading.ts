@@ -66,8 +66,16 @@ export interface AnsweredPreparation {
     line: string;
     quote: string;
   } | null;
-  /** AS-281. `written`: the reason worded as the nurse writes it. */
-  complaint: { line: string; quote: string; written?: string | null } | null;
+  /**
+   * AS-281. `written`: the reason worded as the nurse writes it. AS-294.
+   * `toLine`: the last of the patient's lines, one after the other, it spans.
+   */
+  complaint: {
+    line: string;
+    toLine?: string | null;
+    quote: string;
+    written?: string | null;
+  } | null;
 }
 
 /** AS-246. One value proposed, with where it was said (null when no single line holds it). */
@@ -444,7 +452,7 @@ function complaintOf(
   if (line === null || speakers[lines.indexOf(line)] !== 'patient') return null;
   const quote = restore(said.quote).trim();
   // Revisión G3: the whole sentence, so a «no» before the phrase is never cut off.
-  const text = line.text.trim();
+  const text = spanOf(line, said.toLine, markers, speakers, lines);
   if (text.length > LONGEST_COMPLAINT || !holds(text, quote)) return null;
   // AS-282 (fifth clinical review): a wording that names someone —a name the
   // pseudonymizer took out— is never believed: whose symptom is whose.
@@ -452,6 +460,29 @@ function complaintOf(
   const written = restore(wording).trim();
   const worded = written === wording && groundedWording(written, text) ? written : text; // prettier-ignore
   return { text: worded, quote: text, startMs: line.startMs };
+}
+
+/**
+ * AS-294. The patient's lines from `first` to `toLine`, joined, when every one
+ * between was said by the patient and they come one after the other; else
+ * only the first, and only the first when the join would not fit.
+ */
+function spanOf(
+  first: TranscriptLine,
+  toLine: string | null | undefined,
+  markers: ReadonlyMap<string, TranscriptLine>,
+  speakers: readonly (Speaker | null)[],
+  lines: readonly TranscriptLine[],
+): string {
+  const alone = first.text.trim();
+  const last = toLine ? lineOf(toLine, markers) : null;
+  const from = lines.indexOf(first);
+  const to = last === null ? -1 : lines.indexOf(last);
+  if (to <= from) return alone;
+  const span = lines.slice(from, to + 1);
+  if (span.some((_, at) => speakers[from + at] !== 'patient')) return alone;
+  const joined = span.map((line) => line.text.trim()).join(' ');
+  return joined.length > LONGEST_COMPLAINT ? alone : joined;
 }
 
 /**
