@@ -63,6 +63,7 @@ const proposalCounts = {
   edited: count,
   discarded: count,
   untouched: count,
+  superseded: count,
   amber: count,
   reviewed: count,
   medianDistance: share,

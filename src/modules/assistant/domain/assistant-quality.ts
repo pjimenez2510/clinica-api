@@ -81,8 +81,10 @@ export interface ProposalCounts {
   edited: number;
   /** `DISCARDED`. */
   discarded: number;
-  /** `PROPOSED`: nobody decided. */
+  /** `PROPOSED` and still on screen: nobody decided. */
   untouched: number;
+  /** `PROPOSED` that a later draft or reading replaced: never seen, not counted above. */
+  superseded: number;
   /** AS-347. Something of it says «Nadie lo dijo». */
   amber: number;
   /** Reviewed at the signature (`ai_suggestion_review`). */
@@ -159,6 +161,7 @@ export const QUALITY_CSV_HEADER = [
   'editadas',
   'quitadas',
   'sin_tocar',
+  'reemplazadas',
   'ambar',
   'aceptacion',
   'revisadas',
@@ -203,6 +206,7 @@ export function qualityCsv(rows: readonly SiteWeekFigures[]): string {
       row.edited,
       row.discarded,
       row.untouched,
+      row.superseded,
       row.amber,
       row.acceptance,
       row.reviewed,

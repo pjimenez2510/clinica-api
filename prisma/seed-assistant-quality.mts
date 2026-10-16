@@ -3,10 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+import { weekOf } from '../src/modules/assistant/domain/assistant-quality.ts';
+import {
+  clinicalDateOf,
+  startOfClinicalDay,
+} from '../src/shared/domain/clinic-time.ts';
+
 /**
  * E19 (AS-345 to AS-356). What «Calidad del asistente» counts, registered as
  * the assistant would have left it in one consultation: its attempts by task
- * and its proposals in the four states, two of them in amber, and the review
+ * and its proposals in the four states, three of them in amber, two replaced
+ * by a later draft or reading before anybody saw them, and the review
  * of each section of the draft at the signature.
  *
  * `assistantQualityScene` is shared: the development seed puts it on a
@@ -28,6 +35,8 @@ interface SceneInput {
   deciderUserId: string;
   /** The attention's start; every instant of the scene follows it. */
   startedAt: Date;
+  /** Multiplies every latency: two attentions whose medians differ. */
+  latencyFactor?: number;
 }
 
 /** The texts the scene writes into the proposals: none may reach the board. */
@@ -92,19 +101,40 @@ export async function assistantQualityScene(
         costUsd: figures.cost ?? null,
         worstCaseUsd: 0.05,
         priceValidFrom: at(-60 * 24 * 30),
-        latencyMs: figures.latencyMs,
+        latencyMs: figures.latencyMs * (input.latencyFactor ?? 1),
         startedAt: at(minutes),
         encounterId: input.encounterId,
       },
     });
 
+  // A first draft at minute 6, replaced by the one at minute 10 (AS-090).
+  const earlyDraft = await run('note-draft', 6, { input: 700, output: 500, cacheRead: 1_200, cost: 0.0018, latencyMs: 3_100 }); // prettier-ignore
   const draft = await run('note-draft', 10, { input: 1_200, output: 800, cacheRead: 3_000, cacheWrite: 400, cost: 0.0042, latencyMs: 4_200 }); // prettier-ignore
   await run('note-draft', 14, { input: 300, output: 700, cacheRead: 3_400, cost: 0.0021, latencyMs: 3_900 }); // prettier-ignore
   const questions = await run('note-questions', 15, { tier: 'fast', input: 500, output: 120, cacheRead: 2_000, cost: 0.0009, latencyMs: 1_500 }); // prettier-ignore
   const problems = await run('cie10-problems', 18, { input: 800, output: 200, cost: 0.0011, latencyMs: 2_100 }); // prettier-ignore
+  // A first reading of the prescription, read again at minute 20 (AS-072).
+  const earlyLines = await run('prescription-lines', 19, { input: 850, output: 240, cost: 0.0012, latencyMs: 2_400 }); // prettier-ignore
   const lines = await run('prescription-lines', 20, { input: 900, output: 260, cacheRead: 1_000, cost: 0.0013, latencyMs: 2_600 }); // prettier-ignore
   // A timeout reports no tokens: its cost is unknown, not zero (AS-345).
   await run('order-exams', 21, { outcome: 'timeout', latencyMs: 60_000 });
+
+  /** The drafts, finished: only a finished draft's sections reach the screen. */
+  const noteDraft = (aiRunId: string, minutes: number) =>
+    prisma.noteDraft.create({
+      data: {
+        encounterId: input.encounterId,
+        upToMs: minutes * MINUTE,
+        status: 'DONE',
+        requestedBy: input.deciderUserId,
+        aiRunId,
+        requestedAt: at(minutes),
+        startedAt: at(minutes),
+        finishedAt: at(minutes + 1),
+      },
+    });
+  const firstDraft = await noteDraft(earlyDraft.id, 6);
+  const lastDraft = await noteDraft(draft.id, 10);
 
   const decided = (status: string, minutes: number) =>
     status === 'PROPOSED'
@@ -123,25 +153,35 @@ export async function assistantQualityScene(
     name: string,
     phrases: object[],
     status: 'PROPOSED' | 'ACCEPTED' | 'ACCEPTED_WITH_CHANGES' | 'DISCARDED',
-    distances: { decided: number | null; signed: number },
+    distances: { decided: number | null; signed: number | null },
+    from: { draftId: string; aiRunId: string; minutes: number } = {
+      draftId: lastDraft.id,
+      aiRunId: draft.id,
+      minutes: 11,
+    },
   ) {
     const suggestion = await prisma.aiSuggestion.create({
       data: {
         encounterId: input.encounterId,
-        aiRunId: draft.id,
+        aiRunId: from.aiRunId,
         kind: 'note-section',
-        proposal: { section: name, title: name, text: SCENE_TEXTS[1], phrases, demo: false }, // prettier-ignore
+        proposal: { draftId: from.draftId, section: name, title: name, text: SCENE_TEXTS[1], phrases, demo: false }, // prettier-ignore
         sources: [{ kind: 'transcript', fromMs: 1_000, toMs: 6_000 }],
         status,
         distance: distances.decided,
         clinicalNoteId: status.startsWith('ACCEPTED') ? noteId : null,
-        proposedAt: at(11),
+        proposedAt: at(from.minutes),
         ...decided(status, 12),
       },
     });
-    reviews.push({ suggestionId: suggestion.id, status, distance: distances.signed }); // prettier-ignore
+    if (distances.signed !== null) {
+      reviews.push({ suggestionId: suggestion.id, status, distance: distances.signed }); // prettier-ignore
+    }
   }
 
+  // Replaced by the second draft before anybody decided it: never on screen,
+  // never reviewed at the signature (AS-144), and not «sin tocar» (AS-346).
+  await section('planTratamiento', [unsaid(SCENE_TEXTS[3])], 'PROPOSED', { decided: null, signed: null }, { draftId: firstDraft.id, aiRunId: earlyDraft.id, minutes: 7 }); // prettier-ignore
   await section('motivoConsulta', [said(SCENE_TEXTS[0])], 'ACCEPTED', { decided: 0, signed: 0 }); // prettier-ignore
   await section('enfermedadActual', [said(SCENE_TEXTS[1]), unsaid('desde anteayer')], 'ACCEPTED_WITH_CHANGES', { decided: 0.25, signed: 0.3 }); // prettier-ignore
   await section('examenFisico', [said(SCENE_TEXTS[2])], 'DISCARDED', { decided: null, signed: 1 }); // prettier-ignore
@@ -169,6 +209,8 @@ export async function assistantQualityScene(
 
   await other('diagnosis', problems.id, { problem: SCENE_TEXTS[4], code: 'J03.9', codes: ['J03.9'] }, 'DISCARDED', 18); // prettier-ignore
   await other('diagnosis', problems.id, { problem: 'Fiebre', code: 'R50.9', codes: ['R50.9'] }, 'PROPOSED', 18); // prettier-ignore
+  // The first reading's line, replaced by the second: amber, but never seen.
+  await other('prescription-item', earlyLines.id, { quote: SCENE_TEXTS[3], unsaid: ['route'] }, 'PROPOSED', 19); // prettier-ignore
   await other('prescription-item', lines.id, { quote: SCENE_TEXTS[3], unsaid: ['dose'] }, 'PROPOSED', 20); // prettier-ignore
   await other('prescription-item', lines.id, { quote: SCENE_TEXTS[3], unsaid: [] }, 'DISCARDED', 20); // prettier-ignore
   await other('note-question', questions.id, { question: SCENE_TEXTS[5] }, 'DISCARDED', 15); // prettier-ignore
@@ -241,8 +283,12 @@ async function main() {
     const carmen = patients[0] ?? others[0];
     if (!carmen) throw new Error('Run db:seed:patients first');
 
-    // Two hours ago and one hour ago: always this week, always in the past.
+    // Two hours ago and one hour ago, but never before this week's Monday in
+    // Guayaquil: always this week, always in the past.
     const now = Date.now();
+    const monday = startOfClinicalDay(weekOf(clinicalDateOf(new Date(now))).weekStart).getTime(); // prettier-ignore
+    const inWeek = (ms: number) =>
+      new Date(Math.max(monday + MINUTE, now - ms));
     const attention = (patientId: string, startedAt: Date) =>
       prisma.encounter.create({
         data: {
@@ -254,8 +300,8 @@ async function main() {
           visitSequence: 'FIRST_TIME',
         },
       });
-    const withAssistant = await attention(carmen.id, new Date(now - 2 * 60 * MINUTE)); // prettier-ignore
-    await attention((others[0] ?? carmen).id, new Date(now - 60 * MINUTE));
+    const withAssistant = await attention(carmen.id, inWeek(2 * 60 * MINUTE)); // prettier-ignore
+    await attention((others[0] ?? carmen).id, inWeek(60 * MINUTE));
     await assistantQualityScene(prisma, {
       encounterId: withAssistant.id,
       practitionerId: doctor.practitioner.id,

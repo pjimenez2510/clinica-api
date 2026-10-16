@@ -18,6 +18,9 @@ import {
   weekBounds,
   weekOf,
 } from '../../src/modules/assistant/domain/assistant-quality';
+import { currentReading } from '../../src/modules/assistant/domain/problem-coding';
+import { sectionsToReview } from '../../src/modules/assistant/domain/signing-review';
+import type { SuggestionStatus } from '../../src/modules/assistant/domain/suggestion';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
@@ -126,15 +129,17 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     assisted = await attention(siteId, doctor.practitionerId);
     await attention(siteId, doctor.practitionerId); // without the assistant
     foreign = await attention(otherSiteId, otherDoctor.practitionerId);
-    for (const [encounterId, who] of [
-      [assisted, doctor],
-      [foreign, otherDoctor],
+    for (const [encounterId, who, latencyFactor] of [
+      [assisted, doctor, 1],
+      // Slower elsewhere: the total's median is not the sites' medians'.
+      [foreign, otherDoctor, 3],
     ] as const) {
       await assistantQualityScene(prisma, {
         encounterId,
         practitionerId: who.practitionerId,
         deciderUserId: who.userId,
         startedAt: IN_WEEK,
+        latencyFactor,
       });
     }
   });
@@ -195,8 +200,38 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     });
     const sum = (pick: (run: (typeof runs)[number]) => number | null) =>
       runs.reduce((total, run) => total + (pick(run) ?? 0), 0);
-    const status = (value: string) => suggestions.filter((row) => row.status === value).length; // prettier-ignore
-    const amber = suggestions.filter((row) => {
+    // AS-346. What the physician had in front of them, by the product's own
+    // rules: `sectionsToReview` (AS-090, AS-144) for the note's sections,
+    // the decided and the current reading (AS-036) for every other class.
+    const doneDrafts = new Set(
+      (await prisma.noteDraft.findMany({ where: { encounterId: { in: encounterIds }, status: 'DONE' } })).map((draft) => draft.id), // prettier-ignore
+    );
+    const shown = new Set<string>();
+    for (const encounterId of encounterIds) {
+      const own = suggestions.filter((row) => row.encounterId === encounterId);
+      const notes = own
+        .filter((row) => row.kind === 'note-section')
+        .map((row) => {
+          const proposal = row.proposal as {
+            draftId: string;
+            section: string;
+            text: string;
+          };
+          return { id: row.id, draftId: proposal.draftId, section: proposal.section, text: proposal.text, status: row.status as SuggestionStatus, proposedAt: row.proposedAt }; // prettier-ignore
+        });
+      for (const note of sectionsToReview(notes, doneDrafts))
+        shown.add(note.id);
+      for (const kind of new Set(own.map((row) => row.kind))) {
+        if (kind === 'note-section') continue;
+        const ofKind = own.filter((row) => row.kind === kind);
+        for (const row of ofKind)
+          if (row.status !== 'PROPOSED') shown.add(row.id);
+        for (const row of currentReading(ofKind)) shown.add(row.id);
+      }
+    }
+    const seen = suggestions.filter((row) => shown.has(row.id));
+    const status = (value: string) => seen.filter((row) => row.status === value).length; // prettier-ignore
+    const amber = seen.filter((row) => {
       const proposal = row.proposal as { phrases?: { unsaid: boolean }[]; unsaid?: string[] }; // prettier-ignore
       if (row.kind === 'note-section') return proposal.phrases?.some((phrase) => phrase.unsaid) ?? false; // prettier-ignore
       if (row.kind === 'prescription-item') return (proposal.unsaid?.length ?? 0) > 0; // prettier-ignore
@@ -215,7 +250,8 @@ describe('la calidad del asistente por HTTP (E19)', () => {
       cost: sum((run) => (run.costUsd === null ? null : Number(run.costUsd))),
       withoutCost: runs.filter((run) => run.costUsd === null).length,
       medianLatency: median(runs.map((run) => run.latencyMs)),
-      proposals: suggestions.length,
+      proposals: seen.length,
+      superseded: suggestions.length - seen.length,
       accepted: status('ACCEPTED'),
       edited: status('ACCEPTED_WITH_CHANGES'),
       discarded: status('DISCARDED'),
@@ -231,11 +267,13 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     // The scene is not trivial: every state, amber and a cost nobody reported.
     expect(expected.amber).toBe(3);
     expect(expected.withoutCost).toBe(1);
+    // Control: two proposals a later draft or reading replaced (AS-346).
+    expect(expected.superseded).toBe(2);
 
     const response = await get(`/encounters/${assisted}`, doctor.token).expect(200); // prettier-ignore
     const body = response.body as {
-      tasks: { purpose: string; attempts: number; answered: number; inputTokens: number; cacheReadTokens: number; costUsd: string; attemptsWithoutCost: number; medianLatencyMs: number | null; maxLatencyMs: number | null }[]; // prettier-ignore
-      proposals: { kind: string; section: string | null; proposals: number; accepted: number; edited: number; discarded: number; untouched: number; amber: number; reviewed: number; medianDistance: number | null }[]; // prettier-ignore
+      tasks: { purpose: string; attempts: number; answered: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: string; attemptsWithoutCost: number; medianLatencyMs: number | null; maxLatencyMs: number | null }[]; // prettier-ignore
+      proposals: { kind: string; section: string | null; proposals: number; accepted: number; edited: number; discarded: number; untouched: number; superseded: number; amber: number; reviewed: number; medianDistance: number | null }[]; // prettier-ignore
       totals: { attempts: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: string; cacheRate: number | null; proposals: number }; // prettier-ignore
     };
 
@@ -252,6 +290,8 @@ describe('la calidad del asistente por HTTP (E19)', () => {
       );
       expect(task.inputTokens).toBe(rows.reduce((total, run) => total + (run.inputTokens ?? 0), 0)); // prettier-ignore
       expect(task.cacheReadTokens).toBe(rows.reduce((total, run) => total + (run.cacheReadTokens ?? 0), 0)); // prettier-ignore
+      expect(task.outputTokens).toBe(rows.reduce((total, run) => total + (run.outputTokens ?? 0), 0)); // prettier-ignore
+      expect(task.cacheWriteTokens).toBe(rows.reduce((total, run) => total + (run.cacheWriteTokens ?? 0), 0)); // prettier-ignore
       expect(Number(task.costUsd)).toBeCloseTo(rows.reduce((total, run) => total + Number(run.costUsd ?? 0), 0), 8); // prettier-ignore
       expect(task.attemptsWithoutCost).toBe(rows.filter((run) => run.costUsd === null).length); // prettier-ignore
       expect(task.medianLatencyMs).toBe(
@@ -279,6 +319,7 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     expect(total((row) => row.edited)).toBe(expected.edited);
     expect(total((row) => row.discarded)).toBe(expected.discarded);
     expect(total((row) => row.untouched)).toBe(expected.untouched);
+    expect(total((row) => row.superseded)).toBe(expected.superseded);
     expect(total((row) => row.amber)).toBe(expected.amber);
     expect(total((row) => row.reviewed)).toBe(expected.reviewed);
     const sectionRows = body.proposals.filter(
@@ -294,7 +335,8 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     const lines = body.proposals.find(
       (row) => row.kind === 'prescription-item',
     )!;
-    expect([lines.proposals, lines.amber]).toEqual([2, 1]);
+    // The first reading's amber line was replaced: it counts in neither.
+    expect([lines.proposals, lines.amber, lines.superseded]).toEqual([2, 1, 1]);
     expect(body.proposals.find((row) => row.kind === 'diagnosis')!.amber).toBe(
       0,
     );
@@ -331,6 +373,7 @@ describe('la calidad del asistente por HTTP (E19)', () => {
       edited: expected.edited,
       discarded: expected.discarded,
       untouched: expected.untouched,
+      superseded: expected.superseded,
       amber: expected.amber,
       reviewed: expected.reviewed,
       medianDistance: expected.medianDistance,
@@ -357,7 +400,7 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     const clinic = await get(`/week?date=${weekStart}`, clinicAdmin).expect(
       200,
     );
-    const both = clinic.body as { total: { encounters: number; attempts: number }; bySite: { siteId: string }[] }; // prettier-ignore
+    const both = clinic.body as { total: Record<string, unknown>; bySite: { siteId: string }[] }; // prettier-ignore
     expect(both.bySite.map((row) => row.siteId).sort()).toEqual([siteId, otherSiteId].sort()); // prettier-ignore
     const expected = await expectedOf([assisted, foreign]);
     expect(both.total).toMatchObject({
@@ -389,6 +432,27 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     const mine = week.body as { total: { encounters: number }; encounters: { encounterId: string }[] }; // prettier-ignore
     expect(mine.total.encounters).toBe(1);
     expect(mine.encounters.map((row) => row.encounterId)).toEqual([foreign]);
+
+    // The same site and week: a colleague's attention is not the doctor's.
+    // Without this, only the site filter would be proving AS-350.
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '1704123452', siteId); // prettier-ignore
+    const theirs = (
+      await createEncounter(prisma, {
+        siteId,
+        practitionerId: colleague.practitionerId,
+        patientId: (await createPatient(prisma)).id,
+        startedAt: IN_WEEK,
+      })
+    ).id;
+    await assistantQualityScene(prisma, { encounterId: theirs, practitionerId: colleague.practitionerId, deciderUserId: colleague.userId, startedAt: IN_WEEK }); // prettier-ignore
+    await get(`/encounters/${theirs}`, colleague.token).expect(200); // control
+    await get(`/encounters/${theirs}`, doctor.token).expect(404);
+    const own = (await get(`/week?date=${weekStart}`, doctor.token).expect(200)).body as { total: { encounters: number; assisted: number }; encounters: { encounterId: string }[] }; // prettier-ignore
+    expect(own.total).toMatchObject({ encounters: 2, assisted: 1 });
+    expect(own.encounters.map((row) => row.encounterId)).toEqual([assisted]);
+    const atSite = (await get(`/week?date=${weekStart}&siteId=${siteId}`, siteAdmin).expect(200)).body as { total: { encounters: number } }; // prettier-ignore
+    expect(atSite.total.encounters).toBe(3); // the administrator sees it
+
     // Without either permission, nothing (closed by default).
     await get(`/week?date=${weekStart}`, reception).expect(403);
   });
@@ -409,8 +473,26 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     for (const answer of answers) {
       for (const text of SCENE_TEXTS) expect(answer).not.toContain(text);
       expect(answer).not.toContain(patient.patient.givenName);
+      expect(answer).not.toContain(patient.patient.familyName);
+      expect(answer).not.toContain(patient.patient.mrn);
       expect(answer).not.toContain(patient.patientId);
     }
+  });
+
+  it('AS-348 the week is Monday 00:00 to Sunday 24:00 in Guayaquil, and an attention registered by error does not count', async () => {
+    const patientAt = async (startedAt: Date) =>
+      createEncounter(prisma, { siteId, practitionerId: doctor.practitionerId, patientId: (await createPatient(prisma)).id, startedAt }); // prettier-ignore
+    const sunday = await patientAt(new Date(startsAt.getTime() - 30 * MINUTE)); // Sunday 23:30
+    await patientAt(startsAt); // Monday 00:00: this week (control)
+    const annulled = await patientAt(IN_WEEK);
+    await prisma.$executeRaw`UPDATE encounter SET status = 'ENTERED_IN_ERROR', entered_in_error_by_id = ${doctor.userId}::uuid, entered_in_error_at = ${IN_WEEK}, ended_at = ${IN_WEEK} WHERE id = ${annulled.id}::uuid`; // prettier-ignore
+
+    const week = (await get(`/week?date=${weekStart}&siteId=${siteId}`, siteAdmin).expect(200)).body as { total: { encounters: number } }; // prettier-ignore
+    expect(week.total.encounters).toBe(3); // the two of the scene and Monday's
+    const before = (await get(`/week?date=${addDays(weekStart, -1)}&siteId=${siteId}`, siteAdmin).expect(200)).body as { weekStart: string; total: { encounters: number } }; // prettier-ignore
+    expect(before.weekStart).toBe(addDays(weekStart, -7));
+    expect(before.total.encounters).toBe(1);
+    expect(sunday.startedAt.getTime()).toBeLessThan(startsAt.getTime());
   });
 
   it('AS-352 the CSV has one line per week and site, and only audit:read downloads it', async () => {
@@ -423,15 +505,18 @@ describe('la calidad del asistente por HTTP (E19)', () => {
     expect(lines[0]!.startsWith('semana,sede,atenciones,con_asistente,adopcion')).toBe(true); // prettier-ignore
     // Last week had no attentions: no line; this week, one per site.
     expect(lines.slice(1).map((line) => line.split(',')[0])).toEqual([weekStart, weekStart]); // prettier-ignore
+    // AS-351. The administrator of one site downloads only that site.
+    const one = await get(`/weeks.csv?from=${weekStart}&to=${weekStart}`, siteAdmin).expect(200); // prettier-ignore
+    expect(one.text.trimEnd().split('\r\n').length).toBe(2);
     await get(`/weeks.csv?from=${weekStart}&to=${weekStart}`, doctor.token).expect(403); // prettier-ignore
   });
 
   it('AS-353 a malformed day or a backwards or too long range is refused naming the field', async () => {
     await get(`/week?date=${weekStart}`, siteAdmin).expect(200); // control
     const day = await get('/week?date=ayer', siteAdmin).expect(422);
-    expect(JSON.stringify(day.body)).toContain('date');
+    expect((day.body as { errors?: { field: string }[] }).errors?.[0]).toMatchObject({ field: 'date' }); // prettier-ignore
     const backwards = await get(`/weeks.csv?from=${weekStart}&to=${addDays(weekStart, -1)}`, siteAdmin).expect(422); // prettier-ignore
-    expect(JSON.stringify(backwards.body)).toContain('to');
+    expect((backwards.body as { errors?: { field: string }[] }).errors?.[0]).toMatchObject({ field: 'to', message: 'La fecha final no puede ser anterior a la inicial' }); // prettier-ignore
     await get(`/weeks.csv?from=${addDays(weekStart, -52 * 7)}&to=${weekStart}`, siteAdmin).expect(200); // prettier-ignore
     await get(`/weeks.csv?from=${addDays(weekStart, -53 * 7)}&to=${weekStart}`, siteAdmin).expect(422); // prettier-ignore
   });

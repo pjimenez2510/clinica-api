@@ -38,6 +38,49 @@ const AMBER = Prisma.sql`(
     AND s.proposal -> 'unsaid' <> '[]'::jsonb)
 )`;
 
+/** A note draft that finished: only its sections reached the screen (AS-090). */
+const DONE_DRAFT = (alias: string) => Prisma.sql`EXISTS (
+  SELECT 1 FROM note_draft d
+  WHERE d.id::text = ${Prisma.raw(alias)}.proposal ->> 'draftId' AND d.status = 'DONE'
+)`;
+
+/**
+ * AS-346. A proposal the physician had in front of them: decided, or still
+ * undecided AND on screen. The same rule the product shows by —
+ * `shownSections` (AS-090, as `sectionsToReview` reviews at the signature,
+ * AS-144) for the note, `currentReading` (AS-036) for the rest—. An undecided
+ * proposal a later draft or reading replaced was never seen: counting it as
+ * «sin tocar» would sink the acceptance of every re-asked consultation.
+ */
+const SHOWN = Prisma.sql`(
+  s.status <> 'PROPOSED'
+  OR CASE WHEN s.kind = 'note-section' THEN
+    ${DONE_DRAFT('s')}
+    AND NOT EXISTS (
+      SELECT 1 FROM ai_suggestion n
+      WHERE n.encounter_id = s.encounter_id AND n.kind = 'note-section'
+        AND n.proposal ->> 'section' = s.proposal ->> 'section'
+        AND (n.proposed_at, n.id) > (s.proposed_at, s.id)
+        AND ${DONE_DRAFT('n')}
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM ai_suggestion e
+      WHERE e.encounter_id = s.encounter_id AND e.kind = 'note-section'
+        AND e.proposal ->> 'section' = s.proposal ->> 'section'
+        AND e.status <> 'PROPOSED'
+        AND e.proposal ->> 'text' = s.proposal ->> 'text'
+        AND (e.proposed_at, e.id) < (s.proposed_at, s.id)
+    )
+  ELSE
+    s.ai_run_id = (
+      SELECT l.ai_run_id FROM ai_suggestion l
+      WHERE l.encounter_id = s.encounter_id AND l.kind = s.kind
+      ORDER BY l.proposed_at DESC, l.id DESC
+      LIMIT 1
+    )
+  END
+)`;
+
 /** AS-350. The attentions the caller may count, optionally of a window or one. */
 function scoped(
   scope: QualityScope,
@@ -82,6 +125,7 @@ interface ProposalRow {
   edited: number;
   discarded: number;
   untouched: number;
+  superseded: number;
   amber: number;
   reviewed: number;
   median_distance: number | null;
@@ -104,12 +148,13 @@ const TASK_COLUMNS = Prisma.sql`
 const PROPOSAL_COLUMNS = Prisma.sql`
   s.kind,
   CASE WHEN s.kind = 'note-section' THEN s.proposal ->> 'section' END AS section,
-  count(*)::int AS proposals,
+  count(*) FILTER (WHERE ${SHOWN})::int AS proposals,
   count(*) FILTER (WHERE s.status = 'ACCEPTED')::int AS accepted,
   count(*) FILTER (WHERE s.status = 'ACCEPTED_WITH_CHANGES')::int AS edited,
   count(*) FILTER (WHERE s.status = 'DISCARDED')::int AS discarded,
-  count(*) FILTER (WHERE s.status = 'PROPOSED')::int AS untouched,
-  count(*) FILTER (WHERE ${AMBER})::int AS amber,
+  count(*) FILTER (WHERE s.status = 'PROPOSED' AND ${SHOWN})::int AS untouched,
+  count(*) FILTER (WHERE NOT ${SHOWN})::int AS superseded,
+  count(*) FILTER (WHERE ${AMBER} AND ${SHOWN})::int AS amber,
   count(v.suggestion_id)::int AS reviewed,
   percentile_cont(0.5) WITHIN GROUP (ORDER BY v.distance) AS median_distance
 `;
@@ -139,6 +184,7 @@ function proposal(row: ProposalRow): ProposalSums {
     edited: row.edited,
     discarded: row.discarded,
     untouched: row.untouched,
+    superseded: row.superseded,
     amber: row.amber,
     reviewed: row.reviewed,
     medianDistance: row.median_distance,
@@ -286,12 +332,13 @@ export class PrismaAssistantQualityReader implements AssistantQualityReader {
       ),
       s_agg AS (
         SELECT enc.week, enc.site_id, GROUPING(enc.site_id) AS g,
-               count(*)::int AS proposals,
+               count(*) FILTER (WHERE ${SHOWN})::int AS proposals,
                count(*) FILTER (WHERE s.status = 'ACCEPTED')::int AS accepted,
                count(*) FILTER (WHERE s.status = 'ACCEPTED_WITH_CHANGES')::int AS edited,
                count(*) FILTER (WHERE s.status = 'DISCARDED')::int AS discarded,
-               count(*) FILTER (WHERE s.status = 'PROPOSED')::int AS untouched,
-               count(*) FILTER (WHERE ${AMBER})::int AS amber,
+               count(*) FILTER (WHERE s.status = 'PROPOSED' AND ${SHOWN})::int AS untouched,
+               count(*) FILTER (WHERE NOT ${SHOWN})::int AS superseded,
+               count(*) FILTER (WHERE ${AMBER} AND ${SHOWN})::int AS amber,
                count(v.suggestion_id)::int AS reviewed,
                percentile_cont(0.5) WITHIN GROUP (ORDER BY v.distance) AS median_distance
         FROM ai_suggestion s
@@ -315,6 +362,7 @@ export class PrismaAssistantQualityReader implements AssistantQualityReader {
              coalesce(s.edited, 0) AS edited,
              coalesce(s.discarded, 0) AS discarded,
              coalesce(s.untouched, 0) AS untouched,
+             coalesce(s.superseded, 0) AS superseded,
              coalesce(s.amber, 0) AS amber,
              coalesce(s.reviewed, 0) AS reviewed,
              s.median_distance
@@ -344,6 +392,7 @@ export class PrismaAssistantQualityReader implements AssistantQualityReader {
       edited: row.edited,
       discarded: row.discarded,
       untouched: row.untouched,
+      superseded: row.superseded,
       amber: row.amber,
       reviewed: row.reviewed,
       medianDistance: row.median_distance,
@@ -386,10 +435,10 @@ export class PrismaAssistantQualityReader implements AssistantQualityReader {
         FROM ai_run WHERE encounter_id = x.id
       ) r ON r.attempts > 0
       LEFT JOIN LATERAL (
-        SELECT count(*)::int AS proposals,
-               count(*) FILTER (WHERE status = 'ACCEPTED')::int AS accepted,
-               count(*) FILTER (WHERE status = 'ACCEPTED_WITH_CHANGES')::int AS edited
-        FROM ai_suggestion WHERE encounter_id = x.id
+        SELECT count(*) FILTER (WHERE ${SHOWN})::int AS proposals,
+               count(*) FILTER (WHERE s.status = 'ACCEPTED')::int AS accepted,
+               count(*) FILTER (WHERE s.status = 'ACCEPTED_WITH_CHANGES')::int AS edited
+        FROM ai_suggestion s WHERE s.encounter_id = x.id
       ) s ON TRUE
       ORDER BY x.started_at, x.id
     `;

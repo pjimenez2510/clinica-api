@@ -45,6 +45,7 @@ function figures(over: Partial<SiteWeekFigures> = {}): SiteWeekFigures {
     edited: 1,
     discarded: 1,
     untouched: 1,
+    superseded: 0,
     amber: 1,
     acceptance: 0.6,
     reviewed: 2,

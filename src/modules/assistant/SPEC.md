@@ -2852,11 +2852,17 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   máxima (`latency_ms`); con las cifras de `ai_run` de esa atención.
 - **AS-346** — CUANDO se pida el desglose de una atención, el sistema DEBERÁ
   responder, por cada clase de propuesta (`ai_suggestion.kind`, y en
-  `note-section` además su sección), cuántas hubo y cuántas quedaron
-  **aceptadas** (`ACCEPTED`), **editadas** (`ACCEPTED_WITH_CHANGES`),
-  **quitadas** (`DISCARDED`) y **sin tocar** (`PROPOSED`), cuántas en
-  **ámbar** (AS-347), y de las revisadas al firmar (`ai_suggestion_review`)
-  cuántas y su distancia mediana.
+  `note-section` además su sección), cuántas tuvo el profesional delante y
+  cuántas quedaron **aceptadas** (`ACCEPTED`), **editadas**
+  (`ACCEPTED_WITH_CHANGES`), **quitadas** (`DISCARDED`) y **sin tocar**
+  (`PROPOSED`), cuántas en **ámbar** (AS-347), y de las revisadas al firmar
+  (`ai_suggestion_review`) cuántas y su distancia mediana. Una propuesta sin
+  decidir que un borrador o una lectura posterior reemplazó —la que la
+  pantalla ya no mostraba: AS-090 y AS-144 en la nota, AS-036 en las demás
+  clases— NO DEBERÁ contarse en ninguna de esas cifras sino aparte, como
+  **reemplazada**.
+  > Revisión clínica G1 (16-10-2026): contarlas «sin tocar» hundía la
+  > aceptación de toda consulta en que se volvió a pedir el borrador.
 - **AS-347** — Una propuesta DEBERÁ contarse en ámbar CUANDO algo suyo diga
   «Nadie lo dijo»: en `note-section`, una frase con `unsaid` verdadero; en
   `prescription-item`, una lista `unsaid` no vacía. Las demás clases NO
@@ -2864,7 +2870,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   la propuesta.
 - **AS-348** — CUANDO se pida una semana (lunes a domingo en
   `America/Guayaquil`, por el inicio de la atención), el sistema DEBERÁ
-  responder, por cada sede del alcance (AS-350) y para el total: las
+  responder, por cada sede del alcance (AS-350) con atenciones esa semana y
+  para el total: las
   atenciones de la semana que no son `ENTERED_IN_ERROR`, cuántas tuvieron al
   menos un intento del asistente y la **adopción** (ésas entre aquéllas); las
   cifras de AS-345 sumadas; el **costo por atención con asistente**; la
@@ -2881,17 +2888,21 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   tarea, clase y sección, conteos, tasas, costos y tiempos.
 - **AS-350** — Las rutas del tablero DEBERÁN pedir `audit:read` o
   `assistant:use`. Quien tiene `audit:read` DEBERÁ ver las atenciones de las
-  sedes donde lo tiene; quien sólo tiene `assistant:use`, sólo las atenciones
-  de las que es el profesional, en las sedes donde lo tiene. SI se pide el
+  sedes donde lo tiene; quien no tiene `audit:read` en ninguna sede y tiene
+  `assistant:use`, sólo las atenciones de las que es el profesional, en las
+  sedes donde lo tiene. Quien tiene `audit:read` en alguna sede ve sólo esas
+  sedes (D-266 §3). SI se pide el
   desglose de una atención fuera de ese alcance o que no existe, ENTONCES
   DEBERÁ responder 404 `ASSISTANT_ENCOUNTER_NOT_FOUND`, igual en los
   dos casos.
-- **AS-351** — SI se pide una semana o el CSV de una sede fuera del alcance,
+- **AS-351** — SI se pide una semana de una sede fuera del alcance,
   ENTONCES el sistema DEBERÁ responder sin filas de esa sede, igual que si no
-  tuviera atenciones.
+  tuviera atenciones; y el CSV NO DEBERÁ llevar filas de sedes fuera del
+  alcance.
 - **AS-352** — CUANDO quien tiene `audit:read` pida el CSV de un rango de
   semanas, el sistema DEBERÁ responder `text/csv` en UTF-8, una fila por
-  semana y sede con atenciones, con las cifras de AS-348 sin la lista de
+  semana y sede con atenciones, con las cifras de AS-348 y las reemplazadas
+  (AS-346) sin la lista de
   atenciones, el punto como separador decimal y la cabecera fija. Sin
   `audit:read` DEBERÁ responder 403.
 - **AS-353** — SI la fecha de la semana no es `AAAA-MM-DD`, o el rango del CSV

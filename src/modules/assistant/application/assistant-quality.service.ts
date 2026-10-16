@@ -79,6 +79,7 @@ function emptyWeek(week: ClinicalDate, siteId: string | null): SiteWeekFigures {
     edited: 0,
     discarded: 0,
     untouched: 0,
+    superseded: 0,
     amber: 0,
     reviewed: 0,
     medianDistance: null,
